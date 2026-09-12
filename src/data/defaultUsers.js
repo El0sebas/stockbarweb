@@ -1,0 +1,18 @@
+// Semilla de usuarios compartida entre Login (valida credenciales) y
+// UsuariosPage (CRUD administrativo). Antes cada uno mantenía su propia lista
+// desconectada: un usuario creado en Usuarios no podía iniciar sesión, y el
+// admin por defecto de Login no aparecía en Usuarios. Ambos ahora leen/escriben
+// la misma clave de localStorage ('stockbar_users') a través de usePersistentState.
+export const defaultUsers = [
+  {
+    id_usuario: 1,
+    documento: '1098765432',
+    nombre: 'Carlos Andrés Gómez',
+    correo: 'administrador@stockbar.com',
+    telefono: '3104567890',
+    rol: 'Administrador',
+    password: '123456',
+    estado: 'Activo',
+    fechaRegistro: '2026-01-15'
+  }
+];

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"Seleccionar Producto\\\\|PRODUCTOS\\\\|Detalle del Carrito\\\\|mostrarSelectorCantidad\" /c/stockbar_mobile/lib/features/ventas/ventas_screen.dart)",
+      "Read(//c/stockbar_mobile/lib/features/ventas/**)",
+      "Read(//c/stockbar_mobile/**)",
+      "Bash(flutter analyze *)"
+    ]
+  }
+}

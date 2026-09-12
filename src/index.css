@@ -1,0 +1,233 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+:root {
+  --bg-main: #F8FAFC;
+  --bg-card: #FFFFFF;
+  --bg-input: #FFFFFF;
+  --bg-surface: #F1F5F9; /* fondo neutro para pistas de switches/superficies internas */
+  --text-main: #1A365D;
+  --text-muted: #64748B;
+  --border-color: #E2E8F0;
+  --amber-action: #F59E0B;
+  --amber-action-hover: #D97706;
+  --sidebar-active-bg: #FEF3C7;
+  --sidebar-active-text: #D97706;
+  --brand-blue: #3B82F6;
+  --brand-success: #10B981;
+  --brand-danger: #EF4444;
+  --brand-purple: #A855F7;
+  --blue-soft-bg: #DBEAFE;
+  --success-soft-bg: #D1FAE5;
+  --danger-soft-bg: #FEE2E2;
+  --amber-soft-bg: #FEF3C7;
+  --purple-soft-bg: #F3E8FF;
+  --neutral-soft-bg: #E2E8F0;
+  --overlay-scrim: rgba(15, 23, 42, 0.6);
+  --shadow-soft: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+[data-theme='dark'] {
+  --bg-main: #0F172A;
+  --bg-card: #182232;
+  --bg-input: #0F172A;
+  --bg-surface: #0F172A;
+  --text-main: #F8FAFC;
+  --text-muted: #94A3B8;
+  --border-color: #233044;
+  --amber-action: #F59E0B;
+  --amber-action-hover: #FBBF24;
+  --sidebar-active-bg: rgba(245, 158, 11, 0.22);
+  --sidebar-active-text: #F59E0B;
+  --brand-blue: #60A5FA;
+  --brand-success: #34D399;
+  --brand-danger: #F87171;
+  --brand-purple: #C084FC;
+  --blue-soft-bg: rgba(59, 130, 246, 0.18);
+  --success-soft-bg: rgba(16, 185, 129, 0.18);
+  --danger-soft-bg: rgba(239, 68, 68, 0.18);
+  --amber-soft-bg: rgba(245, 158, 11, 0.18);
+  --purple-soft-bg: rgba(168, 85, 247, 0.18);
+  --neutral-soft-bg: #334155;
+  --overlay-scrim: rgba(2, 6, 23, 0.7);
+  --shadow-soft: 0 12px 30px rgba(2, 6, 23, 0.38);
+}
+
+body {
+  background-color: var(--bg-main) !important;
+  color: var(--text-main) !important;
+  font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+button,
+input,
+select,
+textarea {
+  transition: all 0.2s ease;
+}
+
+.card {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-main) !important;
+  box-shadow: var(--shadow-soft);
+}
+
+.table {
+  --bs-table-bg: transparent !important;
+  --bs-table-color: var(--text-main) !important;
+  --bs-table-border-color: var(--border-color) !important;
+  --bs-table-hover-bg: rgba(245, 158, 11, 0.05) !important;
+  color: var(--text-main) !important;
+}
+
+.table th {
+  color: var(--text-muted) !important;
+  background-color: transparent !important;
+  border-bottom-color: var(--border-color) !important;
+}
+
+.table td {
+  background-color: transparent !important;
+  border-bottom-color: var(--border-color) !important;
+  color: var(--text-main) !important;
+}
+
+.form-control,
+.form-select,
+.form-check-input,
+textarea {
+  background-color: var(--bg-input) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-main) !important;
+  border-radius: 0.8rem !important;
+}
+
+.form-control:focus,
+.form-select:focus,
+textarea:focus {
+  border-color: rgba(245, 158, 11, 0.75) !important;
+  box-shadow: 0 0 0 0.2rem rgba(245, 158, 11, 0.15) !important;
+}
+
+.form-control::placeholder,
+textarea::placeholder {
+  color: var(--text-muted) !important;
+}
+
+.btn {
+  border-radius: 0.8rem !important;
+}
+
+.btn-primary,
+.btn-warning,
+.btn-success,
+.btn-danger {
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.modal-content {
+  border-radius: 1.1rem !important;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18) !important;
+}
+
+.modal-header,
+.modal-footer {
+  border-color: var(--border-color) !important;
+}
+
+.swal2-popup {
+  border-radius: 1rem !important;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.18) !important;
+}
+
+.swal2-confirm,
+.swal2-cancel {
+  border-radius: 0.75rem !important;
+}
+
+.page-header-card {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(59, 130, 246, 0.08));
+  border: 1px solid var(--border-color);
+}
+
+.metric-card {
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-soft);
+}
+
+.metric-card .icon-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stockbar-form-panel {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  padding: 1rem;
+}
+
+.form-label {
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.empty-state {
+  padding: 2.2rem 1rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.badge {
+  border-radius: 999px !important;
+  padding: 0.5rem 0.8rem !important;
+  letter-spacing: 0.02em;
+}
+
+/* El icono de cierre de Bootstrap es oscuro por defecto; se invierte en modo
+   oscuro para mantener contraste, sin necesitar la variable isDarkMode en JS. */
+[data-theme='dark'] .btn-close-themed {
+  filter: invert(1);
+}
+
+/* Dropdown del menú de usuario: sin la flecha por defecto de Bootstrap, y
+   coloreado con las variables del tema en vez del blanco fijo de Bootstrap. */
+.icon-dropdown-toggle::after {
+  display: none;
+}
+
+.dropdown-menu {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+}
+
+.dropdown-item {
+  color: var(--text-main);
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus {
+  background-color: var(--bg-surface);
+  color: var(--text-main);
+}
+
+.dropdown-item.text-danger:hover,
+.dropdown-item.text-danger:focus {
+  background-color: var(--danger-soft-bg);
+  color: var(--brand-danger) !important;
+}

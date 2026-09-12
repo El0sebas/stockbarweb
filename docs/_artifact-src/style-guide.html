@@ -1,0 +1,532 @@
+<title>StockBar Guía de Patrones</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --sb-bg-main:#F8FAFC; --sb-bg-card:#FFFFFF; --sb-bg-input:#FFFFFF; --sb-bg-surface:#F1F5F9;
+    --sb-text-main:#1A365D; --sb-text-muted:#64748B; --sb-border:#E2E8F0;
+    --sb-amber:#F59E0B; --sb-amber-hover:#D97706;
+    --sb-sidebar-bg:#FEF3C7; --sb-sidebar-text:#D97706;
+    --sb-blue:#3B82F6; --sb-success:#10B981; --sb-danger:#EF4444; --sb-purple:#A855F7;
+    --sb-blue-soft:#DBEAFE; --sb-success-soft:#D1FAE5; --sb-danger-soft:#FEE2E2; --sb-amber-soft:#FEF3C7; --sb-purple-soft:#F3E8FF;
+    --sb-shadow:0 12px 30px rgba(15,23,42,.08);
+
+    /* dark-mode reference values (shown as fixed swatches, not tied to viewer theme) */
+    --sbd-bg-main:#0F172A; --sbd-bg-card:#182232; --sbd-bg-input:#0F172A; --sbd-bg-surface:#0F172A;
+    --sbd-text-main:#F8FAFC; --sbd-text-muted:#94A3B8; --sbd-border:#233044;
+    --sbd-amber:#F59E0B; --sbd-amber-hover:#FBBF24;
+    --sbd-sidebar-bg:rgba(245,158,11,.22); --sbd-sidebar-text:#F59E0B;
+    --sbd-blue:#60A5FA; --sbd-success:#34D399; --sbd-danger:#F87171;
+
+    /* this page's own chrome */
+    --page-bg:#EEF2F7; --page-line:#D7DEE8; --eyebrow:#94A3B8;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--page-bg); color:var(--sb-text-main);
+    font-family:'Inter',-apple-system,'Segoe UI',sans-serif;
+    padding:40px 24px 80px; padding-block:40px 80px;
+  }
+  .wrap{max-width:1180px; margin:0 auto; display:flex; flex-direction:column; gap:36px;}
+
+  .masthead{display:flex; flex-direction:column; gap:6px; padding-bottom:8px;}
+  .masthead .eyebrow{font-size:11px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--eyebrow);}
+  .masthead h1{margin:0; font-size:clamp(28px,4vw,40px); font-weight:800; letter-spacing:-.02em; text-wrap:balance;}
+  .masthead p{margin:0; color:var(--sb-text-muted); font-size:15px; max-width:65ch;}
+
+  section.card{
+    background:var(--sb-bg-card); border:1px solid var(--sb-border); border-radius:16px;
+    box-shadow:var(--sb-shadow); padding:28px 30px 32px;
+  }
+  section.card > .head{display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:20px; border-bottom:1px solid var(--sb-border); padding-bottom:14px;}
+  section.card > .head h2{margin:0; font-size:19px; font-weight:700; letter-spacing:-.01em;}
+  section.card > .head .tag{font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--sb-amber-hover); background:var(--sb-amber-soft); padding:4px 10px; border-radius:999px;}
+  section.card > .note{font-size:12.5px; color:var(--sb-text-muted); margin:-10px 0 20px;}
+
+  /* ---------- colors ---------- */
+  .swatch-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:14px;}
+  .swatch{border:1px solid var(--sb-border); border-radius:12px; overflow:hidden; background:var(--sb-bg-card);}
+  .swatch .fill{height:64px; position:relative;}
+  .swatch .fill.checker{background-image:linear-gradient(45deg,#e2e8f0 25%,transparent 25%),linear-gradient(-45deg,#e2e8f0 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e2e8f0 75%),linear-gradient(-45deg,transparent 75%,#e2e8f0 75%); background-size:12px 12px; background-position:0 0,0 6px,6px -6px,-6px 0;}
+  .swatch .meta{padding:9px 11px; display:flex; flex-direction:column; gap:2px;}
+  .swatch .meta .name{font-size:12.5px; font-weight:700; font-family:'JetBrains Mono',monospace;}
+  .swatch .meta .hex{font-size:11px; color:var(--sb-text-muted); font-family:'JetBrains Mono',monospace;}
+  .swatch .meta .use{font-size:10.5px; color:var(--sb-text-muted); line-height:1.3; margin-top:2px;}
+
+  .theme-panel{border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:14px;}
+  .theme-panel.light{background:var(--sb-bg-main); border:1px solid var(--sb-border);}
+  .theme-panel.dark{background:var(--sbd-bg-main); border:1px solid var(--sbd-border);}
+  .theme-panel .theme-label{font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;}
+  .theme-panel.light .theme-label{color:var(--sb-text-muted);}
+  .theme-panel.dark .theme-label{color:var(--sbd-text-muted);}
+
+  /* ---------- typography ---------- */
+  .type-row{display:flex; align-items:baseline; gap:18px; padding:12px 0; border-bottom:1px dashed var(--sb-border);}
+  .type-row:last-child{border-bottom:none;}
+  .type-row .sample{flex:1; min-width:0;}
+  .type-row .spec{width:210px; flex:none; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--sb-text-muted); text-align:right;}
+  .t-h1{font-size:32px; font-weight:800; letter-spacing:-.02em; margin:0;}
+  .t-h2{font-size:24px; font-weight:700; letter-spacing:-.01em; margin:0;}
+  .t-h3{font-size:19px; font-weight:700; margin:0;}
+  .t-h4{font-size:16px; font-weight:700; margin:0;}
+  .t-body{font-size:14px; font-weight:400; margin:0;}
+  .t-small{font-size:12.5px; font-weight:500; color:var(--sb-text-muted); margin:0;}
+  .t-eyebrow{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:var(--sb-text-muted); margin:0;}
+  .t-mono{font-size:12.5px; font-family:'JetBrains Mono',monospace; color:var(--sb-text-muted); margin:0;}
+
+  /* ---------- buttons ---------- */
+  .row-wrap{display:flex; flex-wrap:wrap; gap:12px; align-items:center;}
+  .btn{font-family:inherit; font-size:13.5px; font-weight:600; border-radius:10px; padding:10px 18px; border:1px solid transparent; cursor:pointer; display:inline-flex; align-items:center; gap:8px; transition:filter .15s;}
+  .btn-amber{background:var(--sb-amber); color:#fff;}
+  .btn-amber:hover{background:var(--sb-amber-hover);}
+  .btn-outline{background:transparent; border-color:var(--sb-border); color:var(--sb-text-main);}
+  .btn-danger{background:var(--sb-danger); color:#fff;}
+  .btn-ghost-danger{background:transparent; color:var(--sb-danger); border-color:transparent;}
+  .btn-sm{padding:6px 12px; font-size:12.5px;}
+  .btn-lg{padding:13px 24px; font-size:15px;}
+  .btn[disabled]{opacity:.45; cursor:not-allowed;}
+
+  /* ---------- badges ---------- */
+  .badge{display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700; padding:6px 13px; border-radius:999px; letter-spacing:.02em;}
+  .badge-success{background:var(--sb-success-soft); color:var(--sb-success);}
+  .badge-danger{background:var(--sb-danger-soft); color:var(--sb-danger);}
+  .badge-amber{background:var(--sb-amber-soft); color:var(--sb-amber-hover);}
+  .badge-blue{background:var(--sb-blue-soft); color:var(--sb-blue);}
+  .badge-purple{background:var(--sb-purple-soft); color:var(--sb-purple);}
+  .badge-dot{width:6px; height:6px; border-radius:50%; background:currentColor;}
+
+  /* ---------- forms ---------- */
+  .form-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:18px;}
+  .field label{display:block; font-size:12.5px; font-weight:600; margin-bottom:7px; color:var(--sb-text-main);}
+  .field .hint{font-size:11px; color:var(--sb-text-muted); margin-top:6px;}
+  .input, select.input, textarea.input{
+    width:100%; font-family:inherit; font-size:13.5px; padding:10px 13px; border-radius:10px;
+    border:1px solid var(--sb-border); background:var(--sb-bg-input); color:var(--sb-text-main);
+  }
+  .input.focused{border-color:rgba(245,158,11,.75); box-shadow:0 0 0 3px rgba(245,158,11,.15);}
+  .input-icon{position:relative;}
+  .input-icon .input{padding-left:36px;}
+  .input-icon svg{position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--sb-text-muted);}
+  .checkbox-row{display:flex; align-items:center; gap:9px; font-size:13px;}
+  .checkbox-row input{width:16px; height:16px; accent-color:var(--sb-amber);}
+
+  /* ---------- icons ---------- */
+  .icon-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:4px;}
+  .icon-cell{display:flex; flex-direction:column; align-items:center; gap:8px; padding:14px 6px; border-radius:10px;}
+  .icon-cell:hover{background:var(--sb-bg-surface);}
+  .icon-cell svg{width:22px; height:22px; color:var(--sb-text-main);}
+  .icon-cell .iname{font-size:9.5px; font-family:'JetBrains Mono',monospace; color:var(--sb-text-muted); text-align:center; word-break:break-word; line-height:1.25;}
+
+  /* ---------- status toggle ---------- */
+  .stoggle{position:relative; display:inline-flex; align-items:center; padding:3px; border-radius:999px; border:1px solid var(--sb-border); background:var(--sb-bg-input); width:140px; height:36px;}
+  .stoggle .thumb{position:absolute; top:3px; bottom:3px; width:calc(50% - 2px); border-radius:999px;}
+  .stoggle .side{width:50%; text-align:center; font-size:11px; font-weight:700; position:relative; z-index:1;}
+  .stoggle.on .thumb{left:3px; background:var(--sb-success);}
+  .stoggle.on .side.a{color:#fff;} .stoggle.on .side.b{color:var(--sb-text-muted);}
+  .stoggle.off .thumb{left:calc(50% - 1px); background:var(--sb-text-muted);}
+  .stoggle.off .side.a{color:var(--sb-text-muted);} .stoggle.off .side.b{color:#fff;}
+
+  /* ---------- row actions ---------- */
+  .rowactions{display:inline-flex; gap:8px;}
+  .rowactions button{background:none; border:none; padding:5px; cursor:pointer; display:flex;}
+  .rowactions svg{width:18px; height:18px;}
+  .ra-view svg{color:var(--sb-blue);}
+  .ra-edit svg{color:var(--sb-amber);}
+  .ra-del svg{color:var(--sb-danger);}
+  .rowactions.disabled .ra-edit svg, .rowactions.disabled .ra-del svg{color:var(--sb-text-muted); opacity:.5;}
+
+  /* ---------- kpi + table + nav samples ---------- */
+  .kpi-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px;}
+  .kpi{border:1px solid var(--sb-border); border-radius:12px; padding:16px; display:flex; align-items:center; justify-content:space-between; gap:10px;}
+  .kpi .icon-wrap{width:44px; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex:none;}
+  .kpi .icon-wrap svg{width:20px; height:20px;}
+  .kpi .label{font-size:11.5px; color:var(--sb-text-muted); margin:0 0 4px;}
+  .kpi .value{font-size:20px; font-weight:800; margin:0;}
+
+  table.sample{width:100%; border-collapse:collapse; font-size:13px;}
+  table.sample th{text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--sb-text-muted); font-weight:700; padding:10px 12px; border-bottom:2px solid var(--sb-border);}
+  table.sample td{padding:12px; border-bottom:1px solid var(--sb-border); vertical-align:middle;}
+  table.sample tr:hover td{background:rgba(245,158,11,.05);}
+
+  .nav-sample{display:flex; flex-direction:column; gap:4px; width:220px; background:var(--sb-bg-card); border:1px solid var(--sb-border); border-radius:12px; padding:12px;}
+  .nav-item{display:flex; align-items:center; gap:11px; padding:9px 12px; border-radius:8px; font-size:13px; font-weight:500; color:var(--sb-text-muted);}
+  .nav-item svg{width:16px; height:16px;}
+  .nav-item.active{background:var(--sb-sidebar-bg); color:var(--sb-sidebar-text); font-weight:600;}
+
+  .barlist{display:flex; flex-direction:column; gap:12px; max-width:420px;}
+  .barlist .brow .toprow{display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:5px;}
+  .barlist .brow .toprow b{font-weight:600;}
+  .barlist .brow .toprow span.v{color:var(--sb-text-muted);}
+  .barlist .track{height:8px; border-radius:4px; background:var(--sb-bg-surface); overflow:hidden;}
+  .barlist .fill{height:100%; border-radius:4px;}
+
+  .modal-sample{border:1px solid var(--sb-border); border-radius:14px; overflow:hidden; box-shadow:0 20px 40px rgba(15,23,42,.18); max-width:420px;}
+  .modal-sample .mhead{display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--sb-border);}
+  .modal-sample .mhead h4{margin:0; font-size:15px; font-weight:700; display:flex; align-items:center; gap:8px;}
+  .modal-sample .mhead svg{width:16px; height:16px; cursor:pointer; color:var(--sb-text-muted);}
+  .modal-sample .mbody{padding:18px;}
+  .modal-sample .mfoot{display:flex; justify-content:flex-end; gap:10px; padding:14px 18px; border-top:1px solid var(--sb-border);}
+
+  footer.meta{text-align:center; font-size:11.5px; color:var(--sb-text-muted); padding-top:8px;}
+
+  @media (max-width:520px){
+    .type-row{flex-direction:column; align-items:flex-start; gap:6px;}
+    .type-row .spec{width:auto; text-align:left;}
+  }
+</style>
+
+<div class="wrap">
+
+  <div class="masthead">
+    <span class="eyebrow">StockBar · Referencia visual</span>
+    <h1>Guía de patrones de interfaz</h1>
+    <p>Tokens y componentes tal como existen hoy en el código (React + Bootstrap 5 / Flutter). Cada sección está pensada para capturarse por separado y llenar la plantilla de Figma.</p>
+  </div>
+
+  <!-- COLORS -->
+  <section class="card">
+    <div class="head"><h2>Color — Modo claro</h2><span class="tag">Fills / Styles</span></div>
+    <div class="swatch-grid" id="swatches-light"></div>
+  </section>
+
+  <section class="card">
+    <div class="head"><h2>Color — Modo oscuro</h2><span class="tag">Fills / Styles</span></div>
+    <div class="swatch-grid" id="swatches-dark"></div>
+  </section>
+
+  <section class="card">
+    <div class="head"><h2>Color en contexto</h2></div>
+    <p class="note">Mismos tokens aplicados a una tarjeta real, lado a lado.</p>
+    <div class="row-wrap" style="align-items:stretch; gap:20px;">
+      <div class="theme-panel light" style="flex:1; min-width:260px;">
+        <span class="theme-label">Claro</span>
+        <div class="kpi" style="background:var(--sb-bg-card);">
+          <div><p class="label">Ingresos por Ventas</p><p class="value">$ 272.000</p></div>
+          <div class="icon-wrap" style="background:var(--sb-success-soft); color:var(--sb-success);">${icon('CurrencyDollar')}</div>
+        </div>
+      </div>
+      <div class="theme-panel dark" style="flex:1; min-width:260px;">
+        <span class="theme-label">Oscuro</span>
+        <div class="kpi" style="background:var(--sbd-bg-card); border-color:var(--sbd-border); color:var(--sbd-text-main);">
+          <div><p class="label" style="color:var(--sbd-text-muted);">Ingresos por Ventas</p><p class="value">$ 272.000</p></div>
+          <div class="icon-wrap" style="background:rgba(16,185,129,.18); color:var(--sbd-success);">${icon('CurrencyDollar')}</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TYPOGRAPHY -->
+  <section class="card">
+    <div class="head"><h2>Tipografía</h2><span class="tag">Text Styles</span></div>
+    <p class="note">Familia: Inter (web) · Poppins (móvil). Peso y tamaño exactos usados en el código.</p>
+    <div>
+      <div class="type-row"><div class="sample"><p class="t-h1">Gestión de Inventario</p></div><div class="spec">H1 · 32px · 800 · -0.02em</div></div>
+      <div class="type-row"><div class="sample"><p class="t-h2">Registrar Nueva Compra</p></div><div class="spec">H2 · 24px · 700</div></div>
+      <div class="type-row"><div class="sample"><p class="t-h3">Detalle del Carrito</p></div><div class="spec">H3 · 19px · 700</div></div>
+      <div class="type-row"><div class="sample"><p class="t-h4">Ingresos por Ventas</p></div><div class="spec">H4 · 16px · 700</div></div>
+      <div class="type-row"><div class="sample"><p class="t-body">Gestión y control de pedidos generados en la plataforma web.</p></div><div class="spec">Body · 14px · 400</div></div>
+      <div class="type-row"><div class="sample"><p class="t-small">Aguardiente Antioqueño 750ml · Stock: 24</p></div><div class="spec">Small / Muted · 12.5px · 500</div></div>
+      <div class="type-row"><div class="sample"><p class="t-eyebrow">Cambiar Estado</p></div><div class="spec">Eyebrow · 11px · 700 · uppercase</div></div>
+      <div class="type-row"><div class="sample"><p class="t-mono">VNT-001 · FAC-1092 · PROD-01</p></div><div class="spec">Mono (ids/códigos) · JetBrains Mono</div></div>
+    </div>
+  </section>
+
+  <!-- BUTTONS -->
+  <section class="card">
+    <div class="head"><h2>Botones</h2><span class="tag">Components</span></div>
+    <div class="row-wrap">
+      <button class="btn btn-amber btn-lg">Nuevo Usuario</button>
+      <button class="btn btn-amber">Registrar Compra</button>
+      <button class="btn btn-amber btn-sm">Guardar</button>
+      <button class="btn btn-amber" disabled>Confirmar Venta</button>
+    </div>
+    <div class="row-wrap" style="margin-top:14px;">
+      <button class="btn btn-outline btn-lg">Cancelar</button>
+      <button class="btn btn-outline">Cancelar</button>
+      <button class="btn btn-outline btn-sm">Cancelar</button>
+    </div>
+    <div class="row-wrap" style="margin-top:14px;">
+      <button class="btn btn-danger">Eliminar</button>
+      <button class="btn btn-ghost-danger">Cerrar Sesión</button>
+    </div>
+  </section>
+
+  <!-- BADGES -->
+  <section class="card">
+    <div class="head"><h2>Badges de estado</h2><span class="tag">Components</span></div>
+    <p class="note">El color siempre representa un significado real (ver reglas de estado), nunca decoración.</p>
+    <div class="row-wrap">
+      <span class="badge badge-success"><span class="badge-dot"></span>Activo</span>
+      <span class="badge badge-success"><span class="badge-dot"></span>Completado</span>
+      <span class="badge badge-success"><span class="badge-dot"></span>Recibida</span>
+      <span class="badge badge-amber"><span class="badge-dot"></span>Pendiente</span>
+      <span class="badge badge-danger"><span class="badge-dot"></span>Inactivo</span>
+      <span class="badge badge-danger"><span class="badge-dot"></span>Stock bajo</span>
+      <span class="badge badge-blue">Informativo</span>
+      <span class="badge badge-purple">Reportes</span>
+    </div>
+  </section>
+
+  <!-- FORMS -->
+  <section class="card">
+    <div class="head"><h2>Formularios</h2><span class="tag">Components</span></div>
+    <div class="form-grid">
+      <div class="field">
+        <label>Nombre completo</label>
+        <input class="input" value="Carlos Andrés Gómez">
+      </div>
+      <div class="field">
+        <label>Correo electrónico (foco)</label>
+        <input class="input focused" value="carlos@stockbar.com">
+      </div>
+      <div class="field">
+        <label>Rol de sistema</label>
+        <select class="input"><option>Administrador</option><option>Empleado_Auxiliar</option></select>
+      </div>
+      <div class="field">
+        <label>Buscar producto</label>
+        <div class="input-icon">${icon('Search')}<input class="input" placeholder="Buscar producto por nombre..."></div>
+      </div>
+      <div class="field">
+        <label>Descripción</label>
+        <textarea class="input" rows="3">Tequila reposado premium de alta demanda.</textarea>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <div class="checkbox-row"><input type="checkbox" checked id="cb1"><label for="cb1" style="margin:0; font-weight:500;">Recordar usuario</label></div>
+        <p class="hint">Estado deshabilitado: opacidad 45%, cursor not-allowed.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ICONS -->
+  <section class="card">
+    <div class="head"><h2>Iconografía</h2><span class="tag">react-bootstrap-icons</span></div>
+    <p class="note">38 íconos usados en el código. El nombre debajo es el import exacto — búscalo así en la librería de Bootstrap Icons de Figma.</p>
+    <div class="icon-grid" id="icon-grid"></div>
+  </section>
+
+  <!-- CUSTOM COMPONENTS -->
+  <section class="card">
+    <div class="head"><h2>Cambio de estado (StatusToggle)</h2><span class="tag">Component</span></div>
+    <p class="note">Inactivo siempre en gris neutro — nunca rojo/ámbar. El color de "activo" varía según semántica.</p>
+    <div class="row-wrap">
+      <div class="stoggle on"><div class="thumb"></div><span class="side a">Activo</span><span class="side b">Inactivo</span></div>
+      <div class="stoggle off"><div class="thumb"></div><span class="side a">Activo</span><span class="side b">Inactivo</span></div>
+      <div class="stoggle on" style="width:150px;"><div class="thumb"></div><span class="side a">Listo</span><span class="side b">Pendiente</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="head"><h2>Acciones de fila (RowActions)</h2><span class="tag">Component</span></div>
+    <div class="row-wrap">
+      <div class="rowactions">
+        <button class="ra-view">${icon('Eye')}</button>
+        <button class="ra-edit">${icon('PencilSquare')}</button>
+        <button class="ra-del">${icon('Trash')}</button>
+      </div>
+      <span class="t-small">— habilitado</span>
+      <div class="rowactions disabled" style="margin-left:24px;">
+        <button class="ra-view">${icon('Eye')}</button>
+        <button class="ra-edit">${icon('PencilSquare')}</button>
+        <button class="ra-del">${icon('Trash')}</button>
+      </div>
+      <span class="t-small">— bloqueado (registro de sistema)</span>
+    </div>
+  </section>
+
+  <!-- KPI + TABLE -->
+  <section class="card">
+    <div class="head"><h2>Tarjetas KPI</h2><span class="tag">Dashboard</span></div>
+    <div class="kpi-grid">
+      <div class="kpi"><div><p class="label">Ingresos por Ventas</p><p class="value">$ 402.000</p></div><div class="icon-wrap" style="background:var(--sb-success-soft); color:var(--sb-success);">${icon('CurrencyDollar')}</div></div>
+      <div class="kpi"><div><p class="label">Productos Activos</p><p class="value">3</p></div><div class="icon-wrap" style="background:var(--sb-blue-soft); color:var(--sb-blue);">${icon('BoxSeam')}</div></div>
+      <div class="kpi"><div><p class="label">Compras Pendientes</p><p class="value">1</p></div><div class="icon-wrap" style="background:var(--sb-amber-soft); color:var(--sb-amber-hover);">${icon('BagCheck')}</div></div>
+      <div class="kpi"><div><p class="label">Alertas de Stock</p><p class="value">1</p></div><div class="icon-wrap" style="background:var(--sb-danger-soft); color:var(--sb-danger);">${icon('ExclamationTriangle')}</div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="head"><h2>Gráfica de barras (BarList)</h2><span class="tag">Dashboard</span></div>
+    <div class="barlist">
+      <div class="brow"><div class="toprow"><b>Completado</b><span class="v">1</span></div><div class="track"><div class="fill" style="width:50%; background:var(--sb-success);"></div></div></div>
+      <div class="brow"><div class="toprow"><b>Pendiente</b><span class="v">1</span></div><div class="track"><div class="fill" style="width:50%; background:var(--sb-amber);"></div></div></div>
+      <div class="brow"><div class="toprow"><b>Tequila Don Julio Reposado</b><span class="v">12 un.</span></div><div class="track"><div class="fill" style="width:50%; background:var(--sb-blue);"></div></div></div>
+      <div class="brow"><div class="toprow"><b>Cerveza Club Colombia Dorada</b><span class="v">2 un.</span></div><div class="track"><div class="fill" style="width:8%; background:var(--sb-danger);"></div></div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="head"><h2>Tabla</h2><span class="tag">Pattern</span></div>
+    <div style="overflow-x:auto;">
+      <table class="sample">
+        <thead><tr><th>Código</th><th>Producto</th><th>Stock</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <tbody>
+          <tr>
+            <td style="color:var(--sb-amber-hover); font-weight:700;">PROD-01</td>
+            <td>Tequila Don Julio Reposado</td>
+            <td><span class="badge" style="background:var(--sb-bg-surface); color:var(--sb-text-main);">12 un.</span></td>
+            <td><div class="stoggle on" style="width:110px;"><div class="thumb"></div><span class="side a">Activo</span><span class="side b">Inact.</span></div></td>
+            <td><div class="rowactions">${icon('Eye')}${icon('PencilSquare')}${icon('Trash')}</div></td>
+          </tr>
+          <tr>
+            <td style="color:var(--sb-amber-hover); font-weight:700;">PROD-03</td>
+            <td>Cerveza Club Colombia Dorada</td>
+            <td><span class="badge badge-danger">2 un.</span></td>
+            <td><div class="stoggle on" style="width:110px;"><div class="thumb"></div><span class="side a">Activo</span><span class="side b">Inact.</span></div></td>
+            <td><div class="rowactions">${icon('Eye')}${icon('PencilSquare')}${icon('Trash')}</div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- NAV + MODAL -->
+  <div class="row-wrap" style="align-items:flex-start; gap:24px;">
+    <section class="card" style="flex:1; min-width:260px;">
+      <div class="head"><h2>Navegación lateral</h2><span class="tag">Sidebar</span></div>
+      <div class="nav-sample">
+        <div class="nav-item active">${icon('House')}Inicio</div>
+        <div class="nav-item">${icon('ShieldCheck')}Roles</div>
+        <div class="nav-item">${icon('People')}Usuarios</div>
+        <div class="nav-item">${icon('Tag')}Categorías</div>
+        <div class="nav-item">${icon('BoxSeam')}Productos</div>
+        <div class="nav-item">${icon('Truck')}Proveedores</div>
+        <div class="nav-item">${icon('CreditCard')}Métodos Pago</div>
+        <div class="nav-item">${icon('BagCheck')}Compras</div>
+        <div class="nav-item">${icon('Person')}Clientes</div>
+        <div class="nav-item">${icon('CartCheck')}Ventas</div>
+      </div>
+    </section>
+
+    <section class="card" style="flex:1; min-width:320px;">
+      <div class="head"><h2>Modal</h2><span class="tag">Pattern</span></div>
+      <div class="modal-sample">
+        <div class="mhead">
+          <h4 style="color:var(--sb-amber-hover);">${icon('BagCheck')}<span style="color:var(--sb-text-main);">Registrar Nueva Compra</span></h4>
+          <span>&times;</span>
+        </div>
+        <div class="mbody">
+          <div class="field" style="margin-bottom:14px;"><label>Proveedor</label><select class="input"><option>Distribuidora de Licores de Antioquia</option></select></div>
+          <div class="field"><label>Factura</label><input class="input" value="FAC-0003" readonly></div>
+        </div>
+        <div class="mfoot">
+          <button class="btn btn-outline">Cancelar</button>
+          <button class="btn btn-amber">Registrar Compra</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="meta">StockBar — guía generada a partir del código fuente actual (index.css · theme.dart) para poblar la plantilla de patrones de Figma.</footer>
+</div>
+
+<script>
+// ---- minimal 24x24 stroke-icon set (visual reference only — match by name in the Bootstrap Icons Figma library) ----
+const ICONS = {
+  Eye: '<circle cx="12" cy="12" r="3"/><path d="M2 12c2.5-5 7-7.5 10-7.5S19.5 7 22 12c-2.5 5-7 7.5-10 7.5S4.5 17 2 12Z"/>',
+  EyeSlash: '<path d="M3 3l18 18"/><path d="M9.9 5.1A10.6 10.6 0 0 1 12 4.9c3 0 7.5 2.5 10 7.1a12.9 12.9 0 0 1-3.2 3.9M6.6 6.6C4.4 8 2.9 10 2 12c2.5 4.6 7 7.1 10 7.1 1.4 0 3-.5 4.4-1.3"/><path d="M9.5 10a3 3 0 0 0 4.2 4.2"/>',
+  PencilSquare: '<path d="M4 20h16"/><path d="M14.5 4.5l3 3L8 17l-4 1 1-4Z"/>',
+  Trash: '<path d="M4 7h16"/><path d="M9 7V4.5h5V7"/><path d="M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h6a1.5 1.5 0 0 0 1.5-1.5L17 7"/><path d="M10 11v6M14 11v6"/>',
+  PlusLg: '<path d="M12 4v16M4 12h16" stroke-width="2.4"/>',
+  Plus: '<path d="M12 5v14M5 12h14"/>',
+  Search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.7-4.7"/>',
+  House: '<path d="M4 11l8-6.5 8 6.5"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/>',
+  ShieldCheck: '<path d="M12 3l7 3v5.5c0 4.6-3 7.7-7 9-4-1.3-7-4.4-7-9V6Z"/><path d="M9 12.3l2 2 4-4.3"/>',
+  ShieldExclamation: '<path d="M12 3l7 3v5.5c0 4.6-3 7.7-7 9-4-1.3-7-4.4-7-9V6Z"/><path d="M12 8v5M12 16v.1"/>',
+  ShieldLock: '<path d="M12 3l7 3v5.5c0 4.6-3 7.7-7 9-4-1.3-7-4.4-7-9V6Z"/><rect x="9.5" y="10.5" width="5" height="4" rx="1"/><path d="M10.3 10.5V9a1.7 1.7 0 0 1 3.4 0v1.5"/>',
+  People: '<circle cx="8.5" cy="9" r="2.8"/><path d="M3 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><circle cx="17" cy="9.5" r="2.2"/><path d="M15.8 14c2.3.3 4 2 4.2 4.6"/>',
+  Person: '<circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.5-3.8 3.2-6 6.5-6s6 2.2 6.5 6"/>',
+  PersonBadge: '<circle cx="12" cy="7.5" r="2.7"/><path d="M6.5 20c.4-3.4 2.8-5.4 5.5-5.4s5.1 2 5.5 5.4"/><rect x="9.5" y="16" width="5" height="3.6" rx="0.8"/>',
+  PersonCheck: '<circle cx="10" cy="8" r="3"/><path d="M4.2 19.5c.4-3.4 2.8-5.5 5.8-5.5s5.4 2 5.8 5.5"/><path d="M17 12.5l1.6 1.6 3-3.2"/>',
+  PersonCircle: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="2.6"/><path d="M6.5 19a6 6 0 0 1 11 0"/>',
+  PersonX: '<circle cx="10" cy="8" r="3"/><path d="M4.2 19.5c.4-3.4 2.8-5.5 5.8-5.5s5.4 2 5.8 5.5"/><path d="M16.5 11.5l4 4M20.5 11.5l-4 4"/>',
+  Building: '<rect x="5" y="3.5" width="10" height="17" rx="0.8"/><path d="M15 10.5h4v10h-4"/><path d="M8 7h1M11.5 7h1M8 10.5h1M11.5 10.5h1M8 14h1M11.5 14h1"/><path d="M9 20.5v-3.8h2v3.8"/>',
+  Calendar3: '<rect x="3.5" y="5" width="17" height="15.5" rx="1.4"/><path d="M3.5 9.5h17"/><path d="M8 3v3.4M16 3v3.4"/><circle cx="8" cy="13.2" r=".9"/><circle cx="12" cy="13.2" r=".9"/><circle cx="8" cy="16.8" r=".9"/>',
+  Layers: '<path d="M12 3.5l8 4-8 4-8-4Z"/><path d="M4 12l8 4 8-4"/><path d="M4 16l8 4 8-4"/>',
+  Tag: '<path d="M11.5 3.5H19a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-.44 1.06l-8 8a1.5 1.5 0 0 1-2.12 0l-6.5-6.5a1.5 1.5 0 0 1 0-2.12l8-8a1.5 1.5 0 0 1 1.06-.44Z"/><circle cx="15.5" cy="8.5" r="1.5"/>',
+  Truck: '<rect x="2.5" y="8" width="11" height="8.5" rx="0.8"/><path d="M13.5 11h4l3 3.2v2.3h-7Z"/><circle cx="7" cy="18.5" r="1.7"/><circle cx="17.5" cy="18.5" r="1.7"/>',
+  CreditCard: '<rect x="2.5" y="5.5" width="19" height="13" rx="1.6"/><path d="M2.5 9.5h19"/><rect x="5" y="13" width="4.5" height="2" rx="0.4"/>',
+  CurrencyDollar: '<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11"/><path d="M15 8.8c-.4-.8-1.6-1.3-3-1.3-1.9 0-3.2.9-3.2 2.2 0 3 6.4 1.4 6.4 4.4 0 1.4-1.4 2.4-3.4 2.4-1.5 0-2.8-.6-3.3-1.5"/>',
+  Envelope: '<rect x="2.5" y="5" width="19" height="14" rx="1.4"/><path d="M3 6l9 7 9-7"/>',
+  Telephone: '<path d="M6.6 3.8l3 2.7-1.6 3.2a11.4 11.4 0 0 0 5 5l3.2-1.6 2.7 3v2.9a1.6 1.6 0 0 1-1.8 1.6C10.5 20 4 13.5 3.5 6.6a1.6 1.6 0 0 1 1.6-1.8Z"/>',
+  LockFill: '<rect x="5" y="10.5" width="14" height="9.5" rx="1.6"/><path d="M7.5 10.5V7a4.5 4.5 0 0 1 9 0v3.5"/>',
+  BoxSeam: '<path d="M12 3.5l8.5 4.5v8L12 20.5 3.5 16v-8Z"/><path d="M3.5 8l8.5 4.5L20.5 8"/><path d="M12 12.5v8"/><path d="M16 5.7l-8 4.3"/>',
+  Bag: '<path d="M6 9h12l1 11.5H5Z"/><path d="M9 9V6.8a3 3 0 0 1 6 0V9"/>',
+  BagCheck: '<path d="M6 9h12l1 11.5H5Z"/><path d="M9 9V6.8a3 3 0 0 1 6 0V9"/><path d="M9.5 14.5l1.8 1.8 3.2-3.4"/>',
+  Cart: '<path d="M3 4h2.2l1.4 10.4A2 2 0 0 0 8.6 16H18a2 2 0 0 0 2-1.6L21.5 7H5.8"/><circle cx="9.5" cy="20" r="1.4"/><circle cx="17.5" cy="20" r="1.4"/>',
+  CartCheck: '<path d="M3 4h2.2l1.4 10.4A2 2 0 0 0 8.6 16H18a2 2 0 0 0 2-1.6L21.5 7H5.8"/><circle cx="9.5" cy="20" r="1.4"/><circle cx="17.5" cy="20" r="1.4"/><path d="M11.5 10l1.6 1.6 3-3.2"/>',
+  CheckCircle: '<circle cx="12" cy="12" r="9"/><path d="M8.3 12.3l2.4 2.4 5-5.4"/>',
+  CheckCircleFill: '<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><path d="M8.3 12.3l2.4 2.4 5-5.4" style="stroke:var(--sb-bg-card)" stroke-width="2"/>',
+  ExclamationTriangle: '<path d="M12 3.5l10 17H2Z"/><path d="M12 9.5v4.2M12 17v.1"/>',
+  ClockHistory: '<circle cx="12" cy="13" r="8"/><path d="M12 8.5V13l3 1.8"/><path d="M4.5 6.5a9.2 9.2 0 0 1 2-1.8"/><path d="M4 3.5v3h3"/>',
+  Sun: '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.4M12 19v2.4M4.5 12H2M22 12h-2.5M5.3 5.3l1.7 1.7M17 17l1.7 1.7M18.7 5.3L17 7M7 17l-1.7 1.7"/>',
+  Moon: '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/>',
+  BoxArrowRight: '<path d="M10.5 4H6.5a1.5 1.5 0 0 0-1.5 1.5v13A1.5 1.5 0 0 0 6.5 20h4"/><path d="M14 8l4 4-4 4"/><path d="M18 12H9"/>'
+};
+function svgOf(name){
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'+ (ICONS[name]||'') +'</svg>';
+}
+document.querySelectorAll('script').forEach(()=>{});
+
+// swatches
+const lightTokens = [
+  ['--bg-main','#F8FAFC','Fondo general de la app'],
+  ['--bg-card','#FFFFFF','Tarjetas, modales, header, sidebar'],
+  ['--bg-input','#FFFFFF','Fondo de inputs'],
+  ['--bg-surface','#F1F5F9','Pistas de switches / superficies internas'],
+  ['--text-main','#1A365D','Texto principal (azul profundo)'],
+  ['--text-muted','#64748B','Texto secundario / labels'],
+  ['--border-color','#E2E8F0','Bordes de tarjetas, inputs, tablas'],
+  ['--amber-action','#F59E0B','Botones de acción, iconos activos'],
+  ['--amber-action-hover','#D97706','Hover de acción'],
+  ['--sidebar-active-bg','#FEF3C7','Fondo de ítem de menú activo'],
+  ['--sidebar-active-text','#D97706','Texto de ítem de menú activo'],
+  ['--brand-blue','#3B82F6','Acento informativo / ver detalle'],
+  ['--brand-success','#10B981','Activo, Completado, Recibida'],
+  ['--brand-danger','#EF4444','Inactivo, alertas de stock'],
+  ['--brand-purple','#A855F7','Acento adicional'],
+  ['--blue-soft-bg','#DBEAFE','Fondo suave de íconos/badges azules'],
+  ['--success-soft-bg','#D1FAE5','Fondo suave de éxito'],
+  ['--danger-soft-bg','#FEE2E2','Fondo suave de peligro'],
+  ['--amber-soft-bg','#FEF3C7','Fondo suave de acción'],
+];
+const darkTokens = [
+  ['--bg-main','#0F172A','Fondo general'],
+  ['--bg-card','#182232','Tarjetas, modales, header'],
+  ['--bg-input','#0F172A','Fondo de inputs'],
+  ['--bg-surface','#0F172A','Superficies internas'],
+  ['--text-main','#F8FAFC','Texto principal'],
+  ['--text-muted','#94A3B8','Texto secundario'],
+  ['--border-color','#233044','Bordes'],
+  ['--amber-action','#F59E0B','Acción (igual en ambos modos)'],
+  ['--amber-action-hover','#FBBF24','Hover de acción'],
+  ['--brand-blue','#60A5FA','Acento informativo'],
+  ['--brand-success','#34D399','Positivo'],
+  ['--brand-danger','#F87171','Negativo'],
+];
+function renderSwatches(id, tokens){
+  const el = document.getElementById(id);
+  el.innerHTML = tokens.map(([name,hex,use])=>`
+    <div class="swatch">
+      <div class="fill" style="background:${hex}"></div>
+      <div class="meta">
+        <span class="name">${name}</span>
+        <span class="hex">${hex}</span>
+        <span class="use">${use}</span>
+      </div>
+    </div>`).join('');
+}
+renderSwatches('swatches-light', lightTokens);
+renderSwatches('swatches-dark', darkTokens);
+
+// icon grid
+const iconGrid = document.getElementById('icon-grid');
+iconGrid.innerHTML = Object.keys(ICONS).concat(['Bag']).filter((v,i,a)=>a.indexOf(v)===i).sort().map(name=>`
+  <div class="icon-cell">${svgOf(name)}<span class="iname">${name}</span></div>
+`).join('');
+
+// replace inline ${icon(...)} placeholders authored above (template-literal style used in markup comments)
+document.body.innerHTML = document.body.innerHTML.replace(/\$\{icon\('([^']+)'\)\}/g, (_, n) => svgOf(n));
+</script>
