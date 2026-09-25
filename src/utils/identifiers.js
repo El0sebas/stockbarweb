@@ -1,3 +1,13 @@
+// Para llaves primarias numéricas puras (id_venta, id_baja, id_jornada...),
+// no para códigos visibles con prefijo. generateNextIdentifier con prefix=''
+// igual antepone el separador ("-001" -> Number() = -1) y esos negativos
+// nunca superan el máximo real, generando el mismo id una y otra vez.
+export const generateNextId = (items = [], key) =>
+  items.reduce((max, item) => {
+    const value = Number(item?.[key]);
+    return Number.isFinite(value) ? Math.max(max, value) : max;
+  }, 0) + 1;
+
 export const generateNextIdentifier = ({ items = [], key, prefix = '', pad = 3, separator = '-' }) => {
   if (!key) {
     const fallbackNumber = 1;

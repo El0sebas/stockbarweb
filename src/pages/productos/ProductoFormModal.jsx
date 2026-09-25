@@ -166,17 +166,26 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
                 </div>
               </div>
 
-              <div className="form-check form-switch mt-2">
-                <input
-                  className="form-check-input"
-                  type="checkbox"
-                  name="maneja_vencimiento"
-                  checked={Boolean(formData.maneja_vencimiento)}
-                  onChange={handleChange}
-                />
-                <label className="form-check-label ms-2">Maneja vencimiento / lote</label>
-                <div className="form-text small" style={{ color: styles.mutedColor }}>
-                  Solo exige fecha de vencimiento cuando este producto entre en un lote nuevo desde Compras. No crea lotes desde aquí.
+              <div
+                className="p-3 rounded-3 d-flex align-items-center justify-content-between gap-3"
+                style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}
+              >
+                <div>
+                  <div className="fw-semibold small">Maneja vencimiento / lote</div>
+                  <div className="small" style={{ color: styles.mutedColor }}>
+                    Solo exige fecha de vencimiento cuando este producto entre en un lote nuevo desde Compras. No crea lotes desde aquí.
+                  </div>
+                </div>
+                <div className="form-check form-switch m-0 flex-shrink-0">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    role="switch"
+                    name="maneja_vencimiento"
+                    style={{ width: '2.6rem', height: '1.4rem', cursor: 'pointer' }}
+                    checked={Boolean(formData.maneja_vencimiento)}
+                    onChange={handleChange}
+                  />
                 </div>
               </div>
             </div>

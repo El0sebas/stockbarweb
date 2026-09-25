@@ -1,11 +1,11 @@
 import React from 'react';
-import { BoxSeam, Tag, CurrencyDollar, Layers, ShieldExclamation } from 'react-bootstrap-icons';
+import { BoxSeam, Tag, CurrencyDollar, Layers, ShieldExclamation, ExclamationTriangle } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultCategorias } from '../../data/defaultCategorias';
 import { defaultLotes } from '../../data/defaultLotes';
-import { getLotesProducto, getStockDisponible } from '../../utils/stock';
+import { getLotesProducto, getStockDisponible, getEstadoVencimiento } from '../../utils/stock';
 
-export const ProductoDetailModal = ({ show, onClose, producto }) => {
+export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) => {
   const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
   const [lotes] = usePersistentState('stockbar_lotes', defaultLotes);
 
@@ -155,16 +155,41 @@ export const ProductoDetailModal = ({ show, onClose, producto }) => {
                           <th className="small text-uppercase" style={{ color: styles.mutedColor }}>Lote proveedor</th>
                           <th className="small text-uppercase text-center" style={{ color: styles.mutedColor }}>Disponible</th>
                           <th className="small text-uppercase" style={{ color: styles.mutedColor }}>Vence</th>
+                          <th className="small text-uppercase text-center" style={{ color: styles.mutedColor }}></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {lotesProducto.map((lote) => (
-                          <tr key={lote.id_lote}>
-                            <td className="small">{lote.numero_lote_proveedor || `Lote #${lote.id_lote}`}</td>
-                            <td className="small text-center">{lote.cantidad_disponible} un.</td>
-                            <td className="small" style={{ color: styles.mutedColor }}>{lote.fecha_vencimiento || 'Sin vencimiento'}</td>
-                          </tr>
-                        ))}
+                        {lotesProducto.map((lote) => {
+                          const estado = getEstadoVencimiento(lote.fecha_vencimiento);
+                          return (
+                            <tr key={lote.id_lote}>
+                              <td className="small">{lote.numero_lote_proveedor || `Lote #${lote.id_lote}`}</td>
+                              <td className="small text-center">{lote.cantidad_disponible} un.</td>
+                              <td className="small">
+                                <span style={{ color: styles.mutedColor }}>{lote.fecha_vencimiento || 'Sin vencimiento'}</span>
+                                {estado === 'vencido' && (
+                                  <span className="badge ms-2" style={{ backgroundColor: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' }}>Vencido</span>
+                                )}
+                                {estado === 'por_vencer' && (
+                                  <span className="badge ms-2" style={{ backgroundColor: 'var(--amber-soft-bg)', color: 'var(--amber-action)' }}>Por vencer</span>
+                                )}
+                              </td>
+                              <td className="text-center">
+                                {estado && Number(lote.cantidad_disponible) > 0 && onDarDeBaja && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm p-1 border-0"
+                                    style={{ color: 'var(--brand-danger)' }}
+                                    title="Dar de baja este lote"
+                                    onClick={() => onDarDeBaja(lote)}
+                                  >
+                                    <ExclamationTriangle size={15} />
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   )}

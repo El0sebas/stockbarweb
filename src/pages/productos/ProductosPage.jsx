@@ -11,20 +11,53 @@ import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultProductos } from '../../data/defaultProductos';
 import { defaultCategorias } from '../../data/defaultCategorias';
 import { defaultLotes } from '../../data/defaultLotes';
+import { defaultMotivosBaja } from '../../data/defaultMotivosBaja';
+import { defaultBajas } from '../../data/defaultBajas';
 import { getStockDisponible } from '../../utils/stock';
+import { aplicarBaja } from '../../utils/bajas';
+import { useAuth } from '../../context/AuthContext';
+import { BajaFormModal } from '../bajas/BajaFormModal';
 
 export const ProductosPage = () => {
   const [productos, setProductos] = usePersistentState('stockbar_productos', defaultProductos);
   const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
-  const [lotes] = usePersistentState('stockbar_lotes', defaultLotes);
+  const [lotes, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
+  const [motivos] = usePersistentState('stockbar_motivos_baja', defaultMotivosBaja);
+  const [bajas, setBajas] = usePersistentState('stockbar_bajas', defaultBajas);
+  const { currentUser } = useAuth();
 
   const [searchTerm, setSearchTerm] = useState('');
 
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showBajaModal, setShowBajaModal] = useState(false);
+  const [loteParaBaja, setLoteParaBaja] = useState(null);
 
   const [selectedProducto, setSelectedProducto] = useState(null);
+
+  const handleDarDeBaja = (lote) => {
+    setLoteParaBaja(lote);
+    setShowDetailModal(false);
+    setShowBajaModal(true);
+  };
+
+  const handleSaveBaja = (bajaParcial) => {
+    const { nuevosLotes, nuevasBajas } = aplicarBaja({
+      lotes,
+      bajas,
+      baja: {
+        ...bajaParcial,
+        id_usuario: currentUser?.id_usuario || null,
+        usuario: currentUser?.nombre || 'N/A'
+      }
+    });
+    setLotes(nuevosLotes);
+    setBajas(nuevasBajas);
+    setShowBajaModal(false);
+    setLoteParaBaja(null);
+    showToast('success', 'Baja registrada y stock del lote actualizado');
+  };
 
   const handleOpenCreate = () => {
     setSelectedProducto(null);
@@ -222,6 +255,17 @@ export const ProductosPage = () => {
         show={showDetailModal}
         onClose={() => setShowDetailModal(false)}
         producto={selectedProducto}
+        onDarDeBaja={handleDarDeBaja}
+      />
+
+      <BajaFormModal
+        show={showBajaModal}
+        onClose={() => { setShowBajaModal(false); setLoteParaBaja(null); }}
+        onSave={handleSaveBaja}
+        lotes={lotes}
+        productos={productos}
+        motivos={motivos}
+        loteInicial={loteParaBaja}
       />
 
       <ConfirmDeleteModal

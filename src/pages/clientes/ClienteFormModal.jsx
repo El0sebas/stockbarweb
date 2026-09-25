@@ -2,12 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Person } from 'react-bootstrap-icons';
 
 export const ClienteFormModal = ({ show, onClose, onSave, cliente }) => {
-  const initialState = { documento: '', nombre_completo: '', telefono: '', correo: '' };
+  const initialState = { tipo_documento: 'CC', numero_documento: '', nombre_completo: '', telefono: '', correo: '', fecha_nacimiento: '' };
   const [formData, setFormData] = useState(initialState);
 
   useEffect(() => {
     if (cliente) {
-      setFormData({ documento: cliente.documento, nombre_completo: cliente.nombre_completo, telefono: cliente.telefono || '', correo: cliente.correo || '' });
+      setFormData({
+        tipo_documento: cliente.tipo_documento || 'CC',
+        numero_documento: cliente.numero_documento,
+        nombre_completo: cliente.nombre_completo,
+        telefono: cliente.telefono || '',
+        correo: cliente.correo || '',
+        fecha_nacimiento: cliente.fecha_nacimiento || ''
+      });
     } else {
       setFormData(initialState);
     }
@@ -39,9 +46,21 @@ export const ClienteFormModal = ({ show, onClose, onSave, cliente }) => {
           </div>
           <form onSubmit={handleSubmit}>
             <div className="modal-body p-4 d-flex flex-column gap-3">
-              <div>
-                <label className="form-label small fw-semibold">Documento</label>
-                <input type="text" name="documento" required className="form-control shadow-none" placeholder="Ej: 1017223344" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.documento} onChange={handleChange} />
+              <div className="row g-3">
+                <div className="col-4">
+                  <label className="form-label small fw-semibold">Tipo</label>
+                  <select name="tipo_documento" className="form-select shadow-none" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.tipo_documento} onChange={handleChange}>
+                    <option value="CC">CC</option>
+                    <option value="CE">CE</option>
+                    <option value="TI">TI</option>
+                    <option value="PAS">PAS</option>
+                    <option value="NIT">NIT</option>
+                  </select>
+                </div>
+                <div className="col-8">
+                  <label className="form-label small fw-semibold">N° Documento</label>
+                  <input type="text" name="numero_documento" required className="form-control shadow-none" placeholder="Ej: 1017223344" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.numero_documento} onChange={handleChange} />
+                </div>
               </div>
               <div>
                 <label className="form-label small fw-semibold">Nombre Completo</label>
@@ -55,6 +74,13 @@ export const ClienteFormModal = ({ show, onClose, onSave, cliente }) => {
                 <div className="col-6">
                   <label className="form-label small fw-semibold">Correo Electrónico</label>
                   <input type="email" name="correo" className="form-control shadow-none" placeholder="correo@ejemplo.com" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.correo} onChange={handleChange} />
+                </div>
+              </div>
+              <div>
+                <label className="form-label small fw-semibold">Fecha de nacimiento</label>
+                <input type="date" name="fecha_nacimiento" className="form-control shadow-none" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.fecha_nacimiento} onChange={handleChange} />
+                <div className="form-text small" style={{ color: styles.mutedColor }}>
+                  Necesaria para vender productos con verificación de edad (licores, cerveza).
                 </div>
               </div>
             </div>

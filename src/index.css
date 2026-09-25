@@ -120,6 +120,15 @@ textarea:focus {
   box-shadow: 0 0 0 0.2rem rgba(245, 158, 11, 0.15) !important;
 }
 
+/* La regla .form-check-input de arriba fuerza el mismo fondo pálido siempre
+   (incluso :checked), así que un switch nunca se veía distinto encendido vs
+   apagado. El color debe comunicar estado (ver SISTEMA_DE_DISENO.md), así
+   que aquí se recupera ese contraste solo para los switches (role="switch"). */
+.form-switch .form-check-input:checked {
+  background-color: var(--brand-success) !important;
+  border-color: var(--brand-success) !important;
+}
+
 .form-control::placeholder,
 textarea::placeholder {
   color: var(--text-muted) !important;

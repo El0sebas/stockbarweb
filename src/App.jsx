@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
+import { AuthProvider } from './context/AuthContext';
 import { Login } from './components/auth/Login';
 import { MainLayout } from './components/layout/MainLayout';
 import { SplashScreen } from './components/SplashScreen';
@@ -12,6 +13,8 @@ import { CategoriasPage } from './pages/categorias/CategoriasPage';
 import { ProductosPage } from './pages/productos/ProductosPage';
 import { ProveedoresPage } from './pages/proveedores/ProveedoresPage';
 import { ComprasPage } from './pages/compras/ComprasPage';
+import { BajasPage } from './pages/bajas/BajasPage';
+import { JornadaPage } from './pages/jornada/JornadaPage';
 import { ClientesPage } from './pages/clientes/ClientesPage';
 import { VentasPage } from './pages/ventas/VentasPage';
 import { MetodosPagoPage } from './pages/metodospago/MetodosPagoPage';
@@ -37,6 +40,8 @@ const AppContent = () => {
       case 'proveedores': return <ProveedoresPage />;
       case 'metodospago': return <MetodosPagoPage />;
       case 'compras': return <ComprasPage />;
+      case 'bajas': return <BajasPage />;
+      case 'jornada': return <JornadaPage />;
       case 'clientes': return <ClientesPage />;
       case 'ventas': return <VentasPage />;
       default: return <DashboardPage />;
@@ -68,7 +73,9 @@ const AppContent = () => {
 export default function App() {
   return (
     <ThemeProvider>
-      <AppContent />
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
     </ThemeProvider>
   );
 }

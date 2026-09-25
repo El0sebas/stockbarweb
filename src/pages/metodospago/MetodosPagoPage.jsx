@@ -5,7 +5,7 @@ import { RowActions } from '../../components/common/RowActions';
 import { StatusToggle } from '../../components/common/StatusToggle';
 import { MetodoPagoFormModal } from './MetodoPagoFormModal';
 import { showToast } from '../../utils/alerts';
-import { generateNextIdentifier } from '../../utils/identifiers';
+import { generateNextId } from '../../utils/identifiers';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 
@@ -32,7 +32,7 @@ export const MetodosPagoPage = () => {
       setMetodos(metodos.map(m => m.id_metodo_pago === data.id_metodo_pago ? { ...m, nombre: data.nombre } : m));
       showToast('success', 'Método de pago actualizado exitosamente');
     } else {
-      const nuevoId = Number(generateNextIdentifier({ items: metodos, key: 'id_metodo_pago' }));
+      const nuevoId = generateNextId(metodos, 'id_metodo_pago');
       setMetodos([...metodos, { nombre: data.nombre, id_metodo_pago: nuevoId, estado: 'Activo' }]);
       showToast('success', `Método de pago ${nuevoId} creado exitosamente`);
     }

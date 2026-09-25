@@ -1,11 +1,20 @@
 import React from 'react';
 import { useTheme } from '../../context/ThemeContext';
-import { Sun, Moon, PersonCircle, BoxArrowRight } from 'react-bootstrap-icons';
+import { useAuth } from '../../context/AuthContext';
+import { Sun, Moon, PersonCircle, BoxArrowRight, DoorOpen, DoorClosed } from 'react-bootstrap-icons';
 import { Sidebar } from './Sidebar';
 import { Footer } from './Footer';
+import { usePersistentState } from '../../hooks/usePersistentState';
+import { defaultJornadas } from '../../data/defaultJornadas';
+import { getJornadaAbierta } from '../../utils/jornada';
 
 export const MainLayout = ({ children, activeTab, setActiveTab, onLogout }) => {
   const { isDarkMode, toggleTheme } = useTheme();
+  const { currentUser } = useAuth();
+  // Solo lectura aquí: el indicador se mantiene igual sin importar la
+  // pantalla activa, el propio módulo Jornada es quien lo cambia.
+  const [jornadas] = usePersistentState('stockbar_jornadas', defaultJornadas);
+  const jornadaAbierta = getJornadaAbierta(jornadas);
 
   return (
     <div className="d-flex" style={{ minHeight: '100vh', backgroundColor: 'var(--bg-main)' }}>
@@ -19,9 +28,26 @@ export const MainLayout = ({ children, activeTab, setActiveTab, onLogout }) => {
           className="px-4 py-3 border-bottom d-flex align-items-center justify-content-between"
           style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
         >
-          <h5 className="m-0 fw-bold text-capitalize" style={{ color: 'var(--text-main)' }}>
-            {activeTab}
-          </h5>
+          <div className="d-flex align-items-center gap-3">
+            <h5 className="m-0 fw-bold text-capitalize" style={{ color: 'var(--text-main)' }}>
+              {activeTab}
+            </h5>
+            <button
+              className="btn btn-sm d-flex align-items-center gap-1 px-2 py-1 border-0"
+              onClick={() => setActiveTab('jornada')}
+              title={jornadaAbierta ? `Abierta por ${jornadaAbierta.usuario_apertura}` : 'Sin jornada abierta'}
+              style={{
+                backgroundColor: jornadaAbierta ? 'var(--success-soft-bg)' : 'var(--danger-soft-bg)',
+                color: jornadaAbierta ? 'var(--brand-success)' : 'var(--brand-danger)',
+                borderRadius: '999px',
+                fontSize: '0.75rem',
+                fontWeight: 600
+              }}
+            >
+              {jornadaAbierta ? <DoorOpen size={13} /> : <DoorClosed size={13} />}
+              {jornadaAbierta ? 'Jornada abierta' : 'Sin jornada'}
+            </button>
+          </div>
 
           <div className="d-flex align-items-center gap-3">
             {/* Botón Cambiar Tema */}
@@ -50,7 +76,7 @@ export const MainLayout = ({ children, activeTab, setActiveTab, onLogout }) => {
               >
                 <li>
                   <span className="dropdown-item-text small fw-semibold" style={{ color: 'var(--text-main)' }}>
-                    Administrador
+                    {currentUser?.nombre || 'Administrador'}
                   </span>
                 </li>
                 <li><hr className="dropdown-divider" style={{ borderColor: 'var(--border-color)' }} /></li>

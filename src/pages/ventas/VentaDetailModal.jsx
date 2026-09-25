@@ -1,13 +1,14 @@
 import React from 'react';
-import { CartCheck, Person, CreditCard, Calendar3 } from 'react-bootstrap-icons';
+import { CartCheck, Person, CreditCard, Calendar3, XCircle } from 'react-bootstrap-icons';
 import { calcularTotalesVenta } from '../../utils/impuestos';
 
-export const VentaDetailModal = ({ show, onClose, venta }) => {
+export const VentaDetailModal = ({ show, onClose, venta, onAnular }) => {
   if (!show || !venta) return null;
 
   // Espejo de vw_totales_venta: base gravable + IVA a partir de la tasa
   // que quedó congelada por línea al momento de la venta.
   const totales = calcularTotalesVenta(venta.productos || []);
+  const totalPagado = (venta.pagos || []).reduce((acc, p) => acc + Number(p.monto), 0);
 
   const styles = {
     modalBg: 'var(--bg-card)',
@@ -15,6 +16,12 @@ export const VentaDetailModal = ({ show, onClose, venta }) => {
     mutedColor: 'var(--text-muted)',
     borderCol: 'var(--border-color)',
     detailBoxBg: 'var(--bg-main)',
+  };
+
+  const estadoBadgeStyle = () => {
+    if (venta.estado === 'COMPLETADA') return { backgroundColor: 'var(--success-soft-bg)', color: 'var(--brand-success)' };
+    if (venta.estado === 'ANULADA') return { backgroundColor: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' };
+    return { backgroundColor: 'var(--amber-soft-bg)', color: 'var(--amber-action)' };
   };
 
   return (
@@ -44,14 +51,7 @@ export const VentaDetailModal = ({ show, onClose, venta }) => {
                 </span>
                 <h4 className="fw-bold m-0">{venta.cliente}</h4>
               </div>
-              <span
-                className="badge px-3 py-2 fw-medium"
-                style={{
-                  backgroundColor: venta.estado === 'Completado' ? 'var(--success-soft-bg)' : 'var(--amber-soft-bg)',
-                  color: venta.estado === 'Completado' ? 'var(--brand-success)' : 'var(--amber-action)',
-                  borderRadius: '12px'
-                }}
-              >
+              <span className="badge px-3 py-2 fw-medium" style={{ ...estadoBadgeStyle(), borderRadius: '12px' }}>
                 {venta.estado}
               </span>
             </div>
@@ -63,25 +63,16 @@ export const VentaDetailModal = ({ show, onClose, venta }) => {
                     <Calendar3 size={16} />
                     <span className="small">Fecha</span>
                   </div>
-                  <span className="fw-semibold">{venta.fecha}</span>
+                  <span className="fw-semibold">{new Date(venta.fecha_hora_venta).toLocaleString('es-CO')}</span>
                 </div>
               </div>
               <div className="col-6">
                 <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
                   <div className="d-flex align-items-center gap-2 mb-1" style={{ color: styles.mutedColor }}>
-                    <CreditCard size={16} />
-                    <span className="small">Método de pago</span>
-                  </div>
-                  <span className="fw-semibold">{venta.metodoPago || 'N/A'}</span>
-                </div>
-              </div>
-              <div className="col-12">
-                <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
-                  <div className="d-flex align-items-center gap-2 mb-1" style={{ color: styles.mutedColor }}>
                     <Person size={16} />
-                    <span className="small">Referencia de pago</span>
+                    <span className="small">Registrada por</span>
                   </div>
-                  <span className="fw-semibold">{venta.referenciaPago || 'N/A'}</span>
+                  <span className="fw-semibold">{venta.usuario || 'N/A'}</span>
                 </div>
               </div>
             </div>
@@ -111,6 +102,23 @@ export const VentaDetailModal = ({ show, onClose, venta }) => {
               </table>
             </div>
 
+            <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
+              <div className="d-flex align-items-center gap-2 mb-2" style={{ color: styles.mutedColor }}>
+                <CreditCard size={16} />
+                <span className="small fw-semibold">Pagos</span>
+              </div>
+              {(venta.pagos || []).length === 0 ? (
+                <div className="small" style={{ color: styles.mutedColor }}>Sin pagos registrados.</div>
+              ) : (
+                venta.pagos.map((p, idx) => (
+                  <div key={idx} className="d-flex justify-content-between small py-1">
+                    <span>{p.metodoPago}{p.referencia_transaccion ? ` • ${p.referencia_transaccion}` : ''}</span>
+                    <span className="fw-semibold">$ {Number(p.monto).toLocaleString()}</span>
+                  </div>
+                ))
+              )}
+            </div>
+
             <div className="d-flex flex-column align-items-end gap-1 pt-2 border-top" style={{ borderColor: styles.borderCol }}>
               <div className="d-flex justify-content-between gap-3 small" style={{ color: styles.mutedColor, minWidth: '220px' }}>
                 <span>Subtotal (base gravable)</span>
@@ -124,10 +132,16 @@ export const VentaDetailModal = ({ show, onClose, venta }) => {
                 <span className="fw-bold fs-6">Total:</span>
                 <span className="fw-bold fs-5" style={{ color: 'var(--amber-action)' }}>$ {Number(venta.total).toLocaleString()}</span>
               </div>
+              {venta.estado === 'COMPLETADA' && (
+                <div className="d-flex justify-content-between gap-3 small" style={{ color: styles.mutedColor, minWidth: '220px' }}>
+                  <span>Pagado</span>
+                  <span>$ {Number(totalPagado).toLocaleString()}</span>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="modal-footer border-top p-3" style={{ borderColor: styles.borderCol }}>
+          <div className="modal-footer border-top p-3 d-flex gap-2" style={{ borderColor: styles.borderCol }}>
             <button
               type="button"
               className="btn btn-sm px-4 fw-medium"
@@ -136,6 +150,16 @@ export const VentaDetailModal = ({ show, onClose, venta }) => {
             >
               Cerrar
             </button>
+            {venta.estado === 'COMPLETADA' && onAnular && (
+              <button
+                type="button"
+                className="btn btn-sm px-4 fw-bold text-white d-flex align-items-center gap-2 border-0"
+                style={{ backgroundColor: 'var(--brand-danger)' }}
+                onClick={() => onAnular(venta)}
+              >
+                <XCircle size={16} /> Anular venta
+              </button>
+            )}
           </div>
         </div>
       </div>

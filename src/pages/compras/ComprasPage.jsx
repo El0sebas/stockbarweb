@@ -1,26 +1,28 @@
 import React, { useState } from 'react';
-import { PlusLg, Search, BagCheck } from 'react-bootstrap-icons';
+import { PlusLg, Search, BagCheck, XCircle } from 'react-bootstrap-icons';
 import { CompraFormModal } from './ComprasFormModal';
 import { CompraDetailModal } from './CompraDetailModal';
-import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
 import { RowActions } from '../../components/common/RowActions';
-import { StatusToggle } from '../../components/common/StatusToggle';
 import { generateNextIdentifier } from '../../utils/identifiers';
-import { showToast } from '../../utils/alerts';
+import { showToast, showAlert } from '../../utils/alerts';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultCompras } from '../../data/defaultCompras';
 import { defaultLotes } from '../../data/defaultLotes';
+import { defaultVentas } from '../../data/defaultVentas';
+import { defaultBajas } from '../../data/defaultBajas';
+import { tieneMovimientos } from '../../utils/compras';
 
 export const ComprasPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedCompra, setSelectedCompra] = useState(null);
   const [compras, setCompras] = usePersistentState('stockbar_compras', defaultCompras);
   // Cada línea de una compra crea un lote real (nunca un lote suelto ni un
   // stock editable en Productos): ver utils/stock.js y docs/DATABASE.md.
   const [lotes, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
+  const [ventas] = usePersistentState('stockbar_ventas', defaultVentas);
+  const [bajas] = usePersistentState('stockbar_bajas', defaultBajas);
 
   const styles = {
     cardBg: 'var(--bg-card)',
@@ -58,7 +60,8 @@ export const ComprasPage = () => {
         cantidad_disponible: item.cantidad,
         precio_unitario_compra: item.costoUnitario,
         fecha_vencimiento: item.fecha_vencimiento || null,
-        numero_lote_proveedor: item.numero_lote || null
+        numero_lote_proveedor: item.numero_lote || null,
+        estado_compra: 'REGISTRADA'
       }));
       return [...sinEstaCompra, ...nuevosLotes];
     });
@@ -72,7 +75,7 @@ export const ComprasPage = () => {
     } else {
       const facturaGenerada = (compra.numero_factura_proveedor || nextFactura).trim();
       const idCompra = Date.now();
-      setCompras(prev => [{ ...compra, id: idCompra, numero_factura_proveedor: facturaGenerada, estado: 'Pendiente' }, ...prev]);
+      setCompras(prev => [{ ...compra, id: idCompra, numero_factura_proveedor: facturaGenerada, estado: 'REGISTRADA' }, ...prev]);
       sincronizarLotes(idCompra, compra.items);
       showToast('success', `Compra ${facturaGenerada} registrada exitosamente`);
     }
@@ -80,22 +83,21 @@ export const ComprasPage = () => {
     setSelectedCompra(null);
   };
 
-  // El cambio de estado vive solo en el listado, y es de una sola vía:
-  // una vez "Recibida" no puede regresar a "Pendiente".
-  const handleMarcarRecibida = (compra) => {
-    if (compra.estado === 'Recibida') return;
-    setCompras(prev => prev.map(item => item.id === compra.id ? { ...item, estado: 'Recibida' } : item));
-    showToast('success', `Compra ${compra.numero_factura_proveedor} marcada como recibida`);
-  };
-
-  const handleConfirmDelete = () => {
-    if (selectedCompra) {
-      setCompras(prev => prev.filter(item => item.id !== selectedCompra.id));
-      setLotes(prev => prev.filter(l => l.id_compra !== selectedCompra.id));
-      showToast('success', 'Compra eliminada exitosamente');
+  // Espejo de trg_validar_anulacion_compra: no se borra nunca, solo se
+  // marca ANULADA, y solo si ninguno de sus lotes tiene ventas/bajas
+  // encima. Es de una sola vía (una ANULADA no puede reactivarse).
+  const handleAnularCompra = async (compra) => {
+    if (tieneMovimientos(compra, lotes, ventas, bajas)) {
+      showAlert.error('No se puede anular', 'No se puede anular la compra porque sus lotes ya tienen movimientos de inventario.');
+      return;
     }
-    setShowDeleteModal(false);
-    setSelectedCompra(null);
+    const confirmado = await showAlert.confirm('¿Anular esta compra?', 'Esta acción no se puede revertir. Los lotes quedan en la compra pero sin poder usarse en nuevas ventas.');
+    if (!confirmado) return;
+    setCompras(prev => prev.map(item => item.id === compra.id ? { ...item, estado: 'ANULADA' } : item));
+    // Espejo de vw_stock_lotes.estado_compra: sus lotes dejan de contar como
+    // stock y de poder venderse/darse de baja (ver utils/stock.js).
+    setLotes(prev => prev.map(l => l.id_compra === compra.id ? { ...l, estado_compra: 'ANULADA' } : l));
+    showToast('success', `Compra ${compra.numero_factura_proveedor} anulada`);
   };
 
   return (
@@ -145,7 +147,15 @@ export const ComprasPage = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredCompras.map((c) => (
+            {filteredCompras.map((c) => {
+              const anulada = c.estado === 'ANULADA';
+              const bloqueadaPorMovimientos = !anulada && tieneMovimientos(c, lotes, ventas, bajas);
+              const razonBloqueo = anulada
+                ? 'Una compra ANULADA no puede modificarse'
+                : bloqueadaPorMovimientos
+                  ? 'Esta compra ya tiene movimientos de inventario (ventas o bajas) sobre sus lotes'
+                  : undefined;
+              return (
               <tr key={c.id} style={{ borderBottom: `1px solid ${styles.borderCol}` }}>
                 <td className="py-3 fw-bold" style={{ color: 'var(--amber-action)' }}>{c.numero_factura_proveedor}</td>
                 <td className="py-3 fw-semibold">
@@ -156,24 +166,37 @@ export const ComprasPage = () => {
                 <td className="py-3" style={{ color: styles.mutedColor }}>{c.fecha_compra}</td>
                 <td className="py-3 fw-bold">$ {Number(c.total).toLocaleString()}</td>
                 <td className="py-3">
-                  <StatusToggle
-                    active={c.estado === 'Recibida'}
-                    onToggle={() => handleMarcarRecibida(c)}
-                    activeLabel="Recibida"
-                    inactiveLabel="Pendiente"
-                    disabled={c.estado === 'Recibida'}
-                  />
+                  <span
+                    className="badge px-3 py-2"
+                    style={{
+                      backgroundColor: anulada ? 'var(--danger-soft-bg)' : 'var(--success-soft-bg)',
+                      color: anulada ? 'var(--brand-danger)' : 'var(--brand-success)'
+                    }}
+                  >
+                    {c.estado}
+                  </span>
                 </td>
                 <td className="py-3 text-center">
                   <RowActions
                     onView={() => { setSelectedCompra(c); setShowDetailModal(true); }}
                     onEdit={() => { setSelectedCompra(c); setShowFormModal(true); }}
-                    onDelete={() => { setSelectedCompra(c); setShowDeleteModal(true); }}
-                    disabledReason={c.estado !== 'Pendiente' ? 'Solo se puede editar o eliminar mientras la compra esté Pendiente' : undefined}
+                    hideDelete
+                    disabledReason={razonBloqueo}
                   />
+                  {!anulada && (
+                    <button
+                      className="btn btn-sm p-1 border-0"
+                      style={{ color: 'var(--brand-danger)' }}
+                      title="Anular compra"
+                      onClick={() => handleAnularCompra(c)}
+                    >
+                      <XCircle size={18} />
+                    </button>
+                  )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -190,13 +213,8 @@ export const ComprasPage = () => {
         show={showDetailModal}
         onClose={() => { setShowDetailModal(false); setSelectedCompra(null); }}
         compra={selectedCompra}
-      />
-
-      <ConfirmDeleteModal
-        show={showDeleteModal}
-        onClose={() => setShowDeleteModal(false)}
-        onConfirm={handleConfirmDelete}
-        itemName={selectedCompra?.numero_factura_proveedor}
+        onAnular={handleAnularCompra}
+        bloqueada={selectedCompra ? tieneMovimientos(selectedCompra, lotes, ventas, bajas) : false}
       />
     </div>
   );

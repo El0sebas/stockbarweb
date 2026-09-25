@@ -6,7 +6,7 @@ import { StatusToggle } from '../../components/common/StatusToggle';
 import { UsuarioDetailModal } from './UsuarioDetailModal';
 import { UsuarioFormModal } from './UsuarioFormModal';
 import { showToast } from '../../utils/alerts';
-import { generateNextIdentifier } from '../../utils/identifiers';
+import { generateNextId } from '../../utils/identifiers';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultUsers } from '../../data/defaultUsers';
 import { getRoleBadgeColors } from '../../utils/roleColors';
@@ -46,7 +46,7 @@ export const UsuariosPage = () => {
 
   // Alternar Estado Activo / Inactivo con el nuevo Switch
   const handleToggleEstado = (user) => {
-    if (user.rol === 'Administrador') return; // Protección adicional
+    if (user.rol === 'ADMINISTRADOR') return; // Protección adicional
 
     const nuevoEstado = user.estado === 'Activo' ? 'Inactivo' : 'Activo';
     setUsuarios(usuarios.map(u => u.id_usuario === user.id_usuario ? { ...u, estado: nuevoEstado } : u));
@@ -60,9 +60,9 @@ export const UsuariosPage = () => {
         : u));
       showToast('success', 'Usuario actualizado exitosamente');
     } else {
-      const nuevoId = generateNextIdentifier({ items: usuarios, key: 'id_usuario' });
+      const nuevoId = generateNextId(usuarios, 'id_usuario');
       const fechaActual = new Date().toISOString().split('T')[0];
-      setUsuarios([...usuarios, { ...formData, id_usuario: Number(nuevoId), estado: 'Activo', fechaRegistro: fechaActual }]);
+      setUsuarios([...usuarios, { ...formData, id_usuario: nuevoId, estado: 'Activo', fechaRegistro: fechaActual }]);
       showToast('success', `Usuario ${formData.nombre} creado exitosamente`);
     }
     setShowFormModal(false);
@@ -192,7 +192,7 @@ export const UsuariosPage = () => {
                 filteredUsuarios.map((usr) => {
                   const rolNombre = usr.rol || 'Sin rol';
                   const rolBadge = getRoleBadgeColors(rolNombre);
-                  const isAdministrador = rolNombre === 'Administrador';
+                  const isAdministrador = rolNombre === 'ADMINISTRADOR';
 
                   return (
                     <tr key={usr.id_usuario} style={{ borderColor: styles.borderCol }}>

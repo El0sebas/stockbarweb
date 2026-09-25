@@ -10,7 +10,7 @@ export const defaultUsers = [
     nombre: 'Carlos Andrés Gómez',
     correo: 'administrador@stockbar.com',
     telefono: '3104567890',
-    rol: 'Administrador',
+    rol: 'ADMINISTRADOR',
     password: '123456',
     estado: 'Activo',
     fechaRegistro: '2026-01-15'

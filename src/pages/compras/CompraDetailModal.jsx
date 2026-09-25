@@ -1,9 +1,9 @@
 import React from 'react';
-import { BagCheck, Truck, Calendar3, CreditCard, FileEarmarkText, Hash } from 'react-bootstrap-icons';
+import { BagCheck, Truck, Calendar3, CreditCard, FileEarmarkText, Hash, XCircle } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 
-export const CompraDetailModal = ({ show, onClose, compra }) => {
+export const CompraDetailModal = ({ show, onClose, compra, onAnular, bloqueada }) => {
   // Resuelve el método de pago tanto si viene como nombre (semilla antigua)
   // como si viene por id_metodo_pago (compras creadas desde el formulario).
   const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
@@ -52,8 +52,8 @@ export const CompraDetailModal = ({ show, onClose, compra }) => {
               <span
                 className="badge px-3 py-2 fw-medium"
                 style={{
-                  backgroundColor: compra.estado === 'Recibida' ? 'var(--success-soft-bg)' : 'var(--amber-soft-bg)',
-                  color: compra.estado === 'Recibida' ? 'var(--brand-success)' : 'var(--amber-action)',
+                  backgroundColor: compra.estado === 'ANULADA' ? 'var(--danger-soft-bg)' : 'var(--success-soft-bg)',
+                  color: compra.estado === 'ANULADA' ? 'var(--brand-danger)' : 'var(--brand-success)',
                   borderRadius: '12px'
                 }}
               >
@@ -156,7 +156,7 @@ export const CompraDetailModal = ({ show, onClose, compra }) => {
             </div>
           </div>
 
-          <div className="modal-footer border-top p-3" style={{ borderColor: styles.borderCol }}>
+          <div className="modal-footer border-top p-3 d-flex gap-2" style={{ borderColor: styles.borderCol }}>
             <button
               type="button"
               className="btn btn-sm px-4 fw-medium"
@@ -165,6 +165,17 @@ export const CompraDetailModal = ({ show, onClose, compra }) => {
             >
               Cerrar
             </button>
+            {compra.estado !== 'ANULADA' && onAnular && (
+              <button
+                type="button"
+                className="btn btn-sm px-4 fw-bold text-white d-flex align-items-center gap-2 border-0"
+                style={{ backgroundColor: 'var(--brand-danger)', opacity: bloqueada ? 0.6 : 1 }}
+                onClick={() => onAnular(compra)}
+                title={bloqueada ? 'Sus lotes ya tienen movimientos de inventario' : undefined}
+              >
+                <XCircle size={16} /> Anular compra
+              </button>
+            )}
           </div>
         </div>
       </div>

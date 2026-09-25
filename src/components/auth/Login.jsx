@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import { Eye, EyeSlash, Sun, Moon, ShieldLock, CheckCircle } from 'react-bootstrap-icons';
 import { showToast } from '../../utils/alerts';
 import { defaultUsers } from '../../data/defaultUsers';
@@ -42,6 +43,7 @@ const StockBarLogoIcon = ({ size = 32 }) => (
 
 export const Login = ({ onLogin }) => {
   const { isDarkMode, toggleTheme } = useTheme();
+  const { setCurrentUser } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [email, setEmail] = useState('administrador@stockbar.com');
@@ -99,6 +101,7 @@ export const Login = ({ onLogin }) => {
       return;
     }
 
+    setCurrentUser(user);
     onLogin();
   };
 
@@ -134,6 +137,13 @@ export const Login = ({ onLogin }) => {
 
     if (!record) {
       setRecoveryMessage('El token no existe o ya fue usado.');
+      return;
+    }
+
+    // Espejo de recuperacion_contrasena.usado: un token de un solo uso nunca
+    // se reutiliza, aunque siga dentro de su ventana de expiración.
+    if (record.fecha_uso) {
+      setRecoveryMessage('Este token ya fue usado. Solicita uno nuevo.');
       return;
     }
 

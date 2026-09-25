@@ -9,7 +9,9 @@ import {
   Bag,
   Person,
   Cart,
-  CreditCard
+  CreditCard,
+  ExclamationTriangle,
+  DoorOpen
 } from 'react-bootstrap-icons';
 
 export const Sidebar = ({ activeTab, setActiveTab }) => {
@@ -22,6 +24,8 @@ export const Sidebar = ({ activeTab, setActiveTab }) => {
     { id: 'proveedores', label: 'Proveedores', icon: Truck },
     { id: 'metodospago', label: 'Métodos Pago', icon: CreditCard },
     { id: 'compras', label: 'Compras', icon: Bag },
+    { id: 'bajas', label: 'Bajas', icon: ExclamationTriangle },
+    { id: 'jornada', label: 'Jornada', icon: DoorOpen },
     { id: 'clientes', label: 'Clientes', icon: Person },
     { id: 'ventas', label: 'Ventas', icon: Cart },
   ];

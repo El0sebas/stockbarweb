@@ -7,7 +7,6 @@ export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
     codigo: '',
     nit_empresa: '',
     nombre: '',
-    contacto: '',
     telefono: '',
     correo: '',
     direccion: '',
@@ -94,47 +93,36 @@ export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
                 </div>
               </div>
 
-              <div>
-                <label className="form-label small fw-semibold">Contacto Principal</label>
-                <input 
-                  type="text" 
-                  name="contacto"
-                  required 
-                  className="form-control shadow-none" 
-                  placeholder="Ej: Carlos Pérez"
-                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} 
-                  value={formData.contacto} 
-                  onChange={handleChange} 
-                />
-              </div>
-
               <div className="row g-3">
                 <div className="col-6">
                   <label className="form-label small fw-semibold">Teléfono</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     name="telefono"
-                    required 
-                    className="form-control shadow-none" 
+                    required
+                    className="form-control shadow-none"
                     placeholder="3101234567"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} 
-                    value={formData.telefono} 
-                    onChange={handleChange} 
+                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                    value={formData.telefono}
+                    onChange={handleChange}
                   />
                 </div>
                 <div className="col-6">
                   <label className="form-label small fw-semibold">Correo Electrónico</label>
-                  <input 
-                    type="email" 
+                  <input
+                    type="email"
                     name="correo"
-                    required 
-                    className="form-control shadow-none" 
+                    required
+                    className="form-control shadow-none"
                     placeholder="correo@ejemplo.com"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} 
+                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                     value={formData.correo}
-                    onChange={handleChange} 
+                    onChange={handleChange}
                   />
                 </div>
+              </div>
+              <div className="form-text small" style={{ color: styles.mutedColor }}>
+                Los contactos de este proveedor (uno o varios, con un principal) se administran desde el detalle del proveedor una vez guardado.
               </div>
 
               <div>

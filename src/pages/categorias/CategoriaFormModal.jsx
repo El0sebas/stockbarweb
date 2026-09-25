@@ -6,7 +6,8 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
     codigo: '',
     nombre: '',
     descripcion: '',
-    porcentaje_iva: 19
+    porcentaje_iva: 19,
+    requiere_verificacion_edad: false
   };
 
   const [formData, setFormData] = useState(initialState);
@@ -27,8 +28,8 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
   };
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
   const styles = {
@@ -67,7 +68,7 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
                   name="nombre"
                   required 
                   className="form-control shadow-none" 
-                  placeholder="Ej: Licores Importados"
+                  placeholder="Ej: Licores"
                   style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} 
                   value={formData.nombre} 
                   onChange={handleChange} 
@@ -104,6 +105,29 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
                 />
                 <div className="form-text small" style={{ color: styles.mutedColor }}>
                   19% general; 5% para licores destilados &gt;15° (tarifa diferencial). No incluye el impuesto al consumo de licores/cigarrillos: ese ya está diluido en el costo de compra y StockBar no lo vuelve a cobrar.
+                </div>
+              </div>
+
+              <div
+                className="p-3 rounded-3 d-flex align-items-center justify-content-between gap-3"
+                style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}
+              >
+                <div>
+                  <div className="fw-semibold small">Requiere verificación de edad</div>
+                  <div className="small" style={{ color: styles.mutedColor }}>
+                    Exige cliente con fecha de nacimiento válida y 18+ años cumplidos en cada venta de esta categoría.
+                  </div>
+                </div>
+                <div className="form-check form-switch m-0 flex-shrink-0">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    role="switch"
+                    name="requiere_verificacion_edad"
+                    style={{ width: '2.6rem', height: '1.4rem', cursor: 'pointer' }}
+                    checked={Boolean(formData.requiere_verificacion_edad)}
+                    onChange={handleChange}
+                  />
                 </div>
               </div>
             </div>

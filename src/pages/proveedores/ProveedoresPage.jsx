@@ -9,9 +9,14 @@ import { showToast } from '../../utils/alerts';
 import { generateNextIdentifier } from '../../utils/identifiers';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultProveedores } from '../../data/defaultProveedores';
+import { defaultContactosProveedor } from '../../data/defaultContactosProveedor';
 
 export const ProveedoresPage = () => {
   const [proveedores, setProveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
+  const [contactos] = usePersistentState('stockbar_contactos_proveedor', defaultContactosProveedor);
+
+  const getContactoPrincipal = (codigoProveedor) =>
+    contactos.find((c) => c.id_proveedor === codigoProveedor && c.es_principal && c.estado === 'Activo');
 
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -72,7 +77,7 @@ export const ProveedoresPage = () => {
   const filteredProveedores = proveedores.filter(p =>
     p.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.contacto.toLowerCase().includes(searchTerm.toLowerCase())
+    (p.nit_empresa || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const styles = {
@@ -159,7 +164,10 @@ export const ProveedoresPage = () => {
                       {prov.nombre}
                     </td>
                     <td className="py-3 px-4 small" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>
-                      {prov.contacto}
+                      {(() => {
+                        const principal = getContactoPrincipal(prov.codigo);
+                        return principal ? `${principal.nombres} ${principal.apellidos}` : 'Sin contacto';
+                      })()}
                     </td>
                     <td className="py-3 px-4 small" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>
                       {prov.telefono}

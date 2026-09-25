@@ -9,43 +9,14 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { showToast } from '../../utils/alerts';
+import { usePersistentState } from '../../hooks/usePersistentState';
+import { defaultProductos } from '../../data/defaultProductos';
+import { defaultLotes } from '../../data/defaultLotes';
+import { defaultVentas } from '../../data/defaultVentas';
+import { getStockDisponible } from '../../utils/stock';
+import { calcularTotalesVenta } from '../../utils/impuestos';
 
 ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend);
-
-// TODO: Reemplazar con llamada a API cuando se conecte al backend
-const MOCK = {
-  kpis: {
-    ventasTotales: { total: 547400, subtotal: 460000, iva: 87400, cantidad: 4 },
-    stock: { unidades: 568, enAlerta: 0 },
-    masVendido: { producto: 'Cerveza Aguila', unidades: 40, ingresos: 180000 },
-    categoriaLider: { categoria: 'Bebidas alcohólicas', porcentaje: 39.13, ingresos: 180000 }
-  },
-  metodosPago: [
-    { nombre: 'Tarjeta', total: 190000, porcentaje: 41.30 },
-    { nombre: 'Transferencia', total: 135000, porcentaje: 29.35 },
-    { nombre: 'Nequi', total: 90000, porcentaje: 19.57 },
-    { nombre: 'Efectivo', total: 45000, porcentaje: 9.78 }
-  ],
-  topProductos: [
-    { nombre: 'Cerveza Aguila', unidades: 40 },
-    { nombre: 'Coca Cola', unidades: 20 },
-    { nombre: 'Cigarrillos Marlboro', unidades: 10 },
-    { nombre: 'Ron Medellín', unidades: 2 }
-  ],
-  categorias: [
-    { nombre: 'Bebidas alcohólicas', total: 180000, porcentaje: 39.13 },
-    { nombre: 'Licores', total: 130000, porcentaje: 28.26 },
-    { nombre: 'Cigarrillos', total: 90000, porcentaje: 19.57 },
-    { nombre: 'Bebidas no alcohólicas', total: 60000, porcentaje: 13.04 }
-  ],
-  stockPorProducto: [
-    { codigo: 'SNK-001', nombre: 'Papas Margarita', stockMinimo: 10, stockActual: 200 },
-    { codigo: 'BEB-001', nombre: 'Coca Cola', stockMinimo: 10, stockActual: 170 },
-    { codigo: 'CER-001', nombre: 'Cerveza Aguila', stockMinimo: 20, stockActual: 110 },
-    { codigo: 'LIC-001', nombre: 'Ron Medellín', stockMinimo: 5, stockActual: 58 },
-    { codigo: 'CIG-001', nombre: 'Cigarrillos Marlboro', stockMinimo: 10, stockActual: 30 }
-  ]
-};
 
 const money = (v) => `$ ${Number(v || 0).toLocaleString('es-CO')}`;
 
@@ -68,15 +39,73 @@ const card = {
 };
 
 export const DashboardPage = () => {
-  const { ventasTotales, stock, masVendido, categoriaLider } = MOCK.kpis;
+  // Mismas fuentes que el resto de la app (stockbar_productos, _lotes,
+  // _ventas) — nada aquí se recalcula con datos inventados: espejo de
+  // vw_stock_producto (stock) y vw_totales_venta (ingresos/IVA/método de pago).
+  const [productos] = usePersistentState('stockbar_productos', defaultProductos);
+  const [lotes] = usePersistentState('stockbar_lotes', defaultLotes);
+  const [ventas] = usePersistentState('stockbar_ventas', defaultVentas);
+
   const tick = cssVar('--text-muted');
+
+  const stockPorProducto = productos
+    .filter((p) => p.estado === 'Activo')
+    .map((p) => ({ codigo: p.codigo, nombre: p.nombre, stockMinimo: p.stockMinimo, stockActual: getStockDisponible(lotes, p.codigo) }));
+
+  const ventasCompletadas = ventas.filter((v) => v.estado === 'COMPLETADA');
+  const lineasCompletadas = ventasCompletadas.flatMap((v) => v.productos);
+  const totalesGlobales = calcularTotalesVenta(lineasCompletadas);
+
+  const ventasTotales = {
+    total: totalesGlobales.total,
+    subtotal: totalesGlobales.baseGravable,
+    iva: totalesGlobales.iva,
+    cantidad: ventasCompletadas.length
+  };
+
+  const stock = {
+    unidades: stockPorProducto.reduce((acc, p) => acc + p.stockActual, 0),
+    enAlerta: stockPorProducto.filter((p) => p.stockActual <= p.stockMinimo).length
+  };
+
+  // Agregados por producto/categoría/método de pago a partir de las líneas
+  // y pagos reales de las ventas COMPLETADA — mismo criterio que agruparía
+  // una consulta sobre vw_totales_venta + detalle_venta + venta_pago.
+  const porProducto = {};
+  lineasCompletadas.forEach((linea) => {
+    if (!porProducto[linea.nombre]) porProducto[linea.nombre] = { nombre: linea.nombre, unidades: 0, ingresos: 0 };
+    porProducto[linea.nombre].unidades += Number(linea.cantidad);
+    porProducto[linea.nombre].ingresos += Number(linea.precio) * Number(linea.cantidad);
+  });
+  const topProductosLista = Object.values(porProducto).sort((a, b) => b.unidades - a.unidades).slice(0, 5);
+  const masVendido = topProductosLista[0] || { nombre: 'Sin ventas todavía', unidades: 0, ingresos: 0 };
+
+  const porCategoria = {};
+  lineasCompletadas.forEach((linea) => {
+    const nombreCategoria = linea.categoria || 'Sin categoría';
+    if (!porCategoria[nombreCategoria]) porCategoria[nombreCategoria] = { nombre: nombreCategoria, total: 0 };
+    porCategoria[nombreCategoria].total += Number(linea.precio) * Number(linea.cantidad);
+  });
+  const categoriasLista = Object.values(porCategoria)
+    .map((c) => ({ ...c, porcentaje: ventasTotales.total > 0 ? Number(((c.total / ventasTotales.total) * 100).toFixed(2)) : 0 }))
+    .sort((a, b) => b.total - a.total);
+  const categoriaLider = categoriasLista[0] || { nombre: 'Sin ventas todavía', total: 0, porcentaje: 0 };
+
+  const porMetodo = {};
+  ventasCompletadas.flatMap((v) => v.pagos || []).forEach((pago) => {
+    if (!porMetodo[pago.metodoPago]) porMetodo[pago.metodoPago] = { nombre: pago.metodoPago, total: 0 };
+    porMetodo[pago.metodoPago].total += Number(pago.monto);
+  });
+  const metodosPagoLista = Object.values(porMetodo)
+    .map((m) => ({ ...m, porcentaje: ventasTotales.total > 0 ? Number(((m.total / ventasTotales.total) * 100).toFixed(2)) : 0 }))
+    .sort((a, b) => b.total - a.total);
 
   const kpis = [
     {
       title: 'Ventas Totales', icon: CurrencyDollar, color: 'var(--brand-success)', soft: 'var(--success-soft-bg)',
       valor: money(ventasTotales.total),
       sub: `Subtotal: ${money(ventasTotales.subtotal)} | IVA: ${money(ventasTotales.iva)}`,
-      extra: `${ventasTotales.cantidad} ventas registradas`
+      extra: `${ventasTotales.cantidad} ventas completadas`
     },
     {
       title: 'Stock Actual', icon: BoxSeam, color: 'var(--brand-blue)', soft: 'var(--blue-soft-bg)',
@@ -87,33 +116,33 @@ export const DashboardPage = () => {
     },
     {
       title: 'Más Vendido', icon: Trophy, color: 'var(--amber-action)', soft: 'var(--amber-soft-bg)',
-      valor: masVendido.producto,
+      valor: masVendido.nombre,
       sub: `${masVendido.unidades} unidades vendidas`,
-      extra: `${money(masVendido.ingresos)} en ingresos`
+      extra: money(masVendido.ingresos)
     },
     {
       title: 'Categoría Líder', icon: Tags, color: 'var(--brand-purple)', soft: 'var(--purple-soft-bg)',
-      valor: categoriaLider.categoria,
+      valor: categoriaLider.nombre,
       sub: `${categoriaLider.porcentaje}% de las ventas`,
-      extra: money(categoriaLider.ingresos)
+      extra: money(categoriaLider.total)
     }
   ];
 
   const leyenda = { position: 'bottom', labels: { color: tick, boxWidth: 12, padding: 12, font: { size: 11 } } };
 
   const dataMetodos = {
-    labels: MOCK.metodosPago.map((m) => `${m.nombre} (${m.porcentaje}%)`),
-    datasets: [{ data: MOCK.metodosPago.map((m) => m.total), backgroundColor: PALETA, borderWidth: 0 }]
+    labels: metodosPagoLista.map((m) => `${m.nombre} (${m.porcentaje}%)`),
+    datasets: [{ data: metodosPagoLista.map((m) => m.total), backgroundColor: PALETA, borderWidth: 0 }]
   };
 
   const dataCategorias = {
-    labels: MOCK.categorias.map((c) => `${c.nombre} (${c.porcentaje}%)`),
-    datasets: [{ data: MOCK.categorias.map((c) => c.total), backgroundColor: PALETA, borderWidth: 0 }]
+    labels: categoriasLista.map((c) => `${c.nombre} (${c.porcentaje}%)`),
+    datasets: [{ data: categoriasLista.map((c) => c.total), backgroundColor: PALETA, borderWidth: 0 }]
   };
 
   const dataTop = {
-    labels: MOCK.topProductos.map((p) => p.nombre),
-    datasets: [{ data: MOCK.topProductos.map((p) => p.unidades), backgroundColor: '#F59E0B', borderRadius: 4 }]
+    labels: topProductosLista.map((p) => p.nombre),
+    datasets: [{ data: topProductosLista.map((p) => p.unidades), backgroundColor: '#F59E0B', borderRadius: 4 }]
   };
 
   const opcionesDona = {
@@ -146,17 +175,17 @@ export const DashboardPage = () => {
       ['KPI', 'Valor', 'Detalle'],
       ['Ventas Totales', ventasTotales.total, `Subtotal ${ventasTotales.subtotal} / IVA ${ventasTotales.iva}`],
       ['Stock Actual', stock.unidades, `${stock.enAlerta} en alerta`],
-      ['Más Vendido', masVendido.producto, `${masVendido.unidades} uds`],
-      ['Categoría Líder', categoriaLider.categoria, `${categoriaLider.porcentaje}%`],
+      ['Más Vendido', masVendido.nombre, `${masVendido.unidades} uds`],
+      ['Categoría Líder', categoriaLider.nombre, `${categoriaLider.porcentaje}%`],
       [],
       ['Método de pago', 'Total', '%'],
-      ...MOCK.metodosPago.map((m) => [m.nombre, m.total, m.porcentaje]),
+      ...metodosPagoLista.map((m) => [m.nombre, m.total, m.porcentaje]),
       [],
       ['Categoría', 'Total', '%'],
-      ...MOCK.categorias.map((c) => [c.nombre, c.total, c.porcentaje]),
+      ...categoriasLista.map((c) => [c.nombre, c.total, c.porcentaje]),
       [],
       ['Código', 'Producto', 'Stock mínimo', 'Stock actual', 'Estado'],
-      ...MOCK.stockPorProducto.map((p) => [p.codigo, p.nombre, p.stockMinimo, p.stockActual, semaforo(p.stockActual, p.stockMinimo).label])
+      ...stockPorProducto.map((p) => [p.codigo, p.nombre, p.stockMinimo, p.stockActual, semaforo(p.stockActual, p.stockMinimo).label])
     ];
     const csv = filas.map((f) => f.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
     const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
@@ -178,14 +207,14 @@ export const DashboardPage = () => {
       body: [
         ['Ventas Totales', money(ventasTotales.total), `Subtotal ${money(ventasTotales.subtotal)} / IVA ${money(ventasTotales.iva)}`],
         ['Stock Actual', `${stock.unidades} un.`, `${stock.enAlerta} en alerta`],
-        ['Más Vendido', masVendido.producto, `${masVendido.unidades} uds`],
-        ['Categoría Líder', categoriaLider.categoria, `${categoriaLider.porcentaje}%`]
+        ['Más Vendido', masVendido.nombre, `${masVendido.unidades} uds`],
+        ['Categoría Líder', categoriaLider.nombre, `${categoriaLider.porcentaje}%`]
       ],
       headStyles: { fillColor: [26, 54, 93] }
     });
     autoTable(doc, {
       head: [['Código', 'Producto', 'Stock mínimo', 'Stock actual', 'Estado']],
-      body: MOCK.stockPorProducto.map((p) => [p.codigo, p.nombre, p.stockMinimo, p.stockActual, semaforo(p.stockActual, p.stockMinimo).label]),
+      body: stockPorProducto.map((p) => [p.codigo, p.nombre, p.stockMinimo, p.stockActual, semaforo(p.stockActual, p.stockMinimo).label]),
       headStyles: { fillColor: [26, 54, 93] }
     });
     doc.save(`dashboard-stockbar-${new Date().toISOString().slice(0, 10)}.pdf`);
@@ -251,21 +280,39 @@ export const DashboardPage = () => {
         <div className="col-12 col-lg-6">
           <div className="card border-0 shadow-sm p-4 h-100" style={card}>
             <h6 className="fw-bold mb-3" style={{ color: 'var(--text-main)' }}>Ventas por Método de Pago</h6>
-            <div style={{ height: 260 }}><Doughnut data={dataMetodos} options={opcionesDona} /></div>
+            <div style={{ height: 260 }}>
+              {metodosPagoLista.length === 0 ? (
+                <div className="small text-center py-5" style={{ color: 'var(--text-muted)' }}>Sin ventas completadas todavía.</div>
+              ) : (
+                <Doughnut data={dataMetodos} options={opcionesDona} />
+              )}
+            </div>
           </div>
         </div>
 
         <div className="col-12 col-lg-6">
           <div className="card border-0 shadow-sm p-4 h-100" style={card}>
-            <h6 className="fw-bold mb-3" style={{ color: 'var(--text-main)' }}>Top 5 Productos Más Vendidos</h6>
-            <div style={{ height: 260 }}><Bar data={dataTop} options={opcionesTop} /></div>
+            <h6 className="fw-bold mb-3" style={{ color: 'var(--text-main)' }}>Top Productos Más Vendidos</h6>
+            <div style={{ height: 260 }}>
+              {topProductosLista.length === 0 ? (
+                <div className="small text-center py-5" style={{ color: 'var(--text-muted)' }}>Sin ventas completadas todavía.</div>
+              ) : (
+                <Bar data={dataTop} options={opcionesTop} />
+              )}
+            </div>
           </div>
         </div>
 
         <div className="col-12 col-lg-6">
           <div className="card border-0 shadow-sm p-4 h-100" style={card}>
             <h6 className="fw-bold mb-3" style={{ color: 'var(--text-main)' }}>Ventas por Categoría</h6>
-            <div style={{ height: 260 }}><Doughnut data={dataCategorias} options={opcionesDona} /></div>
+            <div style={{ height: 260 }}>
+              {categoriasLista.length === 0 ? (
+                <div className="small text-center py-5" style={{ color: 'var(--text-muted)' }}>Sin ventas completadas todavía.</div>
+              ) : (
+                <Doughnut data={dataCategorias} options={opcionesDona} />
+              )}
+            </div>
           </div>
         </div>
 
@@ -284,7 +331,7 @@ export const DashboardPage = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {MOCK.stockPorProducto.map((p) => {
+                  {stockPorProducto.map((p) => {
                     const s = semaforo(p.stockActual, p.stockMinimo);
                     return (
                       <tr key={p.codigo} style={{ borderColor: 'var(--border-color)' }}>

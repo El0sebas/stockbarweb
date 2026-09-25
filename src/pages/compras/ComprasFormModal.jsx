@@ -5,7 +5,8 @@ import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 import { defaultProveedores } from '../../data/defaultProveedores';
 import { defaultProductos } from '../../data/defaultProductos';
-import { generateNextIdentifier } from '../../utils/identifiers';
+import { generateNextId } from '../../utils/identifiers';
+import { QuantityStepper } from '../../components/common/QuantityStepper';
 
 export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) => {
   // Mismo catálogo que MetodosPagoPage/VentasPage (ver comentario allí).
@@ -63,11 +64,19 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
 
   if (!show) return null;
 
+  // Sugerencia automática del número de lote (el usuario aún puede
+  // corregirlo si el proveedor imprime uno distinto en la factura real):
+  // LT-<codigo_producto>-<consecutivo dentro de esta compra>.
+  const sugerirNumeroLote = (producto) => {
+    const consecutivo = formData.items.filter((i) => i.producto_codigo === producto.codigo).length + 1;
+    return `LT-${producto.codigo}-${String(consecutivo).padStart(2, '0')}`;
+  };
+
   const handleSelectProduct = (prod) => {
     setSelectedProductToAdd(prod);
     setProductSearch(prod.nombre);
     setCostoUnitario(0);
-    setNumeroLote('');
+    setNumeroLote(prod.maneja_vencimiento ? sugerirNumeroLote(prod) : '');
     setFechaVencimiento('');
   };
 
@@ -98,7 +107,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
       return;
     }
 
-    const idDetalle = Number(generateNextIdentifier({ items: formData.items, key: 'id_detalle' }));
+    const idDetalle = generateNextId(formData.items, 'id_detalle');
     const nuevosItems = [
       ...formData.items,
       {
@@ -311,14 +320,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
 
                   <div className="col-md-2">
                     <label className="form-label small text-muted">Cantidad</label>
-                    <input
-                      type="number"
-                      min="1"
-                      className="form-control form-control-sm"
-                      value={cantidad}
-                      onChange={(e) => setCantidad(Number(e.target.value) || 1)}
-                      style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                    />
+                    <QuantityStepper value={cantidad} onChange={setCantidad} />
                   </div>
 
                   <div className="col-md-2">

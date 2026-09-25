@@ -42,9 +42,19 @@ export const CategoriaDetailModal = ({ show, onClose, categoria }) => {
               </p>
             </div>
 
-            <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
-              <div className="small" style={{ color: styles.mutedColor }}>% IVA cobrado al cliente</div>
-              <div className="fw-bold fs-5 mt-1" style={{ color: 'var(--amber-action)' }}>{categoria.porcentaje_iva ?? 19}%</div>
+            <div className="row g-3">
+              <div className="col-6">
+                <div className="p-3 rounded-3 h-100" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
+                  <div className="small" style={{ color: styles.mutedColor }}>% IVA cobrado al cliente</div>
+                  <div className="fw-bold fs-5 mt-1" style={{ color: 'var(--amber-action)' }}>{categoria.porcentaje_iva ?? 19}%</div>
+                </div>
+              </div>
+              <div className="col-6">
+                <div className="p-3 rounded-3 h-100" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
+                  <div className="small" style={{ color: styles.mutedColor }}>Verificación de edad</div>
+                  <div className="fw-semibold mt-1">{categoria.requiere_verificacion_edad ? 'Requerida (18+)' : 'No aplica'}</div>
+                </div>
+              </div>
             </div>
           </div>
 

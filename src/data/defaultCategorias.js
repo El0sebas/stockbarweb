@@ -1,9 +1,11 @@
-// Datos semilla de Categorías, compartidos entre CategoriasPage, ProductosPage
-// (para resolver el IVA de cada producto) y VentasPage (desglose del carrito).
-// porcentaje_iva es la única fuente de la tarifa de IVA que se cobra al
-// cliente final: 19% general, 5% para licores (tarifa diferencial >15°).
+// Datos semilla de Categorías — alineados 1:1 con el INSERT de categoria en
+// scripts/sch.sql (mismos 4 nombres, mismo margen, mismo IVA, misma bandera
+// de verificación de edad). Compartido entre CategoriasPage, ProductosPage
+// (resuelve el IVA de cada producto), VentasPage (desglose del carrito y
+// verificación de edad) y ComprasPage.
 export const defaultCategorias = [
-  { codigo: 'CAT-01', nombre: 'Licores Importados', descripcion: 'Whisky, Tequila, Vodka importado', porcentaje_iva: 5 },
-  { codigo: 'CAT-02', nombre: 'Licores Nacionales', descripcion: 'Aguardiente, Ron nacional', porcentaje_iva: 5 },
-  { codigo: 'CAT-03', nombre: 'Cervezas', descripcion: 'Nacionales e importadas en botella o lata', porcentaje_iva: 19 },
+  { codigo: 'CAT-01', nombre: 'Licores', descripcion: 'Aguardientes, rones, tequilas y whiskys', porcentaje_iva: 5, requiere_verificacion_edad: true },
+  { codigo: 'CAT-02', nombre: 'Cerveza', descripcion: 'Cervezas y presentaciones relacionadas', porcentaje_iva: 19, requiere_verificacion_edad: true },
+  { codigo: 'CAT-03', nombre: 'Cigarrillos', descripcion: 'Productos de tabaco', porcentaje_iva: 19, requiere_verificacion_edad: true },
+  { codigo: 'CAT-04', nombre: 'Snacks', descripcion: 'Dulces, confitería y productos secos', porcentaje_iva: 19, requiere_verificacion_edad: false },
 ];

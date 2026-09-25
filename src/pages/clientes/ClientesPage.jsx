@@ -5,16 +5,13 @@ import { RowActions } from '../../components/common/RowActions';
 import { StatusToggle } from '../../components/common/StatusToggle';
 import { ClienteFormModal } from './ClienteFormModal';
 import { ClienteDetailModal } from './ClienteDetailModal';
-import { showToast } from '../../utils/alerts';
-import { generateNextIdentifier } from '../../utils/identifiers';
+import { showToast, showAlert } from '../../utils/alerts';
+import { generateNextId } from '../../utils/identifiers';
 import { usePersistentState } from '../../hooks/usePersistentState';
+import { defaultClientes } from '../../data/defaultClientes';
 
 export const ClientesPage = () => {
-  const [clientes, setClientes] = usePersistentState('stockbar_clientes', [
-    { id_cliente: 1, documento: '1017223344', nombre_completo: 'Andrés Pérez', telefono: '300 123 4567', correo: 'aperez@gmail.com', estado: 'Activo' },
-    { id_cliente: 2, documento: '1020445566', nombre_completo: 'Laura Gómez', telefono: '311 987 6543', correo: 'lgomez@gmail.com', estado: 'Activo' },
-    { id_cliente: 3, documento: '1033778899', nombre_completo: 'Santiago Ríos', telefono: '320 456 7890', correo: 'srios@gmail.com', estado: 'Inactivo' },
-  ]);
+  const [clientes, setClientes] = usePersistentState('stockbar_clientes', defaultClientes);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showFormModal, setShowFormModal] = useState(false);
@@ -34,12 +31,31 @@ export const ClientesPage = () => {
   };
 
   const handleSaveCliente = (formData) => {
+    // Espejo de uq_cliente_documento: (tipo_documento, numero_documento) es
+    // único. No es un trigger con SIGNAL propio (es un UNIQUE KEY), así que
+    // el mensaje aquí describe la regla en vez de citar un texto literal.
+    const yaExiste = clientes.some((c) =>
+      c.tipo_documento === formData.tipo_documento &&
+      c.numero_documento === formData.numero_documento &&
+      c.id_cliente !== selectedCliente?.id_cliente
+    );
+    if (yaExiste) {
+      showAlert.error('Documento duplicado', 'Ya existe un cliente registrado con ese tipo y número de documento.');
+      return;
+    }
+
+    // Espejo exacto de sp_validar_cliente (trg_validar_cliente_ins/upd).
+    if (formData.fecha_nacimiento && new Date(formData.fecha_nacimiento) > new Date()) {
+      showAlert.error('Fecha inválida', 'La fecha de nacimiento no puede ser una fecha futura.');
+      return;
+    }
+
     if (selectedCliente) {
       setClientes(clientes.map(c => c.id_cliente === selectedCliente.id_cliente ? { ...selectedCliente, ...formData } : c));
       showToast('success', 'Cliente actualizado exitosamente');
     } else {
-      const nuevoId = generateNextIdentifier({ items: clientes, key: 'id_cliente' });
-      setClientes([...clientes, { ...formData, id_cliente: Number(nuevoId), estado: 'Activo' }]);
+      const nuevoId = generateNextId(clientes, 'id_cliente');
+      setClientes([...clientes, { ...formData, id_cliente: nuevoId, estado: 'Activo' }]);
       showToast('success', `Cliente ${nuevoId} creado exitosamente`);
     }
     setShowFormModal(false);
@@ -57,7 +73,7 @@ export const ClientesPage = () => {
 
   const filteredClientes = clientes.filter(c =>
     c.nombre_completo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.documento.includes(searchTerm) ||
+    c.numero_documento.includes(searchTerm) ||
     (c.correo && c.correo.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
@@ -105,7 +121,7 @@ export const ClientesPage = () => {
               ) : (
                 filteredClientes.map((cli) => (
                   <tr key={cli.id_cliente} style={{ borderColor: styles.borderCol }}>
-                    <td className="py-3 px-4 fw-bold" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>{cli.documento}</td>
+                    <td className="py-3 px-4 fw-bold" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>{cli.tipo_documento} {cli.numero_documento}</td>
                     <td className="py-3 px-4" style={{ backgroundColor: 'transparent' }}>
                       <div className="fw-semibold" style={{ color: styles.textColor }}>{cli.nombre_completo}</div>
                       <div className="small" style={{ color: styles.mutedColor }}>{cli.correo}</div>

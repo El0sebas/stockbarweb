@@ -10,7 +10,7 @@ const PALETTE = [
 
 export const getRoleBadgeColors = (roleName = '') => {
   if (!roleName) return { bg: 'var(--neutral-soft-bg)', color: 'var(--text-muted)' };
-  if (roleName === 'Administrador') return { bg: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' };
+  if (roleName === 'ADMINISTRADOR') return { bg: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' };
 
   let hash = 0;
   for (let i = 0; i < roleName.length; i += 1) {

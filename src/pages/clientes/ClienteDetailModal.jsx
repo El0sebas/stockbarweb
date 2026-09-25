@@ -32,10 +32,11 @@ export const ClienteDetailModal = ({ show, onClose, cliente }) => {
           </div>
           <div className="modal-body p-4">
             <div className="row g-3">
-              <InfoItem label="Documento" value={cliente.documento} />
+              <InfoItem label="Documento" value={`${cliente.tipo_documento || ''} ${cliente.numero_documento || ''}`} />
               <InfoItem label="Nombre Completo" value={cliente.nombre_completo} />
               <InfoItem label="Teléfono" value={cliente.telefono} />
               <InfoItem label="Correo" value={cliente.correo} />
+              <InfoItem label="Fecha de nacimiento" value={cliente.fecha_nacimiento} />
               <div className="col-6">
                 <p className="small fw-semibold mb-1" style={{ color: styles.mutedColor }}>Estado</p>
                 <span className="badge px-3 py-2 fw-medium" style={{
