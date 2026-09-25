@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { BagCheck, Trash, Plus } from 'react-bootstrap-icons';
+import { BagCheck, Trash, Plus, Search, FileEarmarkText, Upload } from 'react-bootstrap-icons';
 import { showAlert } from '../../utils/alerts';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
+import { defaultProveedores } from '../../data/defaultProveedores';
+import { defaultProductos } from '../../data/defaultProductos';
 import { generateNextIdentifier } from '../../utils/identifiers';
 
 export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) => {
@@ -10,49 +12,49 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
   const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
   const metodosPagoActivos = metodosPago.filter((m) => m.estado === 'Activo');
 
-  const proveedoresConProductos = {
-    'Distribuidora de Licores de Antioquia': [
-      { id: 'p1', nombre: 'Aguardiente Antioqueño 750ml', precioSugerido: 52000, maneja_vencimiento: true },
-      { id: 'p2', nombre: 'Ron Medellín Añejo 3 Años', precioSugerido: 48000, maneja_vencimiento: true },
-      { id: 'p3', nombre: 'Crema de Whisky Lunacy', precioSugerido: 60000, maneja_vencimiento: true }
-    ],
-    'Importaciones Andinas S.A.S.': [
-      { id: 'p4', nombre: 'Tequila Don Julio Reposado', precioSugerido: 200000, maneja_vencimiento: true },
-      { id: 'p5', nombre: 'Whisky Old Parr 12 Años', precioSugerido: 140000, maneja_vencimiento: false },
-      { id: 'p6', nombre: 'Vodka Smirnoff 750ml', precioSugerido: 45000, maneja_vencimiento: true }
-    ],
-    'Cervecería Nacional': [
-      { id: 'p7', nombre: 'Cerveza Club Colombia Dorada', precioSugerido: 6500, maneja_vencimiento: true },
-      { id: 'p8', nombre: 'Cerveza Águila Light', precioSugerido: 4500, maneja_vencimiento: true },
-      { id: 'p9', nombre: 'Cerveza Corona Extra', precioSugerido: 7500, maneja_vencimiento: true }
-    ]
-  };
+  // Mismos catálogos reales que ProveedoresPage/ProductosPage — nada de
+  // listas hardcodeadas por proveedor: cualquier producto activo puede
+  // buscarse y agregarse a la compra.
+  const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
+  const proveedoresActivos = proveedores.filter((p) => p.estado === 'Activo');
+  const [productos] = usePersistentState('stockbar_productos', defaultProductos);
+  const productosActivos = productos.filter((p) => p.estado === 'Activo');
 
   const initialState = {
     proveedor: '',
-    numero_factura: '',
+    numero_factura_proveedor: '',
     id_metodo_pago: 1,
     ruta_factura: '',
+    ruta_factura_url: '',
     items: []
   };
 
   const [formData, setFormData] = useState(initialState);
-  const [selectedProductToAdd, setSelectedProductToAdd] = useState('');
+  const [productSearch, setProductSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [selectedProductToAdd, setSelectedProductToAdd] = useState(null);
   const [cantidad, setCantidad] = useState(1);
   const [costoUnitario, setCostoUnitario] = useState(0);
   const [numeroLote, setNumeroLote] = useState('');
   const [fechaVencimiento, setFechaVencimiento] = useState('');
 
+  // Debounce del buscador de productos (250ms) para no filtrar en cada tecla.
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedSearch(productSearch), 250);
+    return () => clearTimeout(timeout);
+  }, [productSearch]);
+
   useEffect(() => {
     if (compra) {
-      setFormData(compra);
+      setFormData({ ...initialState, ...compra });
     } else {
       setFormData({
         ...initialState,
-        numero_factura: nextFactura || initialState.numero_factura
+        numero_factura_proveedor: nextFactura || initialState.numero_factura_proveedor
       });
     }
-    setSelectedProductToAdd('');
+    setProductSearch('');
+    setSelectedProductToAdd(null);
     setCantidad(1);
     setCostoUnitario(0);
     setNumeroLote('');
@@ -61,69 +63,58 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
 
   if (!show) return null;
 
-  const handleProveedorChange = (e) => {
-    const proveedorSeleccionado = e.target.value;
-    setFormData({
-      ...formData,
-      proveedor: proveedorSeleccionado,
-      items: []
-    });
-    setSelectedProductToAdd('');
+  const handleSelectProduct = (prod) => {
+    setSelectedProductToAdd(prod);
+    setProductSearch(prod.nombre);
     setCostoUnitario(0);
     setNumeroLote('');
     setFechaVencimiento('');
   };
 
-  const handleProductSelectChange = (e) => {
-    const prodNombre = e.target.value;
-    setSelectedProductToAdd(prodNombre);
-
-    const productosDisponibles = proveedoresConProductos[formData.proveedor] || [];
-    const prodEncontrado = productosDisponibles.find((p) => p.nombre === prodNombre);
-    if (prodEncontrado) {
-      setCostoUnitario(prodEncontrado.precioSugerido);
-    } else {
-      setCostoUnitario(0);
-    }
-    setNumeroLote('');
-    setFechaVencimiento('');
+  // ponytail: mock sin backend, así que "subir" el archivo es guardar una
+  // object URL local (no persiste tras recargar). Cuando exista el backend
+  // real, este handler pasa a hacer un POST del archivo y guardar la ruta/URL
+  // que devuelva el servidor en ruta_factura.
+  const handleFacturaFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFormData((prev) => ({
+      ...prev,
+      ruta_factura: file.name,
+      ruta_factura_url: URL.createObjectURL(file)
+    }));
   };
 
   const handleAddItem = () => {
-    if (!selectedProductToAdd || cantidad <= 0 || costoUnitario <= 0) return;
+    if (!selectedProductToAdd || cantidad <= 0 || costoUnitario <= 0) {
+      showAlert.error('Línea incompleta', 'Selecciona un producto, cantidad y costo unitario válidos.');
+      return;
+    }
 
-    const productosDisponibles = proveedoresConProductos[formData.proveedor] || [];
-    const productoSeleccionado = productosDisponibles.find((p) => p.nombre === selectedProductToAdd);
-    const requiereLote = productoSeleccionado?.maneja_vencimiento;
+    const requiereLote = selectedProductToAdd.maneja_vencimiento;
 
     if (requiereLote && (!numeroLote.trim() || !fechaVencimiento)) {
       showAlert.error('Falta información del lote', 'Este producto requiere número de lote y fecha de vencimiento para registrarse.');
       return;
     }
 
-    const existingIndex = formData.items.findIndex((item) => item.producto === selectedProductToAdd);
-    const nuevosItems = [...formData.items];
-
-    if (existingIndex >= 0) {
-      nuevosItems[existingIndex].cantidad += Number(cantidad);
-      nuevosItems[existingIndex].costoUnitario = Number(costoUnitario);
-      nuevosItems[existingIndex].numero_lote = requiereLote ? numeroLote.trim() : null;
-      nuevosItems[existingIndex].fecha_vencimiento = requiereLote ? fechaVencimiento : null;
-    } else {
-      // El id de cada línea de compra lo asigna el sistema; el usuario nunca lo edita.
-      const idDetalle = Number(generateNextIdentifier({ items: formData.items, key: 'id_detalle' }));
-      nuevosItems.push({
+    const idDetalle = Number(generateNextIdentifier({ items: formData.items, key: 'id_detalle' }));
+    const nuevosItems = [
+      ...formData.items,
+      {
         id_detalle: idDetalle,
-        producto: selectedProductToAdd,
+        producto: selectedProductToAdd.nombre,
+        producto_codigo: selectedProductToAdd.codigo,
         cantidad: Number(cantidad),
         costoUnitario: Number(costoUnitario),
         numero_lote: requiereLote ? numeroLote.trim() : null,
         fecha_vencimiento: requiereLote ? fechaVencimiento : null
-      });
-    }
+      }
+    ];
 
     setFormData({ ...formData, items: nuevosItems });
-    setSelectedProductToAdd('');
+    setProductSearch('');
+    setSelectedProductToAdd(null);
     setCantidad(1);
     setCostoUnitario(0);
     setNumeroLote('');
@@ -140,7 +131,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const numeroFactura = (formData.numero_factura || nextFactura || '').trim();
+    const numeroFactura = (formData.numero_factura_proveedor || nextFactura || '').trim();
 
     if (!formData.proveedor || !numeroFactura) {
       showAlert.error('Facturación incompleta', 'Debe completar proveedor y el número de factura para continuar.');
@@ -154,15 +145,20 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
 
     const compraFinal = {
       ...formData,
-      numero_factura: numeroFactura,
+      numero_factura_proveedor: numeroFactura,
       total: calcularTotal(),
-      fecha: compra ? compra.fecha : new Date().toISOString().split('T')[0]
+      fecha_compra: compra ? compra.fecha_compra : new Date().toISOString().split('T')[0]
     };
 
     onSave(compraFinal);
   };
 
-  const productosDisponibles = proveedoresConProductos[formData.proveedor] || [];
+  const resultadosBusqueda = debouncedSearch
+    ? productosActivos.filter((prod) =>
+        prod.nombre.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        prod.codigo.toLowerCase().includes(debouncedSearch.toLowerCase())
+      )
+    : [];
 
   const styles = {
     modalBg: 'var(--bg-card)',
@@ -193,25 +189,25 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                   <select
                     className="form-select shadow-none"
                     value={formData.proveedor}
-                    onChange={handleProveedorChange}
+                    onChange={(e) => setFormData({ ...formData, proveedor: e.target.value })}
                     required
                     style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                   >
                     <option value="">Seleccione un proveedor...</option>
-                    {Object.keys(proveedoresConProductos).map((prov) => (
-                      <option key={prov} value={prov}>{prov}</option>
+                    {proveedoresActivos.map((prov) => (
+                      <option key={prov.codigo} value={prov.nombre}>{prov.nombre}</option>
                     ))}
                   </select>
                 </div>
 
                 <div className="col-md-3">
-                  <label className="form-label small fw-semibold">Factura</label>
+                  <label className="form-label small fw-semibold">N° Factura Proveedor</label>
                   <input
                     type="text"
                     className="form-control"
-                    value={formData.numero_factura}
+                    value={formData.numero_factura_proveedor}
                     readOnly={!compra}
-                    onChange={(e) => setFormData({ ...formData, numero_factura: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, numero_factura_proveedor: e.target.value })}
                     placeholder={nextFactura || 'FAC-0001'}
                     style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                   />
@@ -231,106 +227,157 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                   </select>
                 </div>
                 <div className="col-md-12">
-                  <label className="form-label small fw-semibold">Ruta de factura</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    value={formData.ruta_factura}
-                    onChange={(e) => setFormData({ ...formData, ruta_factura: e.target.value })}
-                    placeholder="/facturas/fac-001.pdf"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  />
+                  <label className="form-label small fw-semibold">Factura digitalizada (PDF o imagen)</label>
+                  <div className="d-flex align-items-center gap-2">
+                    <label
+                      className="btn btn-sm d-flex align-items-center gap-2 m-0"
+                      style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}`, color: styles.textColor }}
+                    >
+                      <Upload size={14} />
+                      Subir archivo
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={handleFacturaFileChange}
+                        hidden
+                      />
+                    </label>
+                    {formData.ruta_factura ? (
+                      formData.ruta_factura_url ? (
+                        <a
+                          href={formData.ruta_factura_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="small d-flex align-items-center gap-1"
+                          style={{ color: 'var(--amber-action)' }}
+                        >
+                          <FileEarmarkText size={14} /> {formData.ruta_factura}
+                        </a>
+                      ) : (
+                        <span className="small d-flex align-items-center gap-1" style={{ color: styles.mutedColor }}>
+                          <FileEarmarkText size={14} /> {formData.ruta_factura}
+                        </span>
+                      )
+                    ) : (
+                      <span className="small" style={{ color: styles.mutedColor }}>Sin factura adjunta</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {formData.proveedor && (
-                <div className="p-3 rounded-3 mt-2" style={{ backgroundColor: styles.tableBg, border: `1px solid ${styles.borderCol}` }}>
-                  <h6 className="fw-bold small mb-3" style={{ color: 'var(--amber-action)' }}>Agregar Productos del Proveedor</h6>
-                  <div className="row g-2 align-items-end">
-                    <div className="col-md-4">
-                      <label className="form-label small text-muted">Producto</label>
-                      <select
-                        className="form-select form-select-sm shadow-none"
-                        value={selectedProductToAdd}
-                        onChange={handleProductSelectChange}
+              <div className="p-3 rounded-3 mt-2" style={{ backgroundColor: styles.tableBg, border: `1px solid ${styles.borderCol}` }}>
+                <h6 className="fw-bold small mb-3" style={{ color: 'var(--amber-action)' }}>Agregar Productos</h6>
+                <div className="row g-2 align-items-end">
+                  <div className="col-md-4">
+                    <label className="form-label small text-muted">Buscar producto (nombre o código)</label>
+                    <div className="position-relative">
+                      <Search size={14} className="position-absolute top-50 start-0 translate-middle-y ms-2" style={{ color: styles.mutedColor }} />
+                      <input
+                        type="text"
+                        className="form-control form-control-sm ps-4"
+                        placeholder="Ej: Tequila o PROD-01"
+                        value={productSearch}
+                        onChange={(e) => {
+                          setProductSearch(e.target.value);
+                          setSelectedProductToAdd(null);
+                        }}
                         style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                      />
+                    </div>
+                    {debouncedSearch && !selectedProductToAdd && (
+                      <div
+                        className="rounded-3 mt-1"
+                        style={{ border: `1px solid ${styles.borderCol}`, maxHeight: '160px', overflowY: 'auto' }}
                       >
-                        <option value="">Seleccione producto...</option>
-                        {productosDisponibles.map((prod) => (
-                          <option key={prod.id} value={prod.nombre}>{prod.nombre}</option>
-                        ))}
-                      </select>
-                    </div>
+                        {resultadosBusqueda.length === 0 ? (
+                          <div className="small text-center py-2" style={{ color: styles.mutedColor }}>Sin resultados.</div>
+                        ) : (
+                          resultadosBusqueda.map((prod) => (
+                            <button
+                              type="button"
+                              key={prod.codigo}
+                              className="btn btn-sm d-block w-100 text-start border-0"
+                              style={{ backgroundColor: 'transparent', color: styles.textColor }}
+                              onClick={() => handleSelectProduct(prod)}
+                            >
+                              <span className="fw-semibold">{prod.nombre}</span>{' '}
+                              <span className="small" style={{ color: styles.mutedColor }}>({prod.codigo})</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
 
-                    <div className="col-md-2">
-                      <label className="form-label small text-muted">Cantidad</label>
-                      <input
-                        type="number"
-                        min="1"
-                        className="form-control form-control-sm"
-                        value={cantidad}
-                        onChange={(e) => setCantidad(Number(e.target.value) || 1)}
-                        style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                      />
-                    </div>
+                  <div className="col-md-2">
+                    <label className="form-label small text-muted">Cantidad</label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="form-control form-control-sm"
+                      value={cantidad}
+                      onChange={(e) => setCantidad(Number(e.target.value) || 1)}
+                      style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                    />
+                  </div>
 
-                    <div className="col-md-2">
-                      <label className="form-label small text-muted">Costo</label>
-                      <input
-                        type="number"
-                        min="0"
-                        className="form-control form-control-sm"
-                        value={costoUnitario}
-                        onChange={(e) => setCostoUnitario(Number(e.target.value) || 0)}
-                        style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                      />
-                    </div>
+                  <div className="col-md-2">
+                    <label className="form-label small text-muted">Costo</label>
+                    <input
+                      type="number"
+                      min="0"
+                      className="form-control form-control-sm"
+                      value={costoUnitario}
+                      onChange={(e) => setCostoUnitario(Number(e.target.value) || 0)}
+                      style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                    />
+                  </div>
 
-                    {selectedProductToAdd &&
-                      (productosDisponibles.find((p) => p.nombre === selectedProductToAdd)?.maneja_vencimiento ? (
-                        <>
-                          <div className="col-md-2">
-                            <label className="form-label small text-muted">Lote</label>
-                            <input
-                              type="text"
-                              className="form-control form-control-sm"
-                              value={numeroLote}
-                              onChange={(e) => setNumeroLote(e.target.value)}
-                              placeholder="LT-001"
-                              style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                            />
-                          </div>
-                          <div className="col-md-2">
-                            <label className="form-label small text-muted">Vence</label>
-                            <input
-                              type="date"
-                              className="form-control form-control-sm"
-                              value={fechaVencimiento}
-                              onChange={(e) => setFechaVencimiento(e.target.value)}
-                              style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                            />
-                          </div>
-                        </>
-                      ) : (
-                        <div className="col-md-4">
-                          <span className="small text-muted">Sin control de vencimiento.</span>
+                  {selectedProductToAdd &&
+                    (selectedProductToAdd.maneja_vencimiento ? (
+                      <>
+                        <div className="col-md-2">
+                          <label className="form-label small text-muted">Lote</label>
+                          <input
+                            type="text"
+                            className="form-control form-control-sm"
+                            value={numeroLote}
+                            onChange={(e) => setNumeroLote(e.target.value)}
+                            placeholder="LT-001"
+                            style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                          />
                         </div>
-                      ))}
+                        <div className="col-md-2">
+                          <label className="form-label small text-muted">Vence</label>
+                          <input
+                            type="date"
+                            className="form-control form-control-sm"
+                            value={fechaVencimiento}
+                            onChange={(e) => setFechaVencimiento(e.target.value)}
+                            style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="col-md-4">
+                        <span className="small text-muted">Sin control de vencimiento.</span>
+                      </div>
+                    ))}
 
-                    <div className="col-md-1 d-grid">
-                      <button
-                        type="button"
-                        className="btn btn-sm text-white"
-                        style={{ backgroundColor: 'var(--amber-action)', border: 'none', height: '31px' }}
-                        onClick={handleAddItem}
-                        title="Agregar item"
-                      >
-                        <Plus size={18} />
-                      </button>
-                    </div>
+                  <div className="col-md-1 d-grid">
+                    <button
+                      type="button"
+                      className="btn btn-sm text-white"
+                      style={{ backgroundColor: 'var(--amber-action)', border: 'none', height: '31px' }}
+                      onClick={handleAddItem}
+                      title="Agregar item"
+                      disabled={!selectedProductToAdd}
+                    >
+                      <Plus size={18} />
+                    </button>
                   </div>
                 </div>
-              )}
+              </div>
 
               <div className="table-responsive mt-2">
                 <table className="table table-sm align-middle m-0" style={{ color: styles.textColor }}>
@@ -347,7 +394,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                     {formData.items.length === 0 ? (
                       <tr>
                         <td colSpan="5" className="text-center py-3 small" style={{ color: styles.mutedColor }}>
-                          {formData.proveedor ? 'No hay productos agregados a esta compra.' : 'Seleccione un proveedor primero.'}
+                          No hay productos agregados a esta compra.
                         </td>
                       </tr>
                     ) : (

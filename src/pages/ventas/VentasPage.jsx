@@ -4,7 +4,9 @@ import { showToast } from '../../utils/alerts';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 import { defaultVentas, defaultCatalogoVentas } from '../../data/defaultVentas';
+import { defaultCategorias } from '../../data/defaultCategorias';
 import { generateNextIdentifier } from '../../utils/identifiers';
+import { calcularTotalesVenta, getPorcentajeIva } from '../../utils/impuestos';
 import { RowActions } from '../../components/common/RowActions';
 import { StatusToggle } from '../../components/common/StatusToggle';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
@@ -32,6 +34,7 @@ export const VentasPage = () => {
   const [carrito, setCarrito] = useState([]);
 
   const [catalogoProductos, setCatalogoProductos] = usePersistentState('stockbar_catalogo_ventas', defaultCatalogoVentas);
+  const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
 
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -98,7 +101,10 @@ export const VentasPage = () => {
         {
           ...prod,
           cantidad: 1,
-          loteInfo: prod.maneja_vencimiento ? availableLots[0] : null
+          loteInfo: prod.maneja_vencimiento ? availableLots[0] : null,
+          // Congelada al agregar al carrito, igual que
+          // detalle_venta.porcentaje_impuesto_aplicado en la base de datos.
+          porcentajeIva: getPorcentajeIva(categorias, prod.categoria)
         }
       ];
     });
@@ -108,7 +114,10 @@ export const VentasPage = () => {
     setCarrito((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const subtotalCarrito = carrito.reduce((acc, item) => acc + item.precio * item.cantidad, 0);
+  const totalesCarrito = calcularTotalesVenta(
+    carrito.map((item) => ({ precio: item.precio, cantidad: item.cantidad, porcentajeIva: item.porcentajeIva }))
+  );
+  const subtotalCarrito = totalesCarrito.total;
 
   const handleSaveVenta = (e) => {
     e.preventDefault();
@@ -169,7 +178,8 @@ export const VentasPage = () => {
         nombre: item.nombre,
         cantidad: item.cantidad,
         precio: item.precio,
-        lote: item.loteInfo?.numero_lote || 'Sin lote'
+        lote: item.loteInfo?.numero_lote || 'Sin lote',
+        porcentajeIva: item.porcentajeIva
       })),
       total: subtotalCarrito,
       // El estado se administra únicamente desde el listado (ver handleToggleEstado).
@@ -473,9 +483,19 @@ export const VentasPage = () => {
                    </div>
                    <div className="col-md-5">
                      <div className="rounded-3 p-3" style={{ backgroundColor: 'var(--bg-main)', border: `1px solid ${styles.borderCol}` }}>
-                       <div className="small text-muted">Total estimado</div>
-                       <div className="fw-bold fs-4" style={{ color: 'var(--amber-action)' }}>
-                         ${new Intl.NumberFormat('es-CO').format(subtotalCarrito)}
+                       <div className="d-flex justify-content-between small" style={{ color: styles.mutedColor }}>
+                         <span>Subtotal (base gravable)</span>
+                         <span>${new Intl.NumberFormat('es-CO').format(Math.round(totalesCarrito.baseGravable))}</span>
+                       </div>
+                       <div className="d-flex justify-content-between small mb-2" style={{ color: styles.mutedColor }}>
+                         <span>IVA</span>
+                         <span>${new Intl.NumberFormat('es-CO').format(Math.round(totalesCarrito.iva))}</span>
+                       </div>
+                       <div className="d-flex justify-content-between align-items-center pt-2 border-top" style={{ borderColor: styles.borderCol }}>
+                         <span className="fw-semibold">Total</span>
+                         <span className="fw-bold fs-4" style={{ color: 'var(--amber-action)' }}>
+                           ${new Intl.NumberFormat('es-CO').format(subtotalCarrito)}
+                         </span>
                        </div>
                      </div>
                    </div>

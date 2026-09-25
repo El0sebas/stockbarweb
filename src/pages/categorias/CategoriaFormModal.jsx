@@ -5,7 +5,8 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
   const initialState = {
     codigo: '',
     nombre: '',
-    descripcion: ''
+    descripcion: '',
+    porcentaje_iva: 19
   };
 
   const [formData, setFormData] = useState(initialState);
@@ -84,6 +85,26 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
                   value={formData.descripcion} 
                   onChange={handleChange}
                 ></textarea>
+              </div>
+
+              <div>
+                <label className="form-label small fw-semibold">% IVA cobrado al cliente</label>
+                <input
+                  type="number"
+                  name="porcentaje_iva"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  required
+                  className="form-control shadow-none"
+                  placeholder="19"
+                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                  value={formData.porcentaje_iva ?? 19}
+                  onChange={handleChange}
+                />
+                <div className="form-text small" style={{ color: styles.mutedColor }}>
+                  19% general; 5% para licores destilados &gt;15° (tarifa diferencial). No incluye el impuesto al consumo de licores/cigarrillos: ese ya está diluido en el costo de compra y StockBar no lo vuelve a cobrar.
+                </div>
               </div>
             </div>
             

@@ -9,9 +9,14 @@ import { showToast } from '../../utils/alerts';
 import { generateNextIdentifier } from '../../utils/identifiers';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultProductos } from '../../data/defaultProductos';
+import { defaultCategorias } from '../../data/defaultCategorias';
+import { defaultLotes } from '../../data/defaultLotes';
+import { getStockDisponible } from '../../utils/stock';
 
 export const ProductosPage = () => {
   const [productos, setProductos] = usePersistentState('stockbar_productos', defaultProductos);
+  const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
+  const [lotes] = usePersistentState('stockbar_lotes', defaultLotes);
 
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -138,7 +143,7 @@ export const ProductosPage = () => {
                 <th className="py-3 px-4 small text-uppercase fw-bold" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>PRODUCTO</th>
                 <th className="py-3 px-4 small text-uppercase fw-bold" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>CATEGORÍA</th>
                 <th className="py-3 px-4 small text-uppercase fw-bold text-end" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>PRECIO VENTA</th>
-                <th className="py-3 px-4 small text-uppercase fw-bold text-center" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>IMP</th>
+                <th className="py-3 px-4 small text-uppercase fw-bold text-center" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>% IVA</th>
                 <th className="py-3 px-4 small text-uppercase fw-bold text-center" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>STOCK</th>
                 <th className="py-3 px-4 small text-uppercase fw-bold text-center" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>ESTADO</th>
                 <th className="py-3 px-4 small text-uppercase fw-bold text-center" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>ACCIONES</th>
@@ -152,7 +157,10 @@ export const ProductosPage = () => {
                   </td>
                 </tr>
               ) : (
-                filteredProductos.map((prod) => (
+                filteredProductos.map((prod) => {
+                  const stockActual = getStockDisponible(lotes, prod.codigo);
+                  const porcentajeIva = categorias.find((c) => c.nombre === prod.categoria)?.porcentaje_iva ?? 19;
+                  return (
                   <tr key={prod.codigo} style={{ borderColor: styles.borderCol }}>
                     <td className="py-3 px-4 fw-bold" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>
                       {prod.codigo}
@@ -167,21 +175,21 @@ export const ProductosPage = () => {
                       $ {Number(prod.precioVenta).toLocaleString()}
                     </td>
                     <td className="py-3 px-4 text-center small" style={{ backgroundColor: 'transparent', color: styles.mutedColor }}>
-                      {prod.porcentaje_impuesto ?? prod.porcentajeImpuesto ?? 0}%
+                      {porcentajeIva}%
                     </td>
                     <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
                       <span
                         className="badge px-2 py-1"
                         style={{
-                          backgroundColor: prod.stockActual <= prod.stockMinimo
+                          backgroundColor: stockActual <= prod.stockMinimo
                             ? ('var(--danger-soft-bg)')
                             : ('var(--border-color)'),
-                          color: prod.stockActual <= prod.stockMinimo
+                          color: stockActual <= prod.stockMinimo
                             ? 'var(--brand-danger)'
                             : styles.textColor
                         }}
                       >
-                        {prod.stockActual} un.
+                        {stockActual} un.
                       </span>
                     </td>
                     <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
@@ -195,7 +203,8 @@ export const ProductosPage = () => {
                       />
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

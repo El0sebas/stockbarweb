@@ -8,34 +8,10 @@ import { ProveedorFormModal } from './ProveedorFormModal.jsx';
 import { showToast } from '../../utils/alerts';
 import { generateNextIdentifier } from '../../utils/identifiers';
 import { usePersistentState } from '../../hooks/usePersistentState';
+import { defaultProveedores } from '../../data/defaultProveedores';
 
 export const ProveedoresPage = () => {
-  const [proveedores, setProveedores] = usePersistentState('stockbar_proveedores', [
-    {
-      codigo: 'PROV-01',
-      nombre: 'Distribuidora de Licores de Antioquia',
-      contacto: 'Carlos Pérez',
-      telefono: '3104567890',
-      correo: 'ventas@dlantioquia.com',
-      estado: 'Activo'
-    },
-    {
-      codigo: 'PROV-02',
-      nombre: 'Importaciones Andinas S.A.S.',
-      contacto: 'María Gómez',
-      telefono: '3209876543',
-      correo: 'contacto@impandinas.com',
-      estado: 'Activo'
-    },
-    {
-      codigo: 'PROV-03',
-      nombre: 'Cervecería Nacional',
-      contacto: 'Andrés Ruiz',
-      telefono: '3001234567',
-      correo: 'aruiz@cervecerianacional.co',
-      estado: 'Inactivo'
-    }
-  ]);
+  const [proveedores, setProveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
 
   const [searchTerm, setSearchTerm] = useState('');
 

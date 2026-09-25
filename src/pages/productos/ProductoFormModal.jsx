@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { BoxSeam } from 'react-bootstrap-icons';
+import { usePersistentState } from '../../hooks/usePersistentState';
+import { defaultCategorias } from '../../data/defaultCategorias';
 
 export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
-  
+  // Mismo catálogo que CategoriasPage: crear una categoría nueva la hace
+  // aparecer aquí de inmediato, en vez de mantener una lista fija aparte.
+  const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
+
   const initialState = {
     codigo: '',
     nombre: '',
     descripcion: '',
     categoria: '',
     precioVenta: '',
-    porcentaje_impuesto: 19,
-    precio_incluye_impuesto: false,
     maneja_vencimiento: false,
-    stockActual: '',
     stockMinimo: '',
     estado: 'Activo'
   };
@@ -111,9 +113,9 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
                     onChange={handleChange}
                   >
                     <option value="">Seleccione...</option>
-                    <option value="Licores Importados">Licores Importados</option>
-                    <option value="Licores Nacionales">Licores Nacionales</option>
-                    <option value="Cervezas">Cervezas</option>
+                    {categorias.map((cat) => (
+                      <option key={cat.codigo} value={cat.nombre}>{cat.nombre}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="col-6">
@@ -133,60 +135,34 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
 
               <div className="row g-3">
                 <div className="col-6">
-                  <label className="form-label small fw-semibold">% Impuesto</label>
-                  <input 
+                  <label className="form-label small fw-semibold">Stock Mínimo</label>
+                  <input
                     type="number"
-                    name="porcentaje_impuesto"
-                    min="0"
-                    max="100"
+                    name="stockMinimo"
+                    required
                     className="form-control shadow-none"
-                    placeholder="19"
+                    placeholder="0"
                     style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                    value={formData.porcentaje_impuesto || 0}
+                    value={formData.stockMinimo}
                     onChange={handleChange}
                   />
-                </div>
-                <div className="col-6">
-                  <label className="form-label small fw-semibold">Stock Mínimo</label>
-                  <input 
-                    type="number" 
-                    name="stockMinimo"
-                    required 
-                    className="form-control shadow-none" 
-                    placeholder="0"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} 
-                    value={formData.stockMinimo} 
-                    onChange={handleChange} 
-                  />
-                </div>
-              </div>
-
-              <div className="row g-3">
-                <div className="col-6">
-                  <label className="form-label small fw-semibold">Stock Actual</label>
-                  <input 
-                    type="number" 
-                    name="stockActual"
-                    required 
-                    className="form-control shadow-none" 
-                    placeholder="0"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} 
-                    value={formData.stockActual} 
-                    onChange={handleChange} 
-                  />
-                </div>
-                <div className="col-6">
-                  <label className="form-label small fw-semibold">Precio incluye impuesto</label>
-                  <div className="form-check form-switch mt-2">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      name="precio_incluye_impuesto"
-                      checked={Boolean(formData.precio_incluye_impuesto)}
-                      onChange={handleChange}
-                    />
-                    <label className="form-check-label ms-2">Sí</label>
+                  <div className="form-text small" style={{ color: styles.mutedColor }}>
+                    El stock actual no se edita aquí: siempre se calcula desde los lotes registrados en Compras.
                   </div>
+                </div>
+                <div className="col-6">
+                  <label className="form-label small fw-semibold">% IVA (según categoría)</label>
+                  <input
+                    type="text"
+                    disabled
+                    className="form-control"
+                    value={
+                      formData.categoria
+                        ? `${categorias.find((c) => c.nombre === formData.categoria)?.porcentaje_iva ?? 19}%`
+                        : 'Seleccione una categoría'
+                    }
+                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.mutedColor }}
+                  />
                 </div>
               </div>
 
@@ -199,6 +175,9 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
                   onChange={handleChange}
                 />
                 <label className="form-check-label ms-2">Maneja vencimiento / lote</label>
+                <div className="form-text small" style={{ color: styles.mutedColor }}>
+                  Solo exige fecha de vencimiento cuando este producto entre en un lote nuevo desde Compras. No crea lotes desde aquí.
+                </div>
               </div>
             </div>
             

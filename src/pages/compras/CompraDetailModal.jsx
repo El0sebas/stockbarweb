@@ -1,5 +1,5 @@
 import React from 'react';
-import { BagCheck, Truck, Calendar3, CreditCard, FileEarmarkText } from 'react-bootstrap-icons';
+import { BagCheck, Truck, Calendar3, CreditCard, FileEarmarkText, Hash } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 
@@ -45,7 +45,7 @@ export const CompraDetailModal = ({ show, onClose, compra }) => {
             <div className="d-flex justify-content-between align-items-center pb-2 border-bottom" style={{ borderColor: styles.borderCol }}>
               <div>
                 <span className="badge px-2 py-1 mb-1 fw-bold" style={{ backgroundColor: 'var(--amber-action)', color: '#FFFFFF' }}>
-                  {compra.factura}
+                  {compra.numero_factura_proveedor}
                 </span>
                 <h4 className="fw-bold m-0">{compra.proveedor}</h4>
               </div>
@@ -68,7 +68,16 @@ export const CompraDetailModal = ({ show, onClose, compra }) => {
                     <Calendar3 size={16} />
                     <span className="small">Fecha</span>
                   </div>
-                  <span className="fw-semibold">{compra.fecha}</span>
+                  <span className="fw-semibold">{compra.fecha_compra || compra.fecha}</span>
+                </div>
+              </div>
+              <div className="col-6">
+                <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
+                  <div className="d-flex align-items-center gap-2 mb-1" style={{ color: styles.mutedColor }}>
+                    <Hash size={16} />
+                    <span className="small">N° Factura Proveedor</span>
+                  </div>
+                  <span className="fw-semibold">{compra.numero_factura_proveedor || 'N/A'}</span>
                 </div>
               </div>
               <div className="col-6">
@@ -89,13 +98,23 @@ export const CompraDetailModal = ({ show, onClose, compra }) => {
                   <span className="fw-semibold">{compra.proveedor}</span>
                 </div>
               </div>
-              <div className="col-6">
+              <div className="col-12">
                 <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
                   <div className="d-flex align-items-center gap-2 mb-1" style={{ color: styles.mutedColor }}>
                     <FileEarmarkText size={16} />
-                    <span className="small">Ruta de factura</span>
+                    <span className="small">Factura digitalizada</span>
                   </div>
-                  <span className="fw-semibold">{compra.rutaFactura || compra.ruta_factura || 'N/A'}</span>
+                  {compra.ruta_factura ? (
+                    compra.ruta_factura_url ? (
+                      <a href={compra.ruta_factura_url} target="_blank" rel="noreferrer" className="fw-semibold" style={{ color: 'var(--amber-action)' }}>
+                        Ver factura ({compra.ruta_factura})
+                      </a>
+                    ) : (
+                      <span className="fw-semibold">{compra.ruta_factura}</span>
+                    )
+                  ) : (
+                    <span className="fw-semibold" style={{ color: styles.mutedColor }}>Sin factura adjunta</span>
+                  )}
                 </div>
               </div>
             </div>

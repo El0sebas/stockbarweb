@@ -7,13 +7,10 @@ import { CategoriaDetailModal } from './CategoriaDetailModal';
 import { showToast } from '../../utils/alerts';
 import { generateNextIdentifier } from '../../utils/identifiers';
 import { usePersistentState } from '../../hooks/usePersistentState';
+import { defaultCategorias } from '../../data/defaultCategorias';
 
 export const CategoriasPage = () => {
-  const [categorias, setCategorias] = usePersistentState('stockbar_categorias', [
-    { codigo: 'CAT-01', nombre: 'Licores Importados', descripcion: 'Whisky, Tequila, Vodka importado' },
-    { codigo: 'CAT-02', nombre: 'Licores Nacionales', descripcion: 'Aguardiente, Ron nacional' },
-    { codigo: 'CAT-03', nombre: 'Cervezas', descripcion: 'Nacionales e importadas en botella o lata' },
-  ]);
+  const [categorias, setCategorias] = usePersistentState('stockbar_categorias', defaultCategorias);
 
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -113,6 +110,7 @@ export const CategoriasPage = () => {
                 <th className="py-3 px-4 small text-uppercase fw-bold" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>CÓDIGO</th>
                 <th className="py-3 px-4 small text-uppercase fw-bold" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>NOMBRE</th>
                 <th className="py-3 px-4 small text-uppercase fw-bold" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>DESCRIPCIÓN</th>
+                <th className="py-3 px-4 small text-uppercase fw-bold text-center" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>% IVA</th>
                 <th className="py-3 px-4 small text-uppercase fw-bold text-center" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>ACCIONES</th>
               </tr>
             </thead>
@@ -122,6 +120,7 @@ export const CategoriasPage = () => {
                   <td className="py-3 px-4 fw-bold" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>{cat.codigo}</td>
                   <td className="py-3 px-4 fw-semibold" style={{ backgroundColor: 'transparent', color: styles.textColor }}>{cat.nombre}</td>
                   <td className="py-3 px-4 small" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>{cat.descripcion}</td>
+                  <td className="py-3 px-4 text-center fw-semibold" style={{ backgroundColor: 'transparent', color: styles.textColor }}>{cat.porcentaje_iva ?? 19}%</td>
                   <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
                     <RowActions
                       onView={() => handleOpenDetail(cat)}
@@ -133,7 +132,7 @@ export const CategoriasPage = () => {
               ))}
               {filteredCategorias.length === 0 && (
                 <tr>
-                  <td colSpan="4" className="text-center py-4" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>
+                  <td colSpan="5" className="text-center py-4" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>
                     No se encontraron categorías.
                   </td>
                 </tr>

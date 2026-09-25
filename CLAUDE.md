@@ -29,14 +29,12 @@ Sistema web + móvil de gestión administrativa (compras, inventario, ventas, pr
 7. **Repositorio de Datos como única puerta a MySQL** (vía `mysql2` o equivalente). Los controladores no ejecutan SQL directamente: invocan métodos del repositorio.
 8. **Base de datos organizada en 3 niveles**: Catálogos (categorías, productos, proveedores, clientes), Seguridad (usuarios, roles, permisos, sesiones), Maestro‑Detalle (compras y ventas con cabecera/detalle). Todo modelo de datos nuevo debe encajar en uno de estos niveles.
 9. **Rendimiento del inventario vía triggers, no vía polling desde el cliente.** El descuento/actualización de stock tras una venta debe resolverse con triggers en MySQL (desnormalización controlada por rendimiento), de forma que la actualización sea casi instantánea en el punto de venta.
-10. **Acceso a datos de solo lectura (reportes/dashboard) a través de VISTAS SQL (`vw_...`), no de joins repetidos en el código de aplicación.** Esta es la convención de este proyecto para todo lo relacionado con KPIs, exportación a PDF/Excel y pantallas de dashboard. Vistas sugeridas como punto de partida (a confirmar cuando exista el script físico de BD del Sprint 08):
-    - `vw_inventario_actual`
-    - `vw_ventas_detalle`
-    - `vw_compras_detalle`
-    - `vw_kpis_dashboard`
-    - `vw_usuarios_roles_permisos`
+10. **Acceso a datos de solo lectura (reportes/dashboard, detalle de producto, recibo de venta) a través de VISTAS SQL (`vw_...`), no de joins repetidos en el código de aplicación.** Esta es la convención de este proyecto. Vistas confirmadas en el script físico vigente (`/scripts/sch.sql`, ver `/docs/DATABASE.md` sección 3):
+    - `vw_stock_lotes` — lotes con su cantidad disponible ya calculada; filtrar por `id_producto` para el detalle de producto (solo lectura).
+    - `vw_stock_producto` — stock total por producto y bandera de bajo stock; única fuente del "stock actual" (nunca un campo editable en `producto`).
+    - `vw_totales_venta` — desglose base gravable / IVA / total por venta, para el carrito y el recibo.
 
-    Antes de crear una vista nueva, revisar si una existente puede reutilizarse o extenderse. Toda vista nueva debe documentarse en `RESUMEN_TECNICO_STOCKBAR.md` (sección 6) y, si aplica, en el script SQL del proyecto.
+    Antes de crear una vista nueva, revisar si una existente puede reutilizarse o extenderse. Toda vista nueva debe documentarse en `/docs/DATABASE.md` (sección 3) y en `/scripts/sch.sql`.
 11. **No hay servidores on-premise.** El despliegue asume infraestructura cloud (frontend web, backend, MySQL) más equipos locales (PC, smartphone/tablet Android, router ISP, switch, access point Wi‑Fi privado, firewall). No proponer arquitecturas que dependan de un servidor físico local.
 
 ## 4. Los 10 subprocesos del sistema (alcance funcional de referencia)
@@ -78,26 +76,24 @@ Al implementar features, ubicarlas dentro de uno de estos subprocesos y respetar
 
 La estructura de datos y el acceso a la base de datos están documentados en dos archivos que deben consultarse juntos:
 
-- **`/docs/DATABASE.md`** — Modelo de datos completo: 
+- **`/docs/DATABASE.md`** — Modelo de datos completo:
   - Descripción de las 3 capas (Catálogos, Seguridad, Maestro‑Detalle).
   - Definición de todas las tablas con campos, tipos, índices y foreign keys.
-  - Vistas SQL (`vw_inventario_actual`, `vw_ventas_detalle`, `vw_compras_detalle`, `vw_kpis_dashboard`, `vw_usuarios_roles_permisos`) — **usar estas vistas, no joins repetidos**, en todo endpoint de dashboard/reportes.
-  - Triggers para desnormalización controlada (`tr_descuento_inventario_post_venta`, `tr_recalcular_total_compra`, `tr_recalcular_total_venta`).
+  - Vistas SQL (`vw_stock_lotes`, `vw_stock_producto`, `vw_totales_venta`) — **usar estas vistas, no joins repetidos**, en todo endpoint de dashboard/reportes/detalle de producto/recibo.
+  - Triggers para desnormalización controlada y reglas de negocio (`trg_validar_detalle_venta_ins/upd` congela `porcentaje_impuesto_aplicado` e `id_lote` descuenta stock vía `fn_stock_lote`, `trg_validar_cierre_venta_*` valida cuadre de pago, etc. — lista completa en la sección 4).
   - Convenciones de nomenclatura.
 
-- **`/scripts/schema.sql`** — Script SQL template que:
-  - Crea todas las tablas.
-  - Declara los triggers.
+- **`/scripts/sch.sql`** — Script SQL físico vigente, ya probado contra un servidor real, que:
+  - Crea todas las tablas (incluye `lote`, `jornada`, `venta_pago`, `categoria.porcentaje_iva`, `compra.ruta_factura`).
+  - Declara los triggers, funciones y procedimientos.
   - Crea las vistas.
-  - Incluye datos iniciales (roles, permisos por defecto, categorías de ejemplo).
-  - **Nota:** este es un template preliminar; el Sprint 08 entregará el script definitivo con validaciones, índices optimizados y confirmación de todos los tipos de datos.
+  - Incluye datos iniciales (roles, permisos por defecto, categorías con su IVA, métodos de pago, unidades de medida, motivos de baja).
 
-**Regla obligatoria:** Antes de crear una nueva vista o modificar el modelo de datos, consultar `/docs/DATABASE.md` y actualizarlo junto con el código. No crear tablas, vistas o triggers sin documentarlos primero.
+**Regla obligatoria:** Antes de crear una nueva vista o modificar el modelo de datos, consultar `/docs/DATABASE.md` y actualizarlo junto con `/scripts/sch.sql`. No crear tablas, vistas o triggers sin documentarlos primero.
 
 ## 8. Qué falta por definir (no asumir, preguntar o marcar como pendiente)
 
-- Diagrama de Clases y Modelo Relacional **definitivo** (Sprint 05) — el template de `schema.sql` es un punto de partida.
-- **Script SQL definitivo y confirmación de vistas** (Sprint 08) — `schema.sql` actualmente es un template; será validado y completado en este sprint.
+- Diagrama de Clases y Modelo Relacional en notación UML/IE (Sprint 05) — `/scripts/sch.sql` y `/docs/DATABASE.md` ya son la fuente de verdad de columnas/tipos/relaciones; falta el diagrama visual formal.
 - Diagrama de Despliegue C4 formal (Sprint 09).
 - Manuales Técnico y de Usuario (v1‑v4).
 - Matriz de historias de usuario con criterios de aceptación.

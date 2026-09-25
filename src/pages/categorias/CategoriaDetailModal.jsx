@@ -41,6 +41,11 @@ export const CategoriaDetailModal = ({ show, onClose, categoria }) => {
                 {categoria.descripcion || <span style={{ color: styles.mutedColor, fontStyle: 'italic' }}>Sin descripción registrada.</span>}
               </p>
             </div>
+
+            <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
+              <div className="small" style={{ color: styles.mutedColor }}>% IVA cobrado al cliente</div>
+              <div className="fw-bold fs-5 mt-1" style={{ color: 'var(--amber-action)' }}>{categoria.porcentaje_iva ?? 19}%</div>
+            </div>
           </div>
 
           <div className="modal-footer border-top p-3" style={{ borderColor: styles.borderCol }}>

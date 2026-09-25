@@ -1,8 +1,13 @@
 import React from 'react';
 import { CartCheck, Person, CreditCard, Calendar3 } from 'react-bootstrap-icons';
+import { calcularTotalesVenta } from '../../utils/impuestos';
 
 export const VentaDetailModal = ({ show, onClose, venta }) => {
   if (!show || !venta) return null;
+
+  // Espejo de vw_totales_venta: base gravable + IVA a partir de la tasa
+  // que quedó congelada por línea al momento de la venta.
+  const totales = calcularTotalesVenta(venta.productos || []);
 
   const styles = {
     modalBg: 'var(--bg-card)',
@@ -106,9 +111,19 @@ export const VentaDetailModal = ({ show, onClose, venta }) => {
               </table>
             </div>
 
-            <div className="d-flex justify-content-end align-items-center gap-3 pt-2 border-top" style={{ borderColor: styles.borderCol }}>
-              <span className="fw-bold fs-6">Total:</span>
-              <span className="fw-bold fs-5" style={{ color: 'var(--amber-action)' }}>$ {Number(venta.total).toLocaleString()}</span>
+            <div className="d-flex flex-column align-items-end gap-1 pt-2 border-top" style={{ borderColor: styles.borderCol }}>
+              <div className="d-flex justify-content-between gap-3 small" style={{ color: styles.mutedColor, minWidth: '220px' }}>
+                <span>Subtotal (base gravable)</span>
+                <span>$ {Math.round(totales.baseGravable).toLocaleString()}</span>
+              </div>
+              <div className="d-flex justify-content-between gap-3 small" style={{ color: styles.mutedColor, minWidth: '220px' }}>
+                <span>IVA</span>
+                <span>$ {Math.round(totales.iva).toLocaleString()}</span>
+              </div>
+              <div className="d-flex justify-content-between align-items-center gap-3" style={{ minWidth: '220px' }}>
+                <span className="fw-bold fs-6">Total:</span>
+                <span className="fw-bold fs-5" style={{ color: 'var(--amber-action)' }}>$ {Number(venta.total).toLocaleString()}</span>
+              </div>
             </div>
           </div>
 

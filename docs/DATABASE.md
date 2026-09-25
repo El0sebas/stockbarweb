@@ -1,6 +1,6 @@
 # Database Schema — StockBar
 
-Documentación de la estructura de base de datos relacional (MySQL). **Nota:** este es un esquema preliminar basado en los 10 subprocesos y los niveles documentados en el proyecto (Catálogos, Seguridad, Maestro‑Detalle). El script SQL definitivo se entregará en el **Sprint 08**; cuando llegue, este documento se actualizará con la estructura final, índices y triggers reales.
+Documentación de la estructura de base de datos relacional (MySQL 8.0+ / MariaDB 10.5+). **Este es el script físico vigente** (`/scripts/sch.sql`), ya probado contra un servidor real, y reemplaza el template preliminar anterior. Confirma nombres exactos de tablas, columnas, vistas y triggers; los pendientes reales de cierre de sprint quedan en la sección 7.
 
 ---
 
@@ -9,13 +9,13 @@ Documentación de la estructura de base de datos relacional (MySQL). **Nota:** e
 La base de datos está estructurada en **3 niveles** que agrupan las tablas por función:
 
 ### Nivel 1 — Catálogos
-Tablas de referencia que definen los productos, categorías, proveedores y clientes del negocio. Son relativamente estáticas (bajo volumen de cambios).
+`categoria`, `producto`, `producto_proveedor`, `proveedor`, `contacto_proveedor`, `cliente`, `metodo_pago`, `unidad_medida`, `motivo_baja`. Relativamente estáticas (bajo volumen de cambios).
 
 ### Nivel 2 — Seguridad
-Tablas de autenticación, autorización y auditoría: usuarios, roles, permisos y sesiones. Gestión de acceso al sistema.
+`rol`, `permiso`, `rol_permiso`, `usuario`, `recuperacion_contrasena`. Autenticación, autorización y recuperación de acceso.
 
 ### Nivel 3 — Maestro‑Detalle
-Tablas transaccionales de negocio con relaciones padre/hijo: compras (cabecera/detalle), ventas (cabecera/detalle) y movimientos de inventario.
+Tablas transaccionales con relaciones padre/hijo: `compra` → `lote` (una compra siempre genera lotes), `venta` → `detalle_venta` → `venta_pago`, más `jornada` (turno de caja) y `baja_inventario` (mermas/vencimientos).
 
 ---
 
@@ -23,450 +23,332 @@ Tablas transaccionales de negocio con relaciones padre/hijo: compras (cabecera/d
 
 ### Nivel 1: Catálogos
 
-#### `categorias`
-Agrupa productos por tipos (Licores, Cigarrillos, Confitería, etc.).
+#### `categoria`
+Agrupa productos (Licores, Cerveza, Cigarrillos, Snacks) y es la **única propietaria de la tarifa de IVA** que se cobra al cliente final.
 
 ```
 Campos:
-  - id (INT, PK, AUTO_INCREMENT)
-  - nombre (VARCHAR(100), UNIQUE, NOT NULL)
-  - descripcion (TEXT, nullable)
-  - estado (ENUM: 'activo', 'inactivo')
-  - fecha_creacion (TIMESTAMP, DEFAULT CURRENT_TIMESTAMP)
-  - fecha_modificacion (TIMESTAMP, ON UPDATE CURRENT_TIMESTAMP)
+  - id_categoria (INT UNSIGNED, PK, AUTO_INCREMENT)
+  - nombre (VARCHAR(50), UNIQUE, NOT NULL)
+  - descripcion (VARCHAR(200), nullable)
+  - margen_defecto_porcentaje (DECIMAL(5,2), NOT NULL, >= 0)
+  - porcentaje_iva (DECIMAL(5,2), NOT NULL, DEFAULT 19.00, 0–100)
+      19.00 general; 5.00 para Licores (tarifa diferencial licores/vinos/
+      aperitivos >15° vigente en Colombia desde abril 2026). Editable por
+      un administrador si la ley cambia, sin tocar código ni el frontend.
+  - requiere_verificacion_edad (BOOLEAN, NOT NULL, DEFAULT FALSE)
+  - estado (BOOLEAN, NOT NULL, DEFAULT TRUE)
 
 Índices:
-  - PK: id
+  - PK: id_categoria
   - UNIQUE: nombre
 ```
 
-#### `productos`
-Artículos individuales que se venden (botellas, cigarrillos, dulces, etc.).
+**Importante:** el impuesto al consumo de licores/cigarrillos (monofásico, pagado por el productor/importador) **no vive aquí ni en ninguna tabla de StockBar** — ya está diluido en `lote.precio_unitario_compra`. `categoria.porcentaje_iva` es exclusivamente el IVA que el cajero cobra al cliente final.
+
+#### `producto`
+Artículos vendibles. **No tiene columna de stock** — el stock siempre se calcula desde `lote` (ver `vw_stock_producto`, sección 3).
 
 ```
 Campos:
-  - id (INT, PK, AUTO_INCREMENT)
-  - nombre (VARCHAR(150), NOT NULL)
-  - categoria_id (INT, FK → categorias.id, NOT NULL)
-  - precio_costo (DECIMAL(10,2), nullable)
-  - precio_venta (DECIMAL(10,2), NOT NULL)
-  - stock (INT, DEFAULT 0)
-  - stock_minimo (INT, DEFAULT 5) — umbral para alertas de bajo stock
-  - sku (VARCHAR(50), UNIQUE, nullable) — código de artículo
-  - estado (ENUM: 'activo', 'inactivo', 'descontinuado')
-  - fecha_creacion (TIMESTAMP)
-  - fecha_modificacion (TIMESTAMP, ON UPDATE CURRENT_TIMESTAMP)
+  - id_producto (INT UNSIGNED, PK, AUTO_INCREMENT)
+  - codigo_sku (VARCHAR(30), UNIQUE, NOT NULL)
+  - nombre (VARCHAR(120), NOT NULL)
+  - descripcion (VARCHAR(255), nullable)
+  - id_categoria (INT UNSIGNED, FK → categoria.id_categoria, NOT NULL)
+  - id_unidad_medida (SMALLINT UNSIGNED, FK → unidad_medida.id_unidad_medida, NOT NULL)
+  - margen_personalizado_porcentaje (DECIMAL(5,2), nullable, >= 0)
+  - maneja_vencimiento (BOOLEAN, NOT NULL, DEFAULT TRUE)
+      Solo una bandera de validación: exige fecha_vencimiento al crear un
+      lote nuevo para este producto. No crea lotes por sí sola — los
+      lotes solo nacen de una compra (ver `lote` más abajo).
+  - stock_minimo (DECIMAL(10,2), NOT NULL, DEFAULT 0, >= 0)
+  - estado (BOOLEAN, NOT NULL, DEFAULT TRUE)
+  - fecha_creacion (TIMESTAMP, DEFAULT CURRENT_TIMESTAMP)
 
 Índices:
-  - PK: id
-  - FK: categoria_id
-  - UNIQUE: sku
-  - INDEX: estado (para filtros rápidos)
+  - PK: id_producto
+  - UNIQUE: codigo_sku
+  - FK: id_categoria, id_unidad_medida (InnoDB indexa automáticamente cada FK)
 ```
 
-#### `proveedores`
-Empresas o personas que suministran los productos a StockBar.
+#### `producto_proveedor`
+Relación opcional N:N — qué proveedores suministran cada producto y a qué precio de referencia.
 
 ```
 Campos:
-  - id (INT, PK, AUTO_INCREMENT)
-  - nombre (VARCHAR(150), NOT NULL)
-  - contacto (VARCHAR(100), nullable)
-  - telefono (VARCHAR(20), nullable)
-  - email (VARCHAR(100), nullable)
-  - direccion (VARCHAR(255), nullable)
-  - estado (ENUM: 'activo', 'inactivo')
-  - fecha_creacion (TIMESTAMP)
-  - fecha_modificacion (TIMESTAMP, ON UPDATE CURRENT_TIMESTAMP)
+  - id_producto (INT UNSIGNED, FK → producto.id_producto)
+  - id_proveedor (INT UNSIGNED, FK → proveedor.id_proveedor)
+  - precio_referencia (DECIMAL(12,2), nullable, >= 0)
+  - estado (BOOLEAN, NOT NULL, DEFAULT TRUE)
 
 Índices:
-  - PK: id
-  - INDEX: estado
+  - PK compuesta: (id_producto, id_proveedor)
 ```
 
-#### `clientes`
-Personas que compran en StockBar (datos opcionales para reportes de frecuencia/preferencias).
+#### `proveedor` / `contacto_proveedor`
+Empresas que suministran productos, y sus contactos.
+
+```
+proveedor:
+  - id_proveedor (INT UNSIGNED, PK, AUTO_INCREMENT)
+  - nit (VARCHAR(20), UNIQUE, NOT NULL)
+  - razon_social (VARCHAR(120), NOT NULL)
+  - nombre_comercial (VARCHAR(120), nullable)
+  - ciudad, direccion, telefono_principal, correo_principal (nullable)
+  - fecha_registro (TIMESTAMP), estado (BOOLEAN, DEFAULT TRUE)
+
+contacto_proveedor:
+  - id_contacto (INT UNSIGNED, PK, AUTO_INCREMENT)
+  - id_proveedor (FK → proveedor.id_proveedor, NOT NULL)
+  - nombres, apellidos (NOT NULL), cargo, telefono (NOT NULL), correo
+  - es_principal (BOOLEAN), estado (BOOLEAN)
+  - Un solo contacto "principal activo" por proveedor (columna generada
+    + UNIQUE KEY, simula el índice parcial de Postgres que MySQL no tiene).
+```
+
+#### `cliente`
+Compradores. Puede no existir en una venta de mostrador (`venta.id_cliente` es NULLABLE), pero si el producto exige verificación de edad, la venta rechaza clientes sin `fecha_nacimiento` válida.
 
 ```
 Campos:
-  - id (INT, PK, AUTO_INCREMENT)
-  - nombre (VARCHAR(150), nullable) — puede ser anónimo
-  - telefono (VARCHAR(20), nullable)
-  - email (VARCHAR(100), nullable)
-  - fecha_registro (TIMESTAMP, DEFAULT CURRENT_TIMESTAMP)
-  - estado (ENUM: 'activo', 'inactivo')
-  - fecha_modificacion (TIMESTAMP, ON UPDATE CURRENT_TIMESTAMP)
+  - id_cliente (INT UNSIGNED, PK, AUTO_INCREMENT)
+  - tipo_documento (VARCHAR(5), CHECK IN ('CC','CE','TI','PAS','NIT'))
+  - numero_documento (VARCHAR(20))
+  - nombres, apellidos (NOT NULL)
+  - fecha_nacimiento (DATE, nullable — validada por trigger, no CHECK: MySQL
+    prohíbe CURRENT_DATE dentro de un CHECK)
+  - genero, ciudad, direccion, telefono, correo (nullable)
+  - fecha_registro (TIMESTAMP), estado (BOOLEAN)
 
 Índices:
-  - PK: id
-  - INDEX: estado
+  - PK: id_cliente
+  - UNIQUE: (tipo_documento, numero_documento)
 ```
+
+#### Catálogos de apoyo
+- `metodo_pago` (id_metodo_pago, nombre UNIQUE, estado) — Efectivo, Nequi, Bancolombia.
+- `unidad_medida` (id_unidad_medida, nombre UNIQUE) — Unidad, Botella, Six-pack, Cajetilla, Paquete.
+- `motivo_baja` (id_motivo_baja, nombre UNIQUE) — Vencimiento, Daño/Rotura, Ajuste de inventario, Pérdida/Robo.
 
 ---
 
 ### Nivel 2: Seguridad
 
-#### `roles`
-Perfiles de acceso del sistema (Administrador, Empleado Auxiliar, etc.).
+#### `rol`, `permiso`, `rol_permiso`
+```
+rol:            id_rol, nombre (UNIQUE), estado
+permiso:        id_permiso, nombre (UNIQUE), descripcion, modulo
+rol_permiso:    PK compuesta (id_rol, id_permiso)
+```
 
+#### `usuario`
 ```
 Campos:
-  - id (INT, PK, AUTO_INCREMENT)
-  - nombre (VARCHAR(100), UNIQUE, NOT NULL) — p. ej. 'Administrador', 'Auxiliar_Ventas'
-  - descripcion (TEXT, nullable)
-  - estado (ENUM: 'activo', 'inactivo', DEFAULT 'activo')
-  - fecha_creacion (TIMESTAMP)
-  - fecha_modificacion (TIMESTAMP, ON UPDATE CURRENT_TIMESTAMP)
+  - id_usuario (INT UNSIGNED, PK, AUTO_INCREMENT)
+  - tipo_documento (CHECK IN ('CC','CE','TI','PAS','NIT'))
+  - numero_documento
+  - nombres, apellidos (NOT NULL)
+  - correo (VARCHAR(100), UNIQUE, NOT NULL)
+  - telefono (nullable)
+  - id_rol (FK → rol.id_rol, NOT NULL)
+  - contrasena_hash (VARCHAR(255), NOT NULL) — Argon2id o bcrypt, nunca texto plano
+  - fecha_nacimiento (DATE, NOT NULL)
+  - fecha_registro (TIMESTAMP), estado (BOOLEAN)
 
 Índices:
-  - PK: id
-  - UNIQUE: nombre
+  - PK: id_usuario
+  - UNIQUE: correo, (tipo_documento, numero_documento)
 ```
 
-#### `permisos`
-Acciones discretas que se pueden permitir o denegar (p. ej. VENTAS_CREAR, COMPRAS_REGISTRAR, USUARIOS_ELIMINAR).
-
+#### `recuperacion_contrasena`
+Token de un solo uso enviado por SMTP para el flujo de "olvidé mi contraseña".
 ```
-Campos:
-  - id (INT, PK, AUTO_INCREMENT)
-  - nombre (VARCHAR(100), UNIQUE, NOT NULL)
-  - descripcion (TEXT, nullable)
-  - modulo (VARCHAR(50), nullable) — p. ej. 'ventas', 'compras', 'seguridad'
-  - estado (ENUM: 'activo', 'inactivo', DEFAULT 'activo')
-  - fecha_creacion (TIMESTAMP)
-
-Índices:
-  - PK: id
-  - UNIQUE: nombre
-  - INDEX: modulo
-```
-
-#### `rol_permisos`
-Tabla de asociación muchos‑a‑muchos entre roles y permisos (configura qué puede hacer cada rol).
-
-```
-Campos:
-  - id (INT, PK, AUTO_INCREMENT)
-  - rol_id (INT, FK → roles.id, NOT NULL)
-  - permiso_id (INT, FK → permisos.id, NOT NULL)
-  - fecha_asignacion (TIMESTAMP, DEFAULT CURRENT_TIMESTAMP)
-
-Índices:
-  - PK: id
-  - FK: rol_id, permiso_id
-  - UNIQUE: (rol_id, permiso_id) — evita duplicados
-```
-
-#### `usuarios`
-Cuentas de acceso al sistema (Administrador y Empleado Auxiliar).
-
-```
-Campos:
-  - id (INT, PK, AUTO_INCREMENT)
-  - email (VARCHAR(150), UNIQUE, NOT NULL)
-  - hash_contraseña (VARCHAR(255), NOT NULL) — BCRYPT o similar, nunca texto plano
-  - nombre (VARCHAR(150), NOT NULL)
-  - rol_id (INT, FK → roles.id, NOT NULL)
-  - estado (ENUM: 'activo', 'inactivo', 'suspendido', DEFAULT 'activo')
-  - ultimo_acceso (DATETIME, nullable)
-  - fecha_creacion (TIMESTAMP)
-  - fecha_modificacion (TIMESTAMP, ON UPDATE CURRENT_TIMESTAMP)
-
-Índices:
-  - PK: id
-  - UNIQUE: email
-  - FK: rol_id
-  - INDEX: estado
-```
-
-#### `sesiones` (opcional, recomendado para auditoría)
-Registro de accesos para auditoría y detección de actividades sospechosas.
-
-```
-Campos:
-  - id (INT, PK, AUTO_INCREMENT)
-  - usuario_id (INT, FK → usuarios.id, NOT NULL)
-  - token_jwt (VARCHAR(500), nullable) — para validación rápida
-  - ip_direccion (VARCHAR(45), nullable)
-  - fecha_inicio (TIMESTAMP, DEFAULT CURRENT_TIMESTAMP)
-  - fecha_cierre (DATETIME, nullable)
-  - estado (ENUM: 'activa', 'cerrada')
-
-Índices:
-  - PK: id
-  - FK: usuario_id
-  - INDEX: estado
+  - id_token (PK), id_usuario (FK), token (UNIQUE)
+  - fecha_generacion, fecha_expiracion (CHECK: expiracion > generacion)
+  - usado (BOOLEAN, DEFAULT FALSE)
 ```
 
 ---
 
 ### Nivel 3: Maestro‑Detalle
 
-#### `compras` (cabecera)
-Documento de entrada de mercancía desde un proveedor.
+#### `jornada`
+Turno de caja. Solo puede existir **una jornada ABIERTA a la vez** (columna generada + UNIQUE KEY). Una venta solo puede completarse si su jornada está ABIERTA.
+```
+  - id_jornada (PK), id_usuario_apertura (FK), fecha_hora_apertura
+  - id_usuario_cierre (FK, nullable), fecha_hora_cierre (nullable)
+  - estado (CHECK IN ('ABIERTA','CERRADA'))
+  - observaciones
+```
 
+#### `compra` (cabecera)
 ```
 Campos:
-  - id (INT, PK, AUTO_INCREMENT)
-  - proveedor_id (INT, FK → proveedores.id, NOT NULL)
-  - numero_factura (VARCHAR(50), nullable)
+  - id_compra (INT UNSIGNED, PK, AUTO_INCREMENT)
+  - id_proveedor (FK → proveedor.id_proveedor, NOT NULL)
+  - id_usuario (FK → usuario.id_usuario, NOT NULL)
+  - numero_factura_proveedor (VARCHAR(40), nullable)
+  - ruta_factura (VARCHAR(255), nullable) — URL/ruta del comprobante digitalizado
   - fecha_compra (DATE, NOT NULL)
-  - total (DECIMAL(12,2), NOT NULL) — suma calculada de compra_detalle
-  - estado (ENUM: 'pendiente', 'recibida', 'completada', 'cancelada', DEFAULT 'pendiente')
-  - observaciones (TEXT, nullable)
-  - usuario_id (INT, FK → usuarios.id, nullable) — quién registró la compra
-  - fecha_creacion (TIMESTAMP)
-  - fecha_modificacion (TIMESTAMP, ON UPDATE CURRENT_TIMESTAMP)
+  - fecha_registro (TIMESTAMP)
+  - estado (VARCHAR(12), CHECK IN ('REGISTRADA','ANULADA'), DEFAULT 'REGISTRADA')
+  - observaciones (VARCHAR(255), nullable)
 
 Índices:
-  - PK: id
-  - FK: proveedor_id, usuario_id
-  - INDEX: estado, fecha_compra
-  - UNIQUE: numero_factura (por proveedor)
+  - PK: id_compra
+  - UNIQUE: (id_proveedor, numero_factura_proveedor) — evita registrar la misma factura dos veces
 ```
 
-#### `compra_detalle` (detalle)
-Líneas de la compra: producto, cantidad, precio unitario.
+Una compra ANULADA no puede reactivarse, y no puede anularse si alguno de sus lotes ya tuvo movimiento (venta o baja) — ver `trg_validar_anulacion_compra`.
 
+#### `lote` (detalle de compra — también es el inventario)
+**Todo lote nace de una compra**; `id_compra` es `NOT NULL` y no existe un lote suelto. Cada línea que se agrega en el formulario de Compras crea una fila aquí.
 ```
 Campos:
-  - id (INT, PK, AUTO_INCREMENT)
-  - compra_id (INT, FK → compras.id, NOT NULL)
-  - producto_id (INT, FK → productos.id, NOT NULL)
-  - cantidad (INT, NOT NULL, > 0)
-  - precio_unitario (DECIMAL(10,2), NOT NULL)
-  - subtotal (DECIMAL(12,2), NOT NULL) — cantidad * precio_unitario
+  - id_lote (INT UNSIGNED, PK, AUTO_INCREMENT)
+  - id_compra (FK → compra.id_compra, NOT NULL)
+  - id_producto (FK → producto.id_producto, NOT NULL)
+  - cantidad (DECIMAL(10,2), NOT NULL, > 0) — cantidad comprada, inmutable
+  - precio_unitario_compra (DECIMAL(12,2), NOT NULL, >= 0)
+  - fecha_vencimiento (DATE, nullable — obligatoria si producto.maneja_vencimiento)
+  - numero_lote_proveedor (VARCHAR(40), nullable)
 
 Índices:
-  - PK: id
-  - FK: compra_id, producto_id
-  - INDEX: compra_id (búsquedas rápidas de líneas por compra)
+  - PK: id_lote
+  - FK: id_compra, id_producto
 ```
 
-#### `ventas` (cabecera)
-Transacción de venta a un cliente.
+El **stock disponible no es una columna**: se calcula con `fn_stock_lote(id_lote)` = `cantidad` − unidades vendidas en ventas PENDIENTE/COMPLETADA − unidades dadas de baja. Ver `vw_stock_lotes` / `vw_stock_producto`.
 
+#### `baja_inventario`
+Mermas: vencimiento, daño, ajuste, pérdida/robo. Resta contra `fn_stock_lote`.
+```
+  - id_baja (PK), id_lote (FK), id_motivo_baja (FK), cantidad (> 0)
+  - fecha_hora, id_usuario (FK), observaciones
+```
+
+#### `venta` (cabecera)
 ```
 Campos:
-  - id (INT, PK, AUTO_INCREMENT)
-  - cliente_id (INT, FK → clientes.id, nullable) — cliente anónimo si es NULL
-  - usuario_id (INT, FK → usuarios.id, NOT NULL) — quién registra la venta
-  - fecha_venta (DATETIME, NOT NULL, DEFAULT CURRENT_TIMESTAMP)
-  - total (DECIMAL(12,2), NOT NULL) — suma de venta_detalle
-  - metodo_pago (ENUM: 'efectivo', 'nequi', 'bancolombia', 'transferencia', 'otro')
-  - estado (ENUM: 'completada', 'devuelta', 'cancelada', DEFAULT 'completada')
-  - referencia_pago (VARCHAR(100), nullable) — id de transacción externa (Nequi, etc.)
-  - observaciones (TEXT, nullable)
-  - fecha_modificacion (TIMESTAMP, ON UPDATE CURRENT_TIMESTAMP)
-
-Índices:
-  - PK: id
-  - FK: cliente_id, usuario_id
-  - INDEX: estado, fecha_venta, metodo_pago
+  - id_venta (INT UNSIGNED, PK, AUTO_INCREMENT)
+  - id_cliente (FK → cliente.id_cliente, NULLABLE — venta de mostrador sin cliente formal)
+  - id_jornada (FK → jornada.id_jornada, NOT NULL)
+  - id_usuario (FK → usuario.id_usuario, NOT NULL)
+  - fecha_hora_venta (TIMESTAMP, DEFAULT CURRENT_TIMESTAMP)
+  - estado (VARCHAR(12), CHECK IN ('PENDIENTE','COMPLETADA','ANULADA'), DEFAULT 'PENDIENTE')
+  - observaciones (nullable)
 ```
 
-#### `venta_detalle` (detalle)
-Líneas de la venta: producto, cantidad, precio (al momento de venta, puede diferir del precio actual del producto).
+Flujo obligatorio: `INSERT venta` (queda PENDIENTE) → `INSERT detalle_venta` (una o más líneas) → `INSERT venta_pago` (uno o más pagos) → `CALL sp_completar_venta(id_venta)` (dispara la validación de cuadre total = pagado). Una venta ANULADA no puede reactivarse; anular una PENDIENTE libera el stock reservado.
 
+#### `detalle_venta`
 ```
 Campos:
-  - id (INT, PK, AUTO_INCREMENT)
-  - venta_id (INT, FK → ventas.id, NOT NULL)
-  - producto_id (INT, FK → productos.id, NOT NULL)
-  - cantidad (INT, NOT NULL, > 0)
-  - precio_unitario (DECIMAL(10,2), NOT NULL) — precio de venta en el momento
-  - subtotal (DECIMAL(12,2), NOT NULL) — cantidad * precio_unitario
-
-Índices:
-  - PK: id
-  - FK: venta_id, producto_id
-  - INDEX: venta_id
+  - id_detalle_venta (PK)
+  - id_venta (FK → venta.id_venta, NOT NULL)
+  - id_lote (FK → lote.id_lote, NOT NULL)
+  - cantidad (DECIMAL(10,2), NOT NULL, > 0)
+  - precio_unitario_venta (DECIMAL(12,2), NOT NULL, >= 0)
+      Precio FINAL que paga el cliente, con el IVA ya incluido — igual
+      que en cualquier mostrador real. El frontend NUNCA suma el IVA
+      aparte al armar el carrito.
+  - porcentaje_impuesto_aplicado (DECIMAL(5,2), NOT NULL, DEFAULT 0, 0–100)
+      La rellena automáticamente `trg_validar_detalle_venta_ins/upd` desde
+      `categoria.porcentaje_iva` en el momento de la venta, y queda
+      congelada ahí para siempre. El frontend/API nunca la envía ni la
+      escribe a mano.
 ```
+
+#### `venta_pago`
+```
+  - id_venta_pago (PK), id_venta (FK), id_metodo_pago (FK)
+  - monto (DECIMAL(12,2), > 0), referencia_transaccion (nullable)
+```
+No se pueden modificar/eliminar pagos de una venta ya COMPLETADA.
 
 ---
 
-## 3. Vistas SQL (para dashboard, reportes, datos de solo lectura)
+## 3. Vistas SQL (solo lectura, para dashboard, detalle de producto y recibos)
 
-Las vistas **reducen la complejidad** del backend al concentrar joins y cálculos en la BD. El backend consulta vistas, no escribe en ellas; el controlador de reportes/dashboard las consume tal cual.
+El backend consulta estas vistas para todo lo que sea agregación o cálculo repetido; los controladores no reimplementan estos joins/fórmulas en el código de aplicación.
 
-### `vw_inventario_actual`
-Estado actual de stock por producto, con indicador de bajo stock.
-
-```sql
--- Pseudocódigo SQL (sintaxis final en Sprint 08)
-SELECT 
-    p.id,
-    p.nombre,
-    c.nombre AS categoria,
-    p.stock,
-    p.stock_minimo,
-    CASE WHEN p.stock <= p.stock_minimo THEN 'BAJO' ELSE 'OK' END AS alerta_stock,
-    p.precio_venta,
-    p.estado
-FROM productos p
-JOIN categorias c ON p.categoria_id = c.id
-WHERE p.estado = 'activo'
-ORDER BY p.stock, c.nombre;
-```
-
-**Uso en backend:** `GET /api/dashboard/inventario` → consulta esta vista y la retorna al frontend para la tabla de inventario.
-
-### `vw_ventas_detalle`
-Resumen de ventas con cliente, productos, totales y detalles de pago.
+### `vw_stock_lotes`
+Cada lote con su cantidad disponible ya calculada (`fn_stock_lote`). Filtrar por `id_producto` para mostrar, en el detalle de un producto, la lista de lotes de solo lectura que explica de dónde sale el stock.
 
 ```sql
--- Pseudocódigo
-SELECT 
-    v.id AS venta_id,
-    v.fecha_venta,
-    COALESCE(cl.nombre, 'Cliente Anónimo') AS cliente,
-    u.nombre AS vendedor,
-    GROUP_CONCAT(p.nombre SEPARATOR ', ') AS productos,
-    SUM(vd.cantidad) AS total_items,
-    v.total,
-    v.metodo_pago,
-    v.estado
-FROM ventas v
-LEFT JOIN clientes cl ON v.cliente_id = cl.id
-JOIN usuarios u ON v.usuario_id = u.id
-JOIN venta_detalle vd ON v.id = vd.venta_id
-JOIN productos p ON vd.producto_id = p.id
-GROUP BY v.id
-ORDER BY v.fecha_venta DESC;
+SELECT l.id_lote, l.id_producto, p.codigo_sku, p.nombre AS producto,
+       l.id_compra, l.cantidad AS cantidad_inicial,
+       fn_stock_lote(l.id_lote) AS cantidad_disponible,
+       l.precio_unitario_compra, l.fecha_vencimiento, p.maneja_vencimiento,
+       c.fecha_compra, c.estado AS estado_compra
+FROM lote l
+JOIN producto p ON p.id_producto = l.id_producto
+JOIN compra c ON c.id_compra = l.id_compra;
 ```
 
-**Uso en backend:** `GET /api/dashboard/ventas` → para el dashboard administrativo y exportación de reportes de ventas.
-
-### `vw_compras_detalle`
-Resumen de compras con proveedor, productos y totales.
+### `vw_stock_producto`
+Stock total por producto (suma de `vw_stock_lotes` de compras REGISTRADA) y bandera de bajo stock. **Esta es la única fuente del "stock actual" de un producto** — nunca un campo editable en `producto`.
 
 ```sql
--- Pseudocódigo
-SELECT 
-    c.id AS compra_id,
-    c.fecha_compra,
-    pr.nombre AS proveedor,
-    c.numero_factura,
-    GROUP_CONCAT(p.nombre SEPARATOR ', ') AS productos,
-    SUM(cd.cantidad) AS total_items,
-    c.total,
-    c.estado
-FROM compras c
-JOIN proveedores pr ON c.proveedor_id = pr.id
-JOIN compra_detalle cd ON c.id = cd.compra_id
-JOIN productos p ON cd.producto_id = p.id
-GROUP BY c.id
-ORDER BY c.fecha_compra DESC;
+SELECT p.id_producto, p.codigo_sku, p.nombre, p.stock_minimo,
+       COALESCE(SUM(s.cantidad_disponible), 0) AS stock_actual,
+       CASE WHEN COALESCE(SUM(s.cantidad_disponible), 0) <= p.stock_minimo THEN TRUE ELSE FALSE END AS bajo_stock
+FROM producto p
+LEFT JOIN vw_stock_lotes s ON s.id_producto = p.id_producto AND s.estado_compra = 'REGISTRADA'
+GROUP BY p.id_producto, p.codigo_sku, p.nombre, p.stock_minimo;
 ```
 
-**Uso en backend:** `GET /api/dashboard/compras` — para análisis de aprovisionamiento.
-
-### `vw_kpis_dashboard`
-Indicadores principales para el panel del administrador (ingresos, egresos, productos más vendidos, variaciones).
+### `vw_totales_venta`
+Desglose fiscal de cada venta: base gravable, IVA y total, más el cuadre de pago. Úsala para pintar el desglose (subtotal / IVA / total) en el carrito y en el recibo — no reimplementar la fórmula en JS.
 
 ```sql
--- Pseudocódigo
-SELECT 
-    DATE(v.fecha_venta) AS fecha,
-    SUM(v.total) AS ingresos_dia,
-    COUNT(DISTINCT v.id) AS num_ventas,
-    (SELECT SUM(c.total) FROM compras c WHERE DATE(c.fecha_compra) = DATE(v.fecha_venta)) AS egresos_dia,
-    (SELECT nombre FROM productos p 
-     JOIN venta_detalle vd ON p.id = vd.producto_id 
-     WHERE vd.venta_id IN (SELECT id FROM ventas WHERE DATE(fecha_venta) = DATE(v.fecha_venta))
-     GROUP BY p.id ORDER BY SUM(vd.cantidad) DESC LIMIT 1) AS producto_mas_vendido
-FROM ventas v
-GROUP BY DATE(v.fecha_venta)
-ORDER BY fecha DESC
-LIMIT 30;
+SELECT v.id_venta, v.estado,
+       fn_base_gravable_venta(v.id_venta) AS base_gravable,
+       fn_iva_venta(v.id_venta) AS iva,
+       fn_total_venta(v.id_venta) AS total_venta,
+       fn_total_pagado(v.id_venta) AS total_pagado,
+       (fn_total_venta(v.id_venta) - fn_total_pagado(v.id_venta)) AS diferencia_pago
+FROM venta v;
 ```
 
-**Uso en backend:** `GET /api/dashboard/kpis` — para gráficos, tarjetas de resumen y alertas.
-
-### `vw_usuarios_roles_permisos`
-Matriz de usuarios, sus roles asignados y los permisos que hereda cada rol (para pantalla de administración de accesos).
-
-```sql
--- Pseudocódigo
-SELECT 
-    u.id AS usuario_id,
-    u.email,
-    u.nombre,
-    r.nombre AS rol,
-    GROUP_CONCAT(pe.nombre SEPARATOR '; ') AS permisos,
-    u.estado
-FROM usuarios u
-JOIN roles r ON u.rol_id = r.id
-LEFT JOIN rol_permisos rp ON r.id = rp.rol_id
-LEFT JOIN permisos pe ON rp.permiso_id = pe.id
-GROUP BY u.id
-ORDER BY u.email;
-```
-
-**Uso en backend:** `GET /api/admin/usuarios-roles-permisos` — para auditoría y gestión de accesos.
+`base_gravable` se obtiene descontando el IVA congelado por línea de `precio_unitario_venta` (que ya lo incluye): `cantidad * precio_unitario_venta / (1 + porcentaje_impuesto_aplicado/100)`.
 
 ---
 
 ## 4. Triggers (desnormalización controlada por rendimiento)
 
-Los triggers garantizan que ciertos cálculos y actualizaciones ocurran **automáticamente en la base de datos**, evitando latencia en la app y asegurando consistencia.
+| Trigger | Evento | Qué hace |
+|---|---|---|
+| `trg_validar_cliente_ins` / `_upd` | BEFORE INSERT/UPDATE `cliente` | Rechaza `fecha_nacimiento` futura (vía `sp_validar_cliente`; CHECK no puede usar `CURDATE()` en MySQL). |
+| `trg_validar_lote_ins` / `_upd` | BEFORE INSERT/UPDATE `lote` | Exige `fecha_vencimiento` si `producto.maneja_vencimiento`; rechaza vencimiento anterior a la fecha de compra. |
+| `trg_validar_baja_ins` / `_upd` | BEFORE INSERT/UPDATE `baja_inventario` | Rechaza una baja mayor al disponible del lote. |
+| `trg_validar_detalle_venta_ins` / `_upd` | BEFORE INSERT/UPDATE `detalle_venta` | Valida jornada abierta, venta no ANULADA/COMPLETADA, stock disponible, vencimiento del lote y edad mínima (18) si la categoría lo exige; **rellena `porcentaje_impuesto_aplicado`** desde `categoria.porcentaje_iva`. |
+| `trg_validar_venta_ins` / `_upd` | BEFORE INSERT/UPDATE `venta` | Si `estado = 'COMPLETADA'`: exige jornada ABIERTA, cliente activo (si hay) y usuario activo. |
+| `trg_validar_cierre_venta_ins` / `_upd` | AFTER INSERT/UPDATE `venta` | Cuando `estado` pasa a `COMPLETADA`: exige al menos un detalle, total > 0 y `total_venta = total_pagado`. |
+| `trg_bloquear_pago_ins` / `_upd` / `_del` | BEFORE INSERT/UPDATE/DELETE `venta_pago` | Bloquea cambios a los pagos de una venta ya COMPLETADA. |
+| `trg_validar_anulacion_venta` | BEFORE UPDATE `venta` | Impide reactivar una venta ANULADA. |
+| `trg_validar_anulacion_compra` | BEFORE UPDATE `compra` | Impide reactivar una compra ANULADA, y anular una compra cuyos lotes ya tuvieron movimientos. |
+| `trg_validar_jornada_ins` / `_upd` | BEFORE INSERT/UPDATE `jornada` | Exige/prohíbe datos de cierre según el estado. |
 
-### `tr_descuento_inventario_post_venta`
-**Evento:** Después de insertar una línea en `venta_detalle`.  
-**Acción:** Restar la cantidad vendida del stock en `productos.stock`.
+**Funciones auxiliares** (usadas por triggers y vistas, no expuestas al frontend): `fn_stock_lote`, `fn_total_venta`, `fn_base_gravable_venta`, `fn_iva_venta`, `fn_total_pagado`.
 
-```sql
--- Pseudocódigo
-AFTER INSERT ON venta_detalle FOR EACH ROW
-BEGIN
-    UPDATE productos 
-    SET stock = stock - NEW.cantidad
-    WHERE id = NEW.producto_id;
-END;
-```
-
-**Beneficio:** El descuento de inventario es **instantáneo** y transacional (si la venta se revierte, el stock se restaura automáticamente).
-
-### `tr_actualizar_fecha_modificacion`
-**Evento:** Antes de actualizar en cualquier tabla.  
-**Acción:** Llenar el campo `fecha_modificacion` con el timestamp actual.
-
-```sql
--- Pseudocódigo, aplica a todas las tablas con campo fecha_modificacion
-BEFORE UPDATE ON [tabla] FOR EACH ROW
-BEGIN
-    SET NEW.fecha_modificacion = NOW();
-END;
-```
-
-### `tr_recalcular_total_compra` (optional)
-**Evento:** Después de insertar/actualizar `compra_detalle`.  
-**Acción:** Recalcular el total en la cabecera `compras.total`.
-
-```sql
--- Pseudocódigo
-AFTER INSERT ON compra_detalle FOR EACH ROW
-BEGIN
-    UPDATE compras 
-    SET total = (SELECT SUM(subtotal) FROM compra_detalle WHERE compra_id = NEW.compra_id)
-    WHERE id = NEW.compra_id;
-END;
-```
+**Procedimientos de conveniencia**: `sp_completar_venta(id_venta)` para el paso final del flujo de venta (equivalente a `UPDATE venta SET estado='COMPLETADA'`).
 
 ---
 
 ## 5. Convenciones y buenas prácticas
 
-1. **Nombres de tablas en singular en inglés** (o plural en español, consistentemente): `producto` o `productos`, nunca mezclar.
-2. **Primary Key:** siempre `id`, auto-incremento, INT o BIGINT.
-3. **Foreign Keys:** nombre patrón `tabla_id` (p. ej. `categoria_id`, `usuario_id`).
-4. **Timestamps:** `fecha_creacion` (TIMESTAMP DEFAULT CURRENT_TIMESTAMP, inmutable) y `fecha_modificacion` (TIMESTAMP ON UPDATE, se actualiza con triggers).
-5. **Estados:** usar ENUM cuando hay un conjunto fijo y pequeño de valores (activo/inactivo, pendiente/completada, etc.).
-6. **Precios/dinero:** DECIMAL(12,2) mínimo, nunca FLOAT.
-7. **Contraseñas:** nunca texto plano; siempre hash (BCRYPT, Argon2, etc.) y mínimo 255 caracteres en la columna.
-8. **Campos sensibles:** no registrar tokens JWT completos; usar columnas de sesión dedicadas.
-9. **Índices:** sobre campos usados en WHERE, JOIN, ORDER BY y GROUP BY.
-10. **Vistas:** nombrarlas con prefijo `vw_` para distinguirlas de tablas.
+1. **Tablas en singular, español** (`producto`, `venta`, `lote`), nunca mezclar con plural.
+2. **Primary Key:** `id_<tabla>`, `INT UNSIGNED AUTO_INCREMENT` (`SMALLINT UNSIGNED` para catálogos pequeños como `rol`/`permiso`/`metodo_pago`/`unidad_medida`/`motivo_baja`).
+3. **Foreign Keys:** patrón `id_<tabla_referenciada>`. InnoDB indexa automáticamente cada FK — no hace falta declarar índices adicionales a mano.
+4. **Booleanos de estado:** `BOOLEAN` (no ENUM 'activo'/'inactivo'), `DEFAULT TRUE`.
+5. **Estados de ciclo de vida** (`compra.estado`, `venta.estado`, `jornada.estado`): `VARCHAR` + `CHECK ... IN (...)`, no ENUM, para poder inspeccionar valores permitidos sin `SHOW COLUMNS`.
+6. **Dinero:** `DECIMAL(12,2)` o `DECIMAL(14,2)` en agregados; nunca `FLOAT`.
+7. **Porcentajes** (`porcentaje_iva`, `margen_*_porcentaje`): `DECIMAL(5,2)`, CHECK entre 0 y 100.
+8. **Contraseñas:** nunca texto plano; `contrasena_hash VARCHAR(255)` con Argon2id o bcrypt.
+9. **Vistas:** prefijo `vw_`. **Funciones:** prefijo `fn_`. **Procedimientos:** prefijo `sp_`. **Triggers:** prefijo `trg_`.
+10. **Validaciones que dependen de la fecha actual** (`CURDATE()`, `NOW()`) van en un trigger + `SIGNAL SQLSTATE '45000'`, nunca en un CHECK constraint (MySQL 8 prohíbe funciones no deterministas ahí).
 
 ---
 
@@ -474,49 +356,53 @@ END;
 
 ```
 Catálogos (Nivel 1):
-  categorias ──→ productos (1:N)
-  proveedores (stand‑alone)
-  clientes (stand‑alone)
+  categoria ──→ producto (1:N)
+  producto ──→ producto_proveedor ←── proveedor (N:N)
+  proveedor ──→ contacto_proveedor (1:N)
+  cliente (standalone)
 
 Seguridad (Nivel 2):
-  roles ──→ rol_permisos ←── permisos (N:N)
-  usuarios → roles (N:1)
-  usuarios → sesiones (1:N)
+  rol ──→ rol_permiso ←── permiso (N:N)
+  usuario → rol (N:1)
+  usuario → recuperacion_contrasena (1:N)
 
 Maestro‑Detalle (Nivel 3):
-  compras ──→ compra_detalle ←── productos
-  proveedores ──→ compras (1:N)
-  usuarios ──→ compras (1:N) [auditoría: quién registró]
+  usuario ──→ jornada (1:N, apertura/cierre)
 
-  ventas ──→ venta_detalle ←── productos
-  clientes ──→ ventas (1:N) [puede ser NULL: cliente anónimo]
-  usuarios ──→ ventas (1:N) [auditoría: quién registró]
+  proveedor ──→ compra (1:N)
+  usuario ──→ compra (1:N) [auditoría]
+  compra ──→ lote (1:N) ←── producto  [todo lote nace de una compra]
+  lote ──→ baja_inventario (1:N) ←── motivo_baja
 
-Cascadas:
-  - Si un proveedor se elimina: compras asociadas se marcan como inactivas (ON DELETE SET NULL) o se rechazan (ON DELETE RESTRICT).
-  - Si un producto se elimina: líneas de compra_detalle y venta_detalle quedan intactas (histórico); el producto se marca como 'descontinuado'.
-  - Si un usuario se elimina: sus compras y ventas se mantienen con referencia a su ID (auditoría histórica).
+  cliente ──→ venta (1:N) [NULLABLE: venta de mostrador]
+  jornada ──→ venta (1:N)
+  usuario ──→ venta (1:N) [auditoría]
+  venta ──→ detalle_venta (1:N) ←── lote  [nunca ←── producto directamente]
+  venta ──→ venta_pago (1:N) ←── metodo_pago
+
+Cascadas / reglas de borrado:
+  - No hay ON DELETE CASCADE en las tablas transaccionales: todo histórico
+    (lote, detalle_venta, venta_pago) se conserva; los "borrados" de
+    negocio son cambios de estado (compra/venta → ANULADA, catálogos →
+    estado = FALSE), nunca DELETE físico.
 ```
 
 ---
 
-## 7. Pendientes del Sprint 08
+## 7. Pendientes reales (no asumir, señalar si bloquean una tarea)
 
-Cuando se entregue el script SQL definitivo del proyecto:
-
-- [ ] Confirmar todos los tipos de datos (DECIMAL vs NUMERIC, VARCHAR vs CHAR, etc.).
-- [ ] Validar índices y performance (EXPLAIN PLAN).
-- [ ] Confirmar nombres exactos de tablas, columnas y vistas.
-- [ ] Confirmar triggers y su lógica de negocio.
-- [ ] Agregar constraints de CHECK (p. ej. precio_venta > 0, stock >= 0).
-- [ ] Definir estrategia de particionamiento (si aplica para tablas históricas grandes).
-- [ ] Script de datos iniciales (roles por defecto, permisos, categorías de referencia).
+- Diagrama de Clases y Modelo Relacional formal en notación UML/IE (Sprint 05) — este documento y `scripts/sch.sql` ya son la fuente de verdad de columnas/tipos/relaciones, falta el diagrama visual.
+- Diagrama de Despliegue C4 formal (Sprint 09).
+- Manuales Técnico y de Usuario (v1‑v4).
+- Matriz de historias de usuario con criterios de aceptación.
+- Tarifas de IVA de negocio: la tabla trae 5.00 % (Licores) / 19.00 % (resto) como referencia pública de la normativa colombiana 2026; deben confirmarse con el contador del negocio antes de producción (son datos, editables sin migración, no lógica de código).
+- No hay todavía un backend Node/Express real que consuma este script — mientras eso no exista, el frontend web opera en modo mock (localStorage) reflejando estos mismos nombres de campo para que la futura integración sea un cambio de fuente de datos, no de forma.
 
 ---
 
 ## 8. Cómo actualizar este documento
 
-1. **Si cambia el modelo de datos:** editar la sección 2 (Tablas).
-2. **Si se agregan vistas:** editar la sección 3.
-3. **Si se agregan/modifican triggers:** editar la sección 4.
-4. **Cuando llegue Sprint 08:** reemplazar pseudocódigos SQL con scripts reales y confirmar todas las convenciones.
+1. **Si cambia el modelo de datos:** editar `scripts/sch.sql` primero, luego la sección 2 aquí.
+2. **Si se agregan vistas:** igual orden — script primero, sección 3 después.
+3. **Si se agregan/modifican triggers o funciones:** script primero, sección 4 después.
+4. Todo campo que un formulario del frontend muestre o edite debe poder señalarse aquí como columna real (regla de oro del proyecto, ver `CLAUDE.md`).

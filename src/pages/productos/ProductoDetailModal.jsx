@@ -1,8 +1,19 @@
 import React from 'react';
 import { BoxSeam, Tag, CurrencyDollar, Layers, ShieldExclamation } from 'react-bootstrap-icons';
+import { usePersistentState } from '../../hooks/usePersistentState';
+import { defaultCategorias } from '../../data/defaultCategorias';
+import { defaultLotes } from '../../data/defaultLotes';
+import { getLotesProducto, getStockDisponible } from '../../utils/stock';
 
 export const ProductoDetailModal = ({ show, onClose, producto }) => {
+  const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
+  const [lotes] = usePersistentState('stockbar_lotes', defaultLotes);
+
   if (!show || !producto) return null;
+
+  const porcentajeIva = categorias.find((c) => c.nombre === producto.categoria)?.porcentaje_iva ?? 19;
+  const lotesProducto = getLotesProducto(lotes, producto.codigo);
+  const stockActual = getStockDisponible(lotes, producto.codigo);
 
   const styles = {
     modalBg: 'var(--bg-card)',
@@ -86,14 +97,14 @@ export const ProductoDetailModal = ({ show, onClose, producto }) => {
                 </div>
               </div>
 
-              {/* Stock Actual */}
+              {/* Stock Actual: siempre calculado desde los lotes, nunca editable */}
               <div className="col-6">
                 <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
                   <div className="d-flex align-items-center gap-2 mb-1" style={{ color: styles.mutedColor }}>
                     <Layers size={16} />
-                    <span className="small">Stock Actual</span>
+                    <span className="small">Stock Actual (calculado)</span>
                   </div>
-                  <span className="fw-semibold fs-5">{producto.stockActual} un.</span>
+                  <span className="fw-semibold fs-5">{stockActual} un.</span>
                 </div>
               </div>
 
@@ -117,22 +128,46 @@ export const ProductoDetailModal = ({ show, onClose, producto }) => {
 
               <div className="col-6">
                 <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
-                  <div className="small" style={{ color: styles.mutedColor }}>Impuesto</div>
-                  <div className="fw-semibold mt-1">{producto.porcentaje_impuesto ?? producto.porcentajeImpuesto ?? 0}%</div>
+                  <div className="small" style={{ color: styles.mutedColor }}>% IVA (de la categoría)</div>
+                  <div className="fw-semibold mt-1">{porcentajeIva}%</div>
                 </div>
               </div>
 
               <div className="col-6">
                 <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
-                  <div className="small" style={{ color: styles.mutedColor }}>Precio incluye impuesto</div>
-                  <div className="fw-semibold mt-1">{producto.precio_incluye_impuesto || producto.precioIncluyeImpuesto ? 'Sí' : 'No'}</div>
+                  <div className="small" style={{ color: styles.mutedColor }}>Maneja vencimiento / lote</div>
+                  <div className="fw-semibold mt-1">{producto.maneja_vencimiento || producto.manejaVencimiento ? 'Sí' : 'No'}</div>
                 </div>
               </div>
 
               <div className="col-12">
                 <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
-                  <div className="small" style={{ color: styles.mutedColor }}>Maneja vencimiento / lote</div>
-                  <div className="fw-semibold mt-1">{producto.maneja_vencimiento || producto.manejaVencimiento ? 'Sí' : 'No'}</div>
+                  <div className="d-flex align-items-center gap-2 mb-2" style={{ color: styles.mutedColor }}>
+                    <Layers size={16} />
+                    <span className="small fw-semibold">Lotes (solo lectura — se crean desde Compras)</span>
+                  </div>
+                  {lotesProducto.length === 0 ? (
+                    <div className="small" style={{ color: styles.mutedColor }}>Este producto todavía no tiene lotes registrados.</div>
+                  ) : (
+                    <table className="table table-sm align-middle m-0" style={{ color: styles.textColor }}>
+                      <thead>
+                        <tr>
+                          <th className="small text-uppercase" style={{ color: styles.mutedColor }}>Lote proveedor</th>
+                          <th className="small text-uppercase text-center" style={{ color: styles.mutedColor }}>Disponible</th>
+                          <th className="small text-uppercase" style={{ color: styles.mutedColor }}>Vence</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lotesProducto.map((lote) => (
+                          <tr key={lote.id_lote}>
+                            <td className="small">{lote.numero_lote_proveedor || `Lote #${lote.id_lote}`}</td>
+                            <td className="small text-center">{lote.cantidad_disponible} un.</td>
+                            <td className="small" style={{ color: styles.mutedColor }}>{lote.fecha_vencimiento || 'Sin vencimiento'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
               </div>
             </div>
