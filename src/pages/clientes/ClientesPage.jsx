@@ -11,7 +11,9 @@ import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultClientes } from '../../data/defaultClientes';
 
 export const ClientesPage = () => {
-  const [clientes, setClientes] = usePersistentState('stockbar_clientes', defaultClientes);
+  // v2: agrega el cliente "Consumidor Final" (id_cliente 0) al seed; el
+  // navegador con datos viejos no lo tenía y nunca aparecía en el POS.
+  const [clientes, setClientes] = usePersistentState('stockbar_clientes_v2', defaultClientes);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showFormModal, setShowFormModal] = useState(false);

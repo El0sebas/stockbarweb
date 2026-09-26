@@ -19,7 +19,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
   // Mismos catálogos reales que ProveedoresPage/ProductosPage — nada de
   // listas hardcodeadas por proveedor: cualquier producto activo puede
   // buscarse y agregarse a la compra.
-  const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
+  const [proveedores] = usePersistentState('stockbar_proveedores_v2', defaultProveedores);
   const proveedoresActivos = proveedores.filter((p) => p.estado === 'Activo');
   const [productos] = usePersistentState('stockbar_productos', defaultProductos);
   const productosActivos = productos.filter((p) => p.estado === 'Activo');

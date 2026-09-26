@@ -11,7 +11,7 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
   // aparecer aquí de inmediato, en vez de mantener una lista fija aparte.
   const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
   const [unidadesMedida] = usePersistentState('stockbar_unidades_medida', defaultUnidadesMedida);
-  const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
+  const [proveedores] = usePersistentState('stockbar_proveedores_v2', defaultProveedores);
   const [productoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
 
   const proveedoresActivos = proveedores.filter((p) => p.estado === 'Activo');

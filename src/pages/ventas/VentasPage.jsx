@@ -27,7 +27,7 @@ export const VentasPage = () => {
   const [lotes, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
   const [productos] = usePersistentState('stockbar_productos', defaultProductos);
   const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
-  const [clientes] = usePersistentState('stockbar_clientes', defaultClientes);
+  const [clientes] = usePersistentState('stockbar_clientes_v2', defaultClientes);
   const [jornadas] = usePersistentState('stockbar_jornadas', defaultJornadas);
   const jornadaAbierta = getJornadaAbierta(jornadas);
 

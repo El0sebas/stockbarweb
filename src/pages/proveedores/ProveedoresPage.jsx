@@ -12,7 +12,10 @@ import { defaultProveedores } from '../../data/defaultProveedores';
 import { defaultContactosProveedor } from '../../data/defaultContactosProveedor';
 
 export const ProveedoresPage = () => {
-  const [proveedores, setProveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
+  // v2: los proveedores guardados en el navegador con el esquema viejo
+  // (nombre/telefono/nit_empresa) no coinciden con los campos reales
+  // actuales (razon_social/telefono_principal/nit) y rompían el render.
+  const [proveedores, setProveedores] = usePersistentState('stockbar_proveedores_v2', defaultProveedores);
   const [contactos] = usePersistentState('stockbar_contactos_proveedor', defaultContactosProveedor);
 
   const getContactoPrincipal = (codigoProveedor) =>
