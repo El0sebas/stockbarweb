@@ -105,7 +105,6 @@ textarea {
 
 .form-control,
 .form-select,
-.form-check-input,
 textarea {
   background-color: var(--bg-input) !important;
   border-color: var(--border-color) !important;
@@ -120,10 +119,20 @@ textarea:focus {
   box-shadow: 0 0 0 0.2rem rgba(245, 158, 11, 0.15) !important;
 }
 
-/* La regla .form-check-input de arriba fuerza el mismo fondo pálido siempre
-   (incluso :checked), así que un switch nunca se veía distinto encendido vs
-   apagado. El color debe comunicar estado (ver SISTEMA_DE_DISENO.md), así
-   que aquí se recupera ese contraste solo para los switches (role="switch"). */
+/* form-check-input queda fuera de la regla de arriba a propósito: forzar el
+   mismo border-radius/background siempre (incluso :checked) hacía que los
+   checkboxes se vieran como radios (círculo) y que marcar/desmarcar no se
+   notara visualmente — el color debe comunicar estado (SISTEMA_DE_DISENO.md). */
+.form-check-input {
+  background-color: var(--bg-input) !important;
+  border-color: var(--border-color) !important;
+}
+
+.form-check-input:checked {
+  background-color: var(--amber-action) !important;
+  border-color: var(--amber-action) !important;
+}
+
 .form-switch .form-check-input:checked {
   background-color: var(--brand-success) !important;
   border-color: var(--brand-success) !important;

@@ -16,6 +16,7 @@ import { validarEdadCliente } from '../../utils/edad';
 import { getLotesVendibles, getStockDisponible, getEstadoVencimiento } from '../../utils/stock';
 import { getJornadaAbierta } from '../../utils/jornada';
 import { QuantityStepper } from '../../components/common/QuantityStepper';
+import { MoneyInput } from '../../components/common/MoneyInput';
 import { VentaDetailModal } from './VentaDetailModal';
 
 export const VentasPage = () => {
@@ -653,7 +654,7 @@ export const VentasPage = () => {
                    </div>
                    <div className="col-md-3">
                      <label className="form-label small text-muted">Monto</label>
-                     <input type="number" min="0" className="form-control form-control-sm" value={montoNuevoPago} onChange={(e) => setMontoNuevoPago(e.target.value)} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} />
+                     <MoneyInput className="form-control form-control-sm" value={montoNuevoPago} onChange={setMontoNuevoPago} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} />
                    </div>
                    <div className="col-md-3">
                      <label className="form-label small text-muted">Referencia (opcional)</label>

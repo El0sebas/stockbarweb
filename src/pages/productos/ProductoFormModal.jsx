@@ -5,6 +5,7 @@ import { defaultCategorias } from '../../data/defaultCategorias';
 import { defaultUnidadesMedida } from '../../data/defaultUnidadesMedida';
 import { defaultProveedores } from '../../data/defaultProveedores';
 import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
+import { MoneyInput } from '../../components/common/MoneyInput';
 
 export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
   // Mismo catálogo que CategoriasPage: crear una categoría nueva la hace
@@ -162,15 +163,12 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
 
               <div>
                 <label className="form-label small fw-semibold">Precio de Venta</label>
-                <input
-                  type="number"
-                  name="precioVenta"
+                <MoneyInput
                   required
-                  className="form-control shadow-none"
-                  placeholder="0.00"
+                  placeholder="0"
                   style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                   value={formData.precioVenta}
-                  onChange={handleChange}
+                  onChange={(val) => setFormData((prev) => ({ ...prev, precioVenta: val }))}
                 />
               </div>
 

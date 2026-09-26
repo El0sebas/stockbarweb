@@ -8,6 +8,7 @@ import { defaultProductos } from '../../data/defaultProductos';
 import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
 import { generateNextId } from '../../utils/identifiers';
 import { QuantityStepper } from '../../components/common/QuantityStepper';
+import { MoneyInput } from '../../components/common/MoneyInput';
 
 export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) => {
   // metodo_pago es un catálogo fijo sin pantalla de administración (no es
@@ -197,10 +198,14 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
     return d.toISOString().split('T')[0];
   })();
 
-  const resultadosBusqueda = debouncedSearch && proveedorSeleccionado
+  // Se listan automáticamente todos los productos afiliados al proveedor
+  // apenas se elige (sin esperar a que el usuario escriba); el buscador solo
+  // acota esa lista.
+  const resultadosBusqueda = proveedorSeleccionado
     ? productosActivos
         .filter((prod) => codigosProductoDelProveedor.includes(prod.codigo))
         .filter((prod) =>
+          !debouncedSearch ||
           prod.nombre.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
           prod.codigo.toLowerCase().includes(debouncedSearch.toLowerCase())
         )
@@ -335,13 +340,15 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                         style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                       />
                     </div>
-                    {proveedorSeleccionado && debouncedSearch && !selectedProductToAdd && (
+                    {proveedorSeleccionado && !selectedProductToAdd && (
                       <div
                         className="rounded-3 mt-1"
                         style={{ border: `1px solid ${styles.borderCol}`, maxHeight: '160px', overflowY: 'auto' }}
                       >
                         {resultadosBusqueda.length === 0 ? (
-                          <div className="small text-center py-2" style={{ color: styles.mutedColor }}>Sin resultados.</div>
+                          <div className="small text-center py-2" style={{ color: styles.mutedColor }}>
+                            {debouncedSearch ? 'Sin resultados.' : 'Este proveedor no tiene productos afiliados.'}
+                          </div>
                         ) : (
                           resultadosBusqueda.map((prod) => (
                             <button
@@ -367,12 +374,10 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
 
                   <div className="col-md-2">
                     <label className="form-label small text-muted">Costo</label>
-                    <input
-                      type="number"
-                      min="0"
+                    <MoneyInput
                       className="form-control form-control-sm"
                       value={costoUnitario}
-                      onChange={(e) => setCostoUnitario(Number(e.target.value) || 0)}
+                      onChange={(val) => setCostoUnitario(val === '' ? 0 : val)}
                       style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                     />
                   </div>
