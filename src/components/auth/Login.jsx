@@ -4,6 +4,9 @@ import { useAuth } from '../../context/AuthContext';
 import { Eye, EyeSlash, Sun, Moon, ShieldLock, CheckCircle } from 'react-bootstrap-icons';
 import { showToast } from '../../utils/alerts';
 import { defaultUsers } from '../../data/defaultUsers';
+import { defaultLotes } from '../../data/defaultLotes';
+import { defaultBajas } from '../../data/defaultBajas';
+import { generarBajasPorVencimiento } from '../../utils/bajas';
 
 const getStoredUsers = () => {
   try {
@@ -101,8 +104,33 @@ export const Login = ({ onLogin }) => {
       return;
     }
 
+    ejecutarBajasPorVencimiento(user);
     setCurrentUser(user);
     onLogin();
+  };
+
+  // ponytail: sp_dar_baja_lotes_vencidos lo dispararía un cron diario en el
+  // backend real (no existe en este mock); como sustituto pragmático se
+  // ejecuta una vez por login. Debe reemplazarse por el cron cuando exista backend.
+  const ejecutarBajasPorVencimiento = (user) => {
+    try {
+      const lotes = JSON.parse(localStorage.getItem('stockbar_lotes')) || defaultLotes;
+      const bajas = JSON.parse(localStorage.getItem('stockbar_bajas')) || defaultBajas;
+      const { nuevosLotes, nuevasBajas, cantidadGenerada } = generarBajasPorVencimiento({
+        lotes,
+        bajas,
+        idUsuario: user.id_usuario,
+        usuario: user.nombre
+      });
+      if (cantidadGenerada > 0) {
+        localStorage.setItem('stockbar_lotes', JSON.stringify(nuevosLotes));
+        localStorage.setItem('stockbar_bajas', JSON.stringify(nuevasBajas));
+        showToast('info', `Se dieron de baja automáticamente ${cantidadGenerada} lote(s) vencido(s).`);
+      }
+    } catch {
+      // Si el localStorage está corrupto, no bloquea el login: la próxima
+      // sesión que sí pueda leerlo aplicará las bajas pendientes.
+    }
   };
 
   const handleRecoveryRequest = (e) => {

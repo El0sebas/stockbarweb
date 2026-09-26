@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ShieldCheck } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultPermisos } from '../../data/defaultPermisos';
+import { showAlert } from '../../utils/alerts';
 
 export const RolFormModal = ({ show, onClose, onSave, rol }) => {
   // Catálogo real de permiso (scripts/sch.sql) — nunca nombres de módulo
@@ -9,10 +10,11 @@ export const RolFormModal = ({ show, onClose, onSave, rol }) => {
   const [permisos] = usePersistentState('stockbar_permisos', defaultPermisos);
   const modulos = [...new Set(permisos.map((p) => p.modulo))];
 
+  // Sin descripcion: rol no tiene esa columna (decisión explícita del
+  // negocio, aunque la matriz de historias de usuario la mencione).
   const initialState = {
     codigo: '',
     nombre: '',
-    descripcion: '',
     permisos: []
   };
 
@@ -30,6 +32,13 @@ export const RolFormModal = ({ show, onClose, onSave, rol }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    // Regla de la capa de aplicación (no de la BD: los permisos se asignan
+    // en una operación aparte en rol_permiso) — un rol no se crea/actualiza
+    // sin al menos un permiso.
+    if (formData.permisos.length === 0) {
+      showAlert.error('Faltan permisos', 'Un rol debe tener al menos un permiso asignado.');
+      return;
+    }
     onSave(formData);
   };
 
@@ -92,19 +101,6 @@ export const RolFormModal = ({ show, onClose, onSave, rol }) => {
               </div>
 
               <div>
-                <label className="form-label small fw-semibold">Descripción</label>
-                <textarea
-                  name="descripcion"
-                  className="form-control shadow-none"
-                  rows="2"
-                  placeholder="Breve detalle de las funciones del rol..."
-                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  value={formData.descripcion}
-                  onChange={handleChange}
-                ></textarea>
-              </div>
-
-              <div>
                 <label className="form-label small fw-semibold mb-2">Permisos (rol_permiso)</label>
                 <div className="d-flex flex-column gap-3 p-3 rounded-3" style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}>
                   {modulos.map((modulo) => (
@@ -120,7 +116,7 @@ export const RolFormModal = ({ show, onClose, onSave, rol }) => {
                             onChange={() => handleCheckboxChange(permiso.nombre)}
                             style={{ cursor: 'pointer' }}
                           />
-                          <label className="form-check-label small" htmlFor={`perm-${permiso.id_permiso}`} style={{ cursor: 'pointer' }} title={permiso.descripcion}>
+                          <label className="form-check-label small" htmlFor={`perm-${permiso.id_permiso}`} style={{ cursor: 'pointer' }}>
                             {permiso.nombre}
                           </label>
                         </div>

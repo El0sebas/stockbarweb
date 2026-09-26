@@ -74,7 +74,10 @@ export const ProveedorDetailModal = ({ show, onClose, proveedor }) => {
             <div className="d-flex justify-content-between align-items-center p-3 rounded-3" style={{ backgroundColor: styles.cardBg, border: `1px solid ${styles.borderCol}` }}>
               <div>
                 <span className="small fw-semibold text-uppercase" style={{ color: 'var(--amber-action)', fontSize: '0.75rem' }}>{proveedor.codigo}</span>
-                <h4 className="fw-bold m-0 mt-1" style={{ color: styles.textColor }}>{proveedor.nombre}</h4>
+                <h4 className="fw-bold m-0 mt-1" style={{ color: styles.textColor }}>{proveedor.razon_social}</h4>
+                {proveedor.nombre_comercial && (
+                  <div className="small" style={{ color: styles.mutedColor }}>{proveedor.nombre_comercial}</div>
+                )}
               </div>
               <span
                 className="badge px-3 py-2 fw-medium"
@@ -93,8 +96,8 @@ export const ProveedorDetailModal = ({ show, onClose, proveedor }) => {
                 <div className="d-flex align-items-center gap-3 p-2 rounded-2" style={{ backgroundColor: styles.cardBg }}>
                   <Person size={18} style={{ color: styles.mutedColor }} />
                   <div>
-                    <span className="d-block small text-muted" style={{ fontSize: '0.75rem' }}>NIT / Documento</span>
-                    <span className="fw-semibold" style={{ color: styles.textColor }}>{proveedor.nit_empresa || 'No especificado'}</span>
+                    <span className="d-block small text-muted" style={{ fontSize: '0.75rem' }}>NIT</span>
+                    <span className="fw-semibold" style={{ color: styles.textColor }}>{proveedor.nit || 'No especificado'}</span>
                   </div>
                 </div>
               </div>
@@ -102,8 +105,8 @@ export const ProveedorDetailModal = ({ show, onClose, proveedor }) => {
                 <div className="d-flex align-items-center gap-3 p-2 rounded-2" style={{ backgroundColor: styles.cardBg }}>
                   <Telephone size={18} style={{ color: styles.mutedColor }} />
                   <div>
-                    <span className="d-block small text-muted" style={{ fontSize: '0.75rem' }}>Teléfono</span>
-                    <span className="fw-semibold" style={{ color: styles.textColor }}>{proveedor.telefono || 'No especificado'}</span>
+                    <span className="d-block small text-muted" style={{ fontSize: '0.75rem' }}>Teléfono Principal</span>
+                    <span className="fw-semibold" style={{ color: styles.textColor }}>{proveedor.telefono_principal || 'No especificado'}</span>
                   </div>
                 </div>
               </div>
@@ -111,8 +114,8 @@ export const ProveedorDetailModal = ({ show, onClose, proveedor }) => {
                 <div className="d-flex align-items-center gap-3 p-2 rounded-2" style={{ backgroundColor: styles.cardBg }}>
                   <Envelope size={18} style={{ color: styles.mutedColor }} />
                   <div>
-                    <span className="d-block small text-muted" style={{ fontSize: '0.75rem' }}>Correo Electrónico</span>
-                    <span className="fw-semibold" style={{ color: styles.textColor }}>{proveedor.correo || 'No especificado'}</span>
+                    <span className="d-block small text-muted" style={{ fontSize: '0.75rem' }}>Correo Principal</span>
+                    <span className="fw-semibold" style={{ color: styles.textColor }}>{proveedor.correo_principal || 'No especificado'}</span>
                   </div>
                 </div>
               </div>
@@ -120,8 +123,8 @@ export const ProveedorDetailModal = ({ show, onClose, proveedor }) => {
                 <div className="d-flex align-items-center gap-3 p-2 rounded-2" style={{ backgroundColor: styles.cardBg }}>
                   <Building size={18} style={{ color: styles.mutedColor }} />
                   <div>
-                    <span className="d-block small text-muted" style={{ fontSize: '0.75rem' }}>Dirección</span>
-                    <span className="fw-semibold" style={{ color: styles.textColor }}>{proveedor.direccion || 'No especificado'}</span>
+                    <span className="d-block small text-muted" style={{ fontSize: '0.75rem' }}>Ciudad / Dirección</span>
+                    <span className="fw-semibold" style={{ color: styles.textColor }}>{[proveedor.ciudad, proveedor.direccion].filter(Boolean).join(' — ') || 'No especificado'}</span>
                   </div>
                 </div>
               </div>

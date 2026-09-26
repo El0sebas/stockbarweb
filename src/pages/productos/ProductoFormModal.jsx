@@ -2,17 +2,26 @@ import React, { useState, useEffect } from 'react';
 import { BoxSeam } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultCategorias } from '../../data/defaultCategorias';
+import { defaultUnidadesMedida } from '../../data/defaultUnidadesMedida';
+import { defaultProveedores } from '../../data/defaultProveedores';
+import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
 
 export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
   // Mismo catálogo que CategoriasPage: crear una categoría nueva la hace
   // aparecer aquí de inmediato, en vez de mantener una lista fija aparte.
   const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
+  const [unidadesMedida] = usePersistentState('stockbar_unidades_medida', defaultUnidadesMedida);
+  const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
+  const [productoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
+
+  const proveedoresActivos = proveedores.filter((p) => p.estado === 'Activo');
 
   const initialState = {
     codigo: '',
     nombre: '',
     descripcion: '',
     categoria: '',
+    unidad_medida: '',
     precioVenta: '',
     maneja_vencimiento: false,
     stockMinimo: '',
@@ -20,21 +29,36 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
   };
 
   const [formData, setFormData] = useState(initialState);
+  const [proveedoresSeleccionados, setProveedoresSeleccionados] = useState([]);
 
   useEffect(() => {
     if (producto) {
       setFormData(producto);
+      setProveedoresSeleccionados(
+        productoProveedor
+          .filter((pp) => pp.id_producto === producto.codigo && pp.estado === 'Activo')
+          .map((pp) => pp.id_proveedor)
+      );
     } else {
       setFormData({ ...initialState, estado: 'Activo' });
+      setProveedoresSeleccionados([]);
     }
   }, [producto, show]);
+
+  const toggleProveedor = (codigoProveedor) => {
+    setProveedoresSeleccionados((prev) =>
+      prev.includes(codigoProveedor)
+        ? prev.filter((c) => c !== codigoProveedor)
+        : [...prev, codigoProveedor]
+    );
+  };
 
   if (!show) return null;
 
   const handleSubmit = (e) => {
     e.preventDefault();
     const dataToSave = producto ? formData : { ...formData, estado: 'Activo' };
-    onSave(dataToSave);
+    onSave({ ...dataToSave, proveedoresSeleccionados });
   };
 
   const handleChange = (e) => {
@@ -119,17 +143,61 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
                   </select>
                 </div>
                 <div className="col-6">
-                  <label className="form-label small fw-semibold">Precio de Venta</label>
-                  <input 
-                    type="number" 
-                    name="precioVenta"
-                    required 
-                    className="form-control shadow-none" 
-                    placeholder="0.00"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} 
-                    value={formData.precioVenta} 
-                    onChange={handleChange} 
-                  />
+                  <label className="form-label small fw-semibold">Unidad de Medida</label>
+                  <select
+                    name="unidad_medida"
+                    className="form-select shadow-none"
+                    required
+                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                    value={formData.unidad_medida}
+                    onChange={handleChange}
+                  >
+                    <option value="">Seleccione...</option>
+                    {unidadesMedida.map((um) => (
+                      <option key={um.id_unidad_medida} value={um.nombre}>{um.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="form-label small fw-semibold">Precio de Venta</label>
+                <input
+                  type="number"
+                  name="precioVenta"
+                  required
+                  className="form-control shadow-none"
+                  placeholder="0.00"
+                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                  value={formData.precioVenta}
+                  onChange={handleChange}
+                />
+              </div>
+
+              <div>
+                <label className="form-label small fw-semibold">Proveedores</label>
+                <div
+                  className="p-2 rounded-3 d-flex flex-wrap gap-3"
+                  style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}
+                >
+                  {proveedoresActivos.length === 0 ? (
+                    <span className="small" style={{ color: styles.mutedColor }}>No hay proveedores activos.</span>
+                  ) : (
+                    proveedoresActivos.map((prov) => (
+                      <div key={prov.codigo} className="form-check m-0">
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          id={`prov-${prov.codigo}`}
+                          checked={proveedoresSeleccionados.includes(prov.codigo)}
+                          onChange={() => toggleProveedor(prov.codigo)}
+                        />
+                        <label className="form-check-label small" htmlFor={`prov-${prov.codigo}`}>
+                          {prov.razon_social}
+                        </label>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 

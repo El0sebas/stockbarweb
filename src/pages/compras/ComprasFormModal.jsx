@@ -5,11 +5,14 @@ import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 import { defaultProveedores } from '../../data/defaultProveedores';
 import { defaultProductos } from '../../data/defaultProductos';
+import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
 import { generateNextId } from '../../utils/identifiers';
 import { QuantityStepper } from '../../components/common/QuantityStepper';
 
 export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) => {
-  // Mismo catálogo que MetodosPagoPage/VentasPage (ver comentario allí).
+  // metodo_pago es un catálogo fijo sin pantalla de administración (no es
+  // un subproceso listado en la Ficha de Proyecto aprobada), igual que
+  // unidad_medida y motivo_baja.
   const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
   const metodosPagoActivos = metodosPago.filter((m) => m.estado === 'Activo');
 
@@ -20,6 +23,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
   const proveedoresActivos = proveedores.filter((p) => p.estado === 'Activo');
   const [productos] = usePersistentState('stockbar_productos', defaultProductos);
   const productosActivos = productos.filter((p) => p.estado === 'Activo');
+  const [productoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
 
   const initialState = {
     proveedor: '',
@@ -107,6 +111,19 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
       return;
     }
 
+    if (requiereLote) {
+      // Mirror de sp_validar_lote: la fecha de vencimiento debe ser al menos
+      // 15 días posterior a la fecha de compra (no CURDATE(), para no romper
+      // el registro de compras históricas/atrasadas).
+      if (new Date(fechaVencimiento) < new Date(minimoVencimiento)) {
+        showAlert.error(
+          'Fecha de vencimiento inválida',
+          'La fecha de vencimiento debe ser al menos 15 días posterior a la fecha de compra (no se pueden registrar productos ya vencidos o próximos a vencer).'
+        );
+        return;
+      }
+    }
+
     const idDetalle = generateNextId(formData.items, 'id_detalle');
     const nuevosItems = [
       ...formData.items,
@@ -162,11 +179,31 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
     onSave(compraFinal);
   };
 
-  const resultadosBusqueda = debouncedSearch
-    ? productosActivos.filter((prod) =>
-        prod.nombre.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-        prod.codigo.toLowerCase().includes(debouncedSearch.toLowerCase())
-      )
+  // Solo se pueden comprar productos afiliados al proveedor seleccionado
+  // (tabla producto_proveedor), no cualquier producto del catálogo.
+  const proveedorSeleccionado = proveedoresActivos.find((p) => p.razon_social === formData.proveedor);
+  const codigosProductoDelProveedor = proveedorSeleccionado
+    ? productoProveedor
+        .filter((pp) => pp.id_proveedor === proveedorSeleccionado.codigo && pp.estado === 'Activo')
+        .map((pp) => pp.id_producto)
+    : [];
+
+  // Fecha de referencia para la regla de 15 días (mirror sp_validar_lote):
+  // fecha_compra real si se edita, o hoy si es una compra nueva.
+  const fechaCompraReferencia = compra ? compra.fecha_compra : new Date().toISOString().split('T')[0];
+  const minimoVencimiento = (() => {
+    const d = new Date(fechaCompraReferencia);
+    d.setDate(d.getDate() + 15);
+    return d.toISOString().split('T')[0];
+  })();
+
+  const resultadosBusqueda = debouncedSearch && proveedorSeleccionado
+    ? productosActivos
+        .filter((prod) => codigosProductoDelProveedor.includes(prod.codigo))
+        .filter((prod) =>
+          prod.nombre.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+          prod.codigo.toLowerCase().includes(debouncedSearch.toLowerCase())
+        )
     : [];
 
   const styles = {
@@ -198,13 +235,17 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                   <select
                     className="form-select shadow-none"
                     value={formData.proveedor}
-                    onChange={(e) => setFormData({ ...formData, proveedor: e.target.value })}
+                    onChange={(e) => {
+                      setFormData({ ...formData, proveedor: e.target.value });
+                      setProductSearch('');
+                      setSelectedProductToAdd(null);
+                    }}
                     required
                     style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                   >
                     <option value="">Seleccione un proveedor...</option>
                     {proveedoresActivos.map((prov) => (
-                      <option key={prov.codigo} value={prov.nombre}>{prov.nombre}</option>
+                      <option key={prov.codigo} value={prov.razon_social}>{prov.razon_social}</option>
                     ))}
                   </select>
                 </div>
@@ -284,7 +325,8 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                       <input
                         type="text"
                         className="form-control form-control-sm ps-4"
-                        placeholder="Ej: Tequila o PROD-01"
+                        placeholder={proveedorSeleccionado ? 'Ej: Tequila o PROD-01' : 'Seleccione un proveedor primero'}
+                        disabled={!proveedorSeleccionado}
                         value={productSearch}
                         onChange={(e) => {
                           setProductSearch(e.target.value);
@@ -293,7 +335,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                         style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                       />
                     </div>
-                    {debouncedSearch && !selectedProductToAdd && (
+                    {proveedorSeleccionado && debouncedSearch && !selectedProductToAdd && (
                       <div
                         className="rounded-3 mt-1"
                         style={{ border: `1px solid ${styles.borderCol}`, maxHeight: '160px', overflowY: 'auto' }}
@@ -353,11 +395,15 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                           <label className="form-label small text-muted">Vence</label>
                           <input
                             type="date"
+                            min={minimoVencimiento}
                             className="form-control form-control-sm"
                             value={fechaVencimiento}
                             onChange={(e) => setFechaVencimiento(e.target.value)}
                             style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                           />
+                          <div className="form-text small" style={{ color: styles.mutedColor }}>
+                            Mínimo {minimoVencimiento} (15 días después de la compra).
+                          </div>
                         </div>
                       </>
                     ) : (

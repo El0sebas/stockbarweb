@@ -35,8 +35,16 @@ export const RolDetailModal = ({ show, onClose, rol }) => {
             </div>
 
             <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
-              <span className="small fw-semibold d-block mb-1" style={{ color: styles.mutedColor }}>Descripción</span>
-              <p className="m-0" style={{ color: styles.textColor }}>{rol.descripcion}</p>
+              <span className="small fw-semibold d-block mb-1" style={{ color: styles.mutedColor }}>Estado</span>
+              <span className="badge px-3 py-1 fw-medium" style={{
+                backgroundColor: rol.estado === 'Activo' ? 'var(--success-soft-bg)' : 'var(--danger-soft-bg)',
+                color: rol.estado === 'Activo' ? 'var(--brand-success)' : 'var(--brand-danger)'
+              }}>
+                {rol.estado}
+              </span>
+              {rol.isSystem && (
+                <span className="small ms-2" style={{ color: styles.mutedColor }}>(protegido, no puede desactivarse)</span>
+              )}
             </div>
 
             <div>

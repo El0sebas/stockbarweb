@@ -5,9 +5,10 @@ import { RowActions } from '../../components/common/RowActions';
 import { StatusToggle } from '../../components/common/StatusToggle';
 import { UsuarioDetailModal } from './UsuarioDetailModal';
 import { UsuarioFormModal } from './UsuarioFormModal';
-import { showToast } from '../../utils/alerts';
+import { showToast, showAlert } from '../../utils/alerts';
 import { generateNextId } from '../../utils/identifiers';
 import { usePersistentState } from '../../hooks/usePersistentState';
+import { useAuth } from '../../context/AuthContext';
 import { defaultUsers } from '../../data/defaultUsers';
 import { getRoleBadgeColors } from '../../utils/roleColors';
 
@@ -15,6 +16,7 @@ export const UsuariosPage = () => {
   // Misma clave de localStorage que Login ('stockbar_users'): un usuario creado
   // aquí puede iniciar sesión, y el admin semilla de Login aparece aquí.
   const [usuarios, setUsuarios] = usePersistentState('stockbar_users', defaultUsers);
+  const { currentUser } = useAuth();
 
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -44,9 +46,24 @@ export const UsuariosPage = () => {
     setShowDeleteModal(true);
   };
 
-  // Alternar Estado Activo / Inactivo con el nuevo Switch
+  // Alternar Estado Activo / Inactivo. Tres reglas, en este orden:
+  // 1) espejo de trg_proteger_admin_principal (BD): nunca se desactiva, ni
+  //    siquiera él mismo.
+  // 2) capa de aplicación: solo un ADMINISTRADOR puede desactivar usuarios.
+  // 3) capa de aplicación: nadie puede desactivarse a sí mismo.
   const handleToggleEstado = (user) => {
-    if (user.rol === 'ADMINISTRADOR') return; // Protección adicional
+    if (user.es_admin_principal) {
+      showAlert.error('No permitido', 'El administrador principal del sistema no puede desactivarse.');
+      return;
+    }
+    if (currentUser?.rol !== 'ADMINISTRADOR') {
+      showAlert.error('No permitido', 'Solo un administrador puede desactivar usuarios.');
+      return;
+    }
+    if (user.id_usuario === currentUser?.id_usuario) {
+      showAlert.error('No permitido', 'No puedes desactivarte a ti mismo.');
+      return;
+    }
 
     const nuevoEstado = user.estado === 'Activo' ? 'Inactivo' : 'Activo';
     setUsuarios(usuarios.map(u => u.id_usuario === user.id_usuario ? { ...u, estado: nuevoEstado } : u));
@@ -192,7 +209,8 @@ export const UsuariosPage = () => {
                 filteredUsuarios.map((usr) => {
                   const rolNombre = usr.rol || 'Sin rol';
                   const rolBadge = getRoleBadgeColors(rolNombre);
-                  const isAdministrador = rolNombre === 'ADMINISTRADOR';
+                  const esUnoMismo = usr.id_usuario === currentUser?.id_usuario;
+                  const puedeDesactivar = !usr.es_admin_principal && currentUser?.rol === 'ADMINISTRADOR' && !esUnoMismo;
 
                   return (
                     <tr key={usr.id_usuario} style={{ borderColor: styles.borderCol }}>
@@ -214,12 +232,16 @@ export const UsuariosPage = () => {
 
                       {/* Columna de ESTADO interactiva */}
                       <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
-                        {isAdministrador ? (
-                          <span className="badge px-3 py-2 fw-medium" style={{ backgroundColor: 'var(--success-soft-bg)', color: 'var(--brand-success)', borderRadius: '12px' }}>
+                        {usr.es_admin_principal ? (
+                          <span className="badge px-3 py-2 fw-medium" style={{ backgroundColor: 'var(--success-soft-bg)', color: 'var(--brand-success)', borderRadius: '12px' }} title="Administrador principal: no puede desactivarse">
                             Activo
                           </span>
                         ) : (
-                          <StatusToggle active={usr.estado === 'Activo'} onToggle={() => handleToggleEstado(usr)} />
+                          <StatusToggle
+                            active={usr.estado === 'Activo'}
+                            onToggle={() => handleToggleEstado(usr)}
+                            disabled={!puedeDesactivar}
+                          />
                         )}
                       </td>
 
@@ -228,7 +250,7 @@ export const UsuariosPage = () => {
                           onView={() => handleOpenDetail(usr)}
                           onEdit={() => handleOpenEdit(usr)}
                           onDelete={() => handleOpenDelete(usr)}
-                          disabledReason={isAdministrador ? 'El usuario Administrador no se puede modificar' : undefined}
+                          disabledReason={usr.es_admin_principal ? 'El administrador principal no se puede modificar' : undefined}
                         />
                       </td>
                     </tr>

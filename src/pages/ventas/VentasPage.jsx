@@ -80,7 +80,14 @@ export const VentasPage = () => {
       return;
     }
     setVentaActivaId(ventaExistente?.id_venta || null);
-    setIdCliente(ventaExistente?.id_cliente ? String(ventaExistente.id_cliente) : '');
+    // Cliente "Consumidor Final" (id_cliente 0) por defecto en el punto de
+    // venta: nunca pasa la verificación de edad (no tiene fecha_nacimiento),
+    // así que el cajero debe cambiarlo explícitamente si el producto la exige.
+    setIdCliente(
+      ventaExistente
+        ? (ventaExistente.id_cliente != null ? String(ventaExistente.id_cliente) : '')
+        : '0'
+    );
     setProductoSearch('');
     setCantidadesBusqueda({});
     setMetodoPagoNuevo(metodosPagoActivos[0]?.id_metodo_pago || 1);

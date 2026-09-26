@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { Search, PlusLg, ShieldCheck, LockFill } from 'react-bootstrap-icons';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
 import { RowActions } from '../../components/common/RowActions';
+import { StatusToggle } from '../../components/common/StatusToggle';
 import { RolFormModal } from './RolFormModal';
 import { RolDetailModal } from './RolDetailModal';
-import { showToast } from '../../utils/alerts';
+import { showToast, showAlert } from '../../utils/alerts';
 import { generateNextIdentifier } from '../../utils/identifiers';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultRoles } from '../../data/defaultRoles';
@@ -48,14 +49,26 @@ export const RolesPage = () => {
 
   const handleSaveRol = (rolData) => {
     if (selectedRol) {
-      setRoles(roles.map(r => r.codigo === rolData.codigo ? rolData : r));
+      setRoles(roles.map(r => r.codigo === rolData.codigo ? { ...r, ...rolData } : r));
       showToast('success', 'Rol actualizado exitosamente');
     } else {
       const nuevoCodigo = generateNextIdentifier({ items: roles, key: 'codigo', prefix: 'ROL', pad: 2, separator: '-' });
-      setRoles([...roles, { ...rolData, codigo: nuevoCodigo, isSystem: false }]);
+      setRoles([...roles, { ...rolData, codigo: nuevoCodigo, estado: 'Activo', isSystem: false }]);
       showToast('success', `Rol ${nuevoCodigo} creado exitosamente`);
     }
     setShowFormModal(false);
+  };
+
+  // Espejo de trg_proteger_rol_administrador: el rol ADMINISTRADOR nunca se
+  // desactiva. Cualquier otro rol (incluido EMPLEADO) sí puede.
+  const handleToggleEstado = (rol) => {
+    if (rol.isSystem) {
+      showAlert.error('No permitido', 'El rol ADMINISTRADOR no puede desactivarse.');
+      return;
+    }
+    const nuevoEstado = rol.estado === 'Activo' ? 'Inactivo' : 'Activo';
+    setRoles(roles.map(r => r.codigo === rol.codigo ? { ...r, estado: nuevoEstado } : r));
+    showToast('success', `Rol actualizado a ${nuevoEstado}`);
   };
 
   const handleConfirmDelete = () => {
@@ -116,8 +129,8 @@ export const RolesPage = () => {
               <tr style={{ borderColor: styles.borderCol }}>
                 <th className="py-3 px-4 small text-uppercase fw-bold" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>CÓDIGO</th>
                 <th className="py-3 px-4 small text-uppercase fw-bold" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>ROL</th>
-                <th className="py-3 px-4 small text-uppercase fw-bold" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>DESCRIPCIÓN</th>
                 <th className="py-3 px-4 small text-uppercase fw-bold text-center" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>PERMISOS</th>
+                <th className="py-3 px-4 small text-uppercase fw-bold text-center" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>ESTADO</th>
                 <th className="py-3 px-4 small text-uppercase fw-bold text-center" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>ACCIONES</th>
               </tr>
             </thead>
@@ -131,11 +144,19 @@ export const RolesPage = () => {
                       {rol.nombre}
                     </div>
                   </td>
-                  <td className="py-3 px-4 small" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>{rol.descripcion}</td>
                   <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
                     <span className="badge px-2 py-1" style={{ backgroundColor: 'var(--border-color)', color: styles.textColor }}>
-                      {rol.permisos.length} módulos
+                      {rol.permisos.length} permisos
                     </span>
+                  </td>
+                  <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
+                    {rol.isSystem ? (
+                      <span className="badge px-3 py-2 fw-medium" style={{ backgroundColor: 'var(--success-soft-bg)', color: 'var(--brand-success)', borderRadius: '12px' }} title="El rol ADMINISTRADOR no puede desactivarse">
+                        Activo
+                      </span>
+                    ) : (
+                      <StatusToggle active={rol.estado === 'Activo'} onToggle={() => handleToggleEstado(rol)} />
+                    )}
                   </td>
                   <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
                     <RowActions

@@ -13,6 +13,10 @@ export const defaultUsers = [
     rol: 'ADMINISTRADOR',
     password: '123456',
     estado: 'Activo',
-    fechaRegistro: '2026-01-15'
+    fechaRegistro: '2026-01-15',
+    // Primer ADMINISTRADOR que existió en el sistema (lo crearía la app en
+    // el arranque inicial). Nunca editable desde el UI; ni él mismo ni otro
+    // administrador puede desactivarlo — ver docs/DATABASE.md.
+    es_admin_principal: true
   }
 ];

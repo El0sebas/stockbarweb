@@ -75,9 +75,9 @@ export const ProveedoresPage = () => {
   };
 
   const filteredProveedores = proveedores.filter(p =>
-    p.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    p.razon_social.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.nit_empresa || '').toLowerCase().includes(searchTerm.toLowerCase())
+    (p.nit || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const styles = {
@@ -161,7 +161,7 @@ export const ProveedoresPage = () => {
                       {prov.codigo}
                     </td>
                     <td className="py-3 px-4 fw-semibold" style={{ backgroundColor: 'transparent', color: styles.textColor }}>
-                      {prov.nombre}
+                      {prov.razon_social}
                     </td>
                     <td className="py-3 px-4 small" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>
                       {(() => {
@@ -170,7 +170,7 @@ export const ProveedoresPage = () => {
                       })()}
                     </td>
                     <td className="py-3 px-4 small" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>
-                      {prov.telefono}
+                      {prov.telefono_principal}
                     </td>
                     <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
                       <StatusToggle active={prov.estado === 'Activo'} onToggle={() => handleToggleEstado(prov)} />
@@ -207,7 +207,7 @@ export const ProveedoresPage = () => {
         show={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
         onConfirm={handleConfirmDelete}
-        itemName={selectedProveedor?.nombre}
+        itemName={selectedProveedor?.razon_social}
       />
     </div>
   );

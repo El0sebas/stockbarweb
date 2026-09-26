@@ -2,14 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Building } from 'react-bootstrap-icons';
 
 export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
-  
+
   const initialState = {
     codigo: '',
-    nit_empresa: '',
-    nombre: '',
-    telefono: '',
-    correo: '',
+    nit: '',
+    razon_social: '',
+    nombre_comercial: '',
+    ciudad: '',
     direccion: '',
+    telefono_principal: '',
+    correo_principal: '',
     estado: 'Activo'
   };
 
@@ -55,7 +57,7 @@ export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
             </div>
             <button type="button" className="btn-close shadow-none btn-close-themed" onClick={onClose}></button>
           </div>
-          
+
           <form onSubmit={handleSubmit}>
             <div className="modal-body p-4 d-flex flex-column gap-3">
               {proveedor && (
@@ -67,27 +69,68 @@ export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
 
               <div className="row g-3">
                 <div className="col-6">
-                  <label className="form-label small fw-semibold">NIT / Documento</label>
+                  <label className="form-label small fw-semibold">NIT</label>
                   <input
                     type="text"
-                    name="nit_empresa"
+                    name="nit"
+                    required
                     className="form-control shadow-none"
                     placeholder="900123456-1"
                     style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                    value={formData.nit_empresa || ''}
+                    value={formData.nit || ''}
                     onChange={handleChange}
                   />
                 </div>
                 <div className="col-6">
-                  <label className="form-label small fw-semibold">Nombre de la Empresa</label>
+                  <label className="form-label small fw-semibold">Razón Social</label>
                   <input
                     type="text"
-                    name="nombre"
+                    name="razon_social"
                     required
                     className="form-control shadow-none"
-                    placeholder="Ej: Distribuidora de Licores"
+                    placeholder="Ej: Distribuidora de Licores S.A.S."
                     style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                    value={formData.nombre}
+                    value={formData.razon_social}
+                    onChange={handleChange}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="form-label small fw-semibold">Nombre Comercial (opcional)</label>
+                <input
+                  type="text"
+                  name="nombre_comercial"
+                  className="form-control shadow-none"
+                  placeholder="Ej: Distrilicores"
+                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                  value={formData.nombre_comercial || ''}
+                  onChange={handleChange}
+                />
+              </div>
+
+              <div className="row g-3">
+                <div className="col-6">
+                  <label className="form-label small fw-semibold">Ciudad</label>
+                  <input
+                    type="text"
+                    name="ciudad"
+                    className="form-control shadow-none"
+                    placeholder="Medellín"
+                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                    value={formData.ciudad || ''}
+                    onChange={handleChange}
+                  />
+                </div>
+                <div className="col-6">
+                  <label className="form-label small fw-semibold">Dirección</label>
+                  <input
+                    type="text"
+                    name="direccion"
+                    className="form-control shadow-none"
+                    placeholder="Calle 45 # 12-34"
+                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                    value={formData.direccion || ''}
                     onChange={handleChange}
                   />
                 </div>
@@ -95,28 +138,28 @@ export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
 
               <div className="row g-3">
                 <div className="col-6">
-                  <label className="form-label small fw-semibold">Teléfono</label>
+                  <label className="form-label small fw-semibold">Teléfono Principal</label>
                   <input
                     type="text"
-                    name="telefono"
+                    name="telefono_principal"
                     required
                     className="form-control shadow-none"
                     placeholder="3101234567"
                     style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                    value={formData.telefono}
+                    value={formData.telefono_principal}
                     onChange={handleChange}
                   />
                 </div>
                 <div className="col-6">
-                  <label className="form-label small fw-semibold">Correo Electrónico</label>
+                  <label className="form-label small fw-semibold">Correo Principal</label>
                   <input
                     type="email"
-                    name="correo"
+                    name="correo_principal"
                     required
                     className="form-control shadow-none"
                     placeholder="correo@ejemplo.com"
                     style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                    value={formData.correo}
+                    value={formData.correo_principal}
                     onChange={handleChange}
                   />
                 </div>
@@ -124,21 +167,8 @@ export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
               <div className="form-text small" style={{ color: styles.mutedColor }}>
                 Los contactos de este proveedor (uno o varios, con un principal) se administran desde el detalle del proveedor una vez guardado.
               </div>
-
-              <div>
-                <label className="form-label small fw-semibold">Dirección</label>
-                <textarea
-                  name="direccion"
-                  rows="2"
-                  className="form-control shadow-none"
-                  placeholder="Calle 45 # 12-34, Medellín"
-                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  value={formData.direccion || ''}
-                  onChange={handleChange}
-                />
-              </div>
             </div>
-            
+
             <div className="modal-footer border-top p-3 d-flex gap-2" style={{ borderColor: styles.borderCol }}>
               <button type="button" className="btn border-0 text-secondary fw-medium" onClick={onClose}>Cancelar</button>
               <button type="submit" className="btn fw-bold px-4 text-white border-0" style={{ backgroundColor: 'var(--amber-action)' }}>

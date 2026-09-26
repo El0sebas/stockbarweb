@@ -25,6 +25,10 @@ export const ClientesPage = () => {
   const handleOpenDelete = (c) => { setSelectedCliente(c); setShowDeleteModal(true); };
 
   const handleToggleEstado = (c) => {
+    if (c.id_cliente === 0) {
+      showAlert.error('Cliente protegido', 'El cliente "Consumidor Final" no puede desactivarse: es la opción por defecto del punto de venta.');
+      return;
+    }
     const nuevoEstado = c.estado === 'Activo' ? 'Inactivo' : 'Activo';
     setClientes(clientes.map(x => x.id_cliente === c.id_cliente ? { ...x, estado: nuevoEstado } : x));
     showToast('success', `Estado actualizado a ${nuevoEstado}`);
@@ -135,6 +139,7 @@ export const ClientesPage = () => {
                         onView={() => handleOpenDetail(cli)}
                         onEdit={() => handleOpenEdit(cli)}
                         onDelete={() => handleOpenDelete(cli)}
+                        disabledReason={cli.id_cliente === 0 ? 'Cliente protegido: es la opción por defecto del punto de venta.' : undefined}
                       />
                     </td>
                   </tr>

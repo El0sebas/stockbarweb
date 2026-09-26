@@ -12,82 +12,68 @@
 --     `SET GLOBAL log_bin_trust_function_creators = 1;` y quitar la
 --     palabra DETERMINISTIC de las tres funciones.
 --
--- CAMBIOS respecto al script original (PostgreSQL) que subiste, y por qué:
+-- Ver el historial de cambios respecto al físico original de PostgreSQL en
+-- versiones anteriores de este script (control de versiones / docs/DATABASE.md).
+-- Cambios de esta revisión (segunda pasada del dueño del proyecto sobre el
+-- prototipo publicado):
 --
--- 1) venta.id_cliente pasa de NOT NULL a NULLABLE.
---    El original bloqueaba la venta de mostrador sin cliente formal, que
---    es justo el flujo que describe la ficha del proyecto (cliente llega
---    a la vitrina, pide el producto, paga) y que el propio proyecto ya
---    había probado como caso de negocio explícito (venta sin cliente,
---    con reversión de stock al anular). La verificación de edad para
---    categorías restringidas NO se debilita: sigue exigiendo un cliente
---    con fecha de nacimiento válida cuando el producto lo requiere.
+-- 1) QUITADO rol.descripcion y permiso.descripcion: no se usan en ningún
+--    formulario (el rol se identifica por nombre, el permiso se asigna
+--    desde la matriz de la sección 9, ninguno se gestiona como entidad con
+--    ficha propia). La matriz de historias de usuario menciona una
+--    descripción opcional para rol, pero se decidió no incluirla.
 --
--- 2) UNIQUE (id_proveedor, numero_factura_proveedor) agregado en compra.
---    Evita registrar dos veces la misma factura del mismo proveedor;
---    ya era un caso de negocio probado en la versión anterior del
---    proyecto y no tenía respaldo en el script que subiste.
+-- 2) QUITADO categoria.estado: la Ficha de Proyecto aprobada no lista
+--    "cambio de estado" en el alcance del subproceso de categorías (a
+--    diferencia de producto, proveedor, compra, cliente, venta, usuario y
+--    rol, que sí lo listan). La matriz de historias de usuario sí la
+--    menciona, pero se sigue el criterio de la ficha aprobada.
 --
--- 3) AGREGADO: compra.ruta_factura (VARCHAR). Faltaba por completo en el
---    físico que subiste. La ficha del proyecto justifica TODO el sistema
---    en que "la conservación física de las facturas... conlleva riesgo
---    de deterioro, extravío o desorganización, dificultando la
---    trazabilidad". Sin un campo para la factura digitalizada, la base
---    de datos no resuelve ese problema central: solo registra que hubo
---    una compra, no el comprobante que reemplaza al papel.
+-- 3) AGREGADO usuario.es_admin_principal + trg_proteger_admin_principal:
+--    marca al primer usuario ADMINISTRADOR que existió en el sistema.
+--    Restricción única (columna GENERATED, mismo truco que jornada y
+--    contacto_proveedor) garantiza que nunca haya más de uno. Un trigger
+--    bloquea desactivarlo y bloquea cambiar la marca una vez puesta. La
+--    app lo crea una sola vez en el arranque inicial, nunca editable desde
+--    el UI. "Solo un admin puede desactivar a otro" y "nadie puede
+--    desactivarse a sí mismo" son reglas de la capa de aplicación (dependen
+--    de quién hizo la petición autenticada, algo que un trigger no puede
+--    ver), no columnas ni triggers nuevos.
 --
--- 4) Índices en columnas FK: no hace falta agregarlos a mano. A
---    diferencia de PostgreSQL, InnoDB crea automáticamente un índice por
---    cada columna de llave foránea. El hallazgo de rendimiento que te
---    marqué sobre el script en Postgres no aplica aquí.
+-- 4) AGREGADO trg_proteger_rol_administrador: el rol ADMINISTRADOR no se
+--    puede desactivar (UPDATE rol SET estado=FALSE sobre ese rol se
+--    rechaza). El rol EMPLEADO (o cualquier rol nuevo) sí se puede
+--    activar/desactivar libremente.
 --
--- 5) MySQL no tiene "constraint triggers" diferibles (no existe
---    DEFERRABLE INITIALLY DEFERRED). El original validaba "pagos = total"
---    al COMMIT, lo que permitía insertar la venta ya COMPLETADA y recién
---    validar al final de la transacción. Aquí se introduce un estado
---    intermedio venta.estado = 'PENDIENTE' (nuevo, no estaba en el
---    original): el flujo obligatorio pasa a ser INSERT venta (PENDIENTE)
---    -> INSERT detalle_venta -> INSERT venta_pago -> UPDATE venta SET
---    estado='COMPLETADA' (este último paso dispara la validación de
---    cuadre). Es exactamente el flujo que las notas del script original
---    ya recomendaban como buena práctica; aquí queda forzado por diseño.
+-- 5) CAMBIO sp_validar_lote: el mínimo para fecha_vencimiento pasa de "no
+--    anterior a fecha_compra" a "al menos 15 días posterior a
+--    fecha_compra". Evita registrar mercancía que llega ya vencida o a
+--    punto de vencer. Se compara contra fecha_compra (no CURDATE()) a
+--    propósito, para poder seguir registrando compras históricas/atrasadas
+--    sin que la fecha del sistema rompa la regla.
 --
--- 6) A raíz del punto 5 encontré una condición de carrera que el diseño
---    original no cubría: si el stock disponible solo descuenta ventas
---    COMPLETADAS, dos ventas PENDIENTES simultáneas podrían "reservar"
---    las mismas unidades de un lote sin que ninguna se entere hasta el
---    momento de completarlas (nada vuelve a validar cantidades al
---    cerrar). Corregido en fn_stock_lote: ahora descuenta ventas en
---    estado PENDIENTE o COMPLETADA (no solo COMPLETADA), de modo que
---    agregar un producto al carrito reserva el stock de inmediato, igual
---    que en un punto de venta real. La anulación de una venta PENDIENTE
---    libera el stock automáticamente por el mismo motivo.
+-- 6) AGREGADO sp_dar_baja_lotes_vencidos(p_id_usuario): da de baja sola
+--    (motivo 'Vencimiento') todos los lotes de compras REGISTRADA con
+--    fecha_vencimiento < CURDATE() y stock disponible > 0. La BD no puede
+--    "despertarse sola" cada día: el backend debe llamarlo una vez al día
+--    (cron de aplicación, ej. node-cron a las 00:05) con el id de un
+--    usuario "sistema" o del administrador que corre el proceso. No se usó
+--    el EVENT SCHEDULER de MySQL porque muchos hostings administrados lo
+--    traen desactivado.
 --
--- 7) AGREGADO: bloqueo simétrico en detalle_venta. El original ya
---    impedía tocar los pagos de una venta COMPLETADA
---    (fn_bloquear_pago_venta_cerrada) pero no impedía agregar líneas de
---    producto nuevas a una venta ya cerrada. Se agregó el mismo bloqueo
---    para detalle_venta.
+-- 7) NOTA (no es cambio de esquema): el cliente "Consumidor Final"
+--    (numero_documento='0000000000', sin fecha_nacimiento a propósito) no
+--    se siembra aquí para no chocar con los IDs fijos de los scripts de
+--    datos de prueba — la aplicación lo crea una sola vez en el arranque
+--    inicial, igual que el primer admin_principal.
 --
--- 8) cliente.fecha_nacimiento <= fecha actual: en el original era un
---    CHECK constraint con CURRENT_DATE. MySQL 8 prohíbe funciones no
---    deterministas (CURRENT_DATE, NOW, etc.) dentro de un CHECK
---    constraint, así que esa regla se movió a un trigger
---    (trg_validar_cliente_ins/upd). Es un detalle puramente de
---    compatibilidad, no cambia la regla de negocio.
---
--- 9) AGREGADO: sp_completar_venta(id_venta) como procedimiento de
---    conveniencia para el paso final del flujo del punto 5 (equivale a
---    UPDATE venta SET estado='COMPLETADA'; se agrega solo para que la
---    capa de aplicación tenga un único punto de entrada, siguiendo el
---    mismo patrón de procedimientos que ya usaba este proyecto en su
---    script de pruebas anterior, ej. sp_validar_cantidades_lotes_venta).
---
--- IMPORTANTE: si te quedas con este físico en MySQL, los documentos
--- casos_prueba_stockbar.md, casos_explicados.md y stockbar_datos_prueba.sql
--- quedan desactualizados (tablas, triggers y hasta el flujo de venta
--- PENDIENTE/COMPLETADA cambiaron) y conviene regenerarlos contra este
--- script. Avísame si quieres que los rehaga.
+-- Cambios heredados de revisiones previas (ver docs/DATABASE.md para el
+-- detalle completo): venta.id_cliente nullable, UNIQUE
+-- (id_proveedor, numero_factura_proveedor) en compra, compra.ruta_factura,
+-- flujo de venta PENDIENTE/COMPLETADA/ANULADA con reserva de stock desde
+-- la primera línea, bloqueo simétrico de detalle_venta y venta_pago sobre
+-- ventas COMPLETADA, categoria.porcentaje_iva + requiere_verificacion_edad,
+-- detalle_venta.porcentaje_impuesto_aplicado congelado por trigger.
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS stockbar
@@ -127,13 +113,18 @@ SET FOREIGN_KEY_CHECKS = 1;
 CREATE TABLE rol (
     id_rol SMALLINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     nombre VARCHAR(40) NOT NULL UNIQUE,
+    -- QUITADO: se decidió que el rol NO lleva descripción (pedido explícito
+    -- del negocio), aunque la matriz de historias de usuario la menciona
+    -- como campo opcional. El nombre del rol es suficiente.
     estado BOOLEAN NOT NULL DEFAULT TRUE
 ) ENGINE=InnoDB;
 
 CREATE TABLE permiso (
     id_permiso SMALLINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     nombre VARCHAR(60) NOT NULL UNIQUE,
-    descripcion VARCHAR(200),
+    -- QUITADO: descripcion por permiso no se usa en ningún formulario (el
+    -- permiso solo se asigna a un rol, no se gestiona como entidad propia
+    -- con ficha detallada); nombre + modulo ya son autoexplicativos.
     modulo VARCHAR(40) NOT NULL
 ) ENGINE=InnoDB;
 
@@ -172,7 +163,12 @@ CREATE TABLE categoria (
     -- que un cambio futuro de tarifa no altere ventas ya registradas.
     porcentaje_iva DECIMAL(5,2) NOT NULL DEFAULT 19.00,
     requiere_verificacion_edad BOOLEAN NOT NULL DEFAULT FALSE,
-    estado BOOLEAN NOT NULL DEFAULT TRUE,
+    -- QUITADO: la ficha aprobada NO lista "cambio de estado" en el alcance
+    -- del subproceso de categorías (sí lo lista para producto, proveedor,
+    -- compra, cliente, venta, usuario y rol) — a diferencia de la matriz de
+    -- historias de usuario, que sí la menciona. Se sigue el criterio de la
+    -- ficha aprobada por ser el documento de alcance vigente; si el negocio
+    -- confirma que sí la necesita, es un ALTER TABLE de una sola columna.
     CONSTRAINT ck_categoria_margen CHECK (margen_defecto_porcentaje >= 0),
     CONSTRAINT ck_categoria_iva CHECK (porcentaje_iva >= 0 AND porcentaje_iva <= 100)
 ) ENGINE=InnoDB;
@@ -193,6 +189,18 @@ CREATE TABLE usuario (
     fecha_nacimiento DATE NOT NULL,
     fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     estado BOOLEAN NOT NULL DEFAULT TRUE,
+    -- AGREGADO: marca al primer usuario ADMINISTRADOR que existió en el
+    -- sistema (el que crea el flujo de instalación inicial). Nunca se
+    -- expone editable en el UI; la app la fija en TRUE una sola vez, al
+    -- crear ese primer admin. Protege contra el bloqueo total del sistema
+    -- (nadie puede desactivar a ese usuario, ni siquiera él mismo).
+    es_admin_principal BOOLEAN NOT NULL DEFAULT FALSE,
+    -- CAMBIO: mismo truco de columna GENERATED que ya usan jornada y
+    -- contacto_proveedor para simular un índice único parcial en MySQL:
+    -- garantiza que a lo sumo un usuario en todo el sistema tenga esta marca.
+    id_usuario_admin_principal INT UNSIGNED
+        GENERATED ALWAYS AS (CASE WHEN es_admin_principal = TRUE THEN 1 END) STORED,
+    UNIQUE KEY uq_admin_principal_unico (id_usuario_admin_principal),
     CONSTRAINT ck_usuario_tipo_documento CHECK (tipo_documento IN ('CC','CE','TI','PAS','NIT')),
     CONSTRAINT uq_usuario_documento UNIQUE (tipo_documento, numero_documento),
     FOREIGN KEY (id_rol) REFERENCES rol(id_rol)
@@ -333,14 +341,12 @@ CREATE TABLE compra (
     id_proveedor INT UNSIGNED NOT NULL,
     id_usuario INT UNSIGNED NOT NULL,
     numero_factura_proveedor VARCHAR(40),
-    -- AGREGADO: ver punto 3 del encabezado (no existía en el script subido).
     ruta_factura VARCHAR(255),
     fecha_compra DATE NOT NULL,
     fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     estado VARCHAR(12) NOT NULL DEFAULT 'REGISTRADA',
     observaciones VARCHAR(255),
     CONSTRAINT ck_compra_estado CHECK (estado IN ('REGISTRADA','ANULADA')),
-    -- AGREGADO: ver punto 2 del encabezado.
     CONSTRAINT uq_factura_proveedor UNIQUE (id_proveedor, numero_factura_proveedor),
     FOREIGN KEY (id_proveedor) REFERENCES proveedor(id_proveedor),
     FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
@@ -382,13 +388,10 @@ CREATE TABLE baja_inventario (
 -- -------------------------
 CREATE TABLE venta (
     id_venta INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    -- CAMBIO: era NOT NULL en el script subido. Ver punto 1 del encabezado.
     id_cliente INT UNSIGNED NULL,
     id_jornada INT UNSIGNED NOT NULL,
     id_usuario INT UNSIGNED NOT NULL,
     fecha_hora_venta TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    -- CAMBIO: se agrega 'PENDIENTE' como estado inicial. Ver punto 5 del
-    -- encabezado (MySQL no tiene constraint triggers diferibles).
     estado VARCHAR(12) NOT NULL DEFAULT 'PENDIENTE',
     observaciones VARCHAR(255),
     CONSTRAINT ck_venta_estado CHECK (estado IN ('PENDIENTE','COMPLETADA','ANULADA')),
@@ -402,13 +405,7 @@ CREATE TABLE detalle_venta (
     id_venta INT UNSIGNED NOT NULL,
     id_lote INT UNSIGNED NOT NULL,
     cantidad DECIMAL(10,2) NOT NULL,
-    -- precio_unitario_venta es el precio FINAL que paga el cliente (ya
-    -- incluye el IVA), igual que en el mostrador real. No es un precio base.
     precio_unitario_venta DECIMAL(12,2) NOT NULL,
-    -- AGREGADO: tasa de IVA vigente al momento de la venta, congelada por
-    -- línea (mismo patrón que precio_unitario_venta). La rellena
-    -- automáticamente trg_validar_detalle_venta_ins/upd desde la categoría
-    -- del producto: no se recibe ni se confía en lo que mande la aplicación.
     porcentaje_impuesto_aplicado DECIMAL(5,2) NOT NULL DEFAULT 0,
     CONSTRAINT ck_detalle_venta_cantidad CHECK (cantidad > 0),
     CONSTRAINT ck_detalle_venta_precio CHECK (precio_unitario_venta >= 0),
@@ -445,9 +442,6 @@ BEGIN
 
     SELECT cantidad INTO v_cantidad FROM lote WHERE id_lote = p_id_lote;
 
-    -- CAMBIO: se descuentan ventas PENDIENTES y COMPLETADAS (no solo
-    -- COMPLETADAS como en el original). Ver punto 6 del encabezado: corrige
-    -- una condición de carrera que introduce el estado PENDIENTE.
     SELECT COALESCE(SUM(dv.cantidad), 0) INTO v_vendido
     FROM detalle_venta dv
     JOIN venta v ON v.id_venta = dv.id_venta
@@ -477,10 +471,6 @@ BEGIN
 END$$
 DELIMITER ;
 
--- AGREGADO: desglose de IVA para el recibo/reporte fiscal. precio_unitario_venta
--- ya incluye el IVA, así que la base gravable se obtiene descontándolo con la
--- tasa que quedó congelada por línea; el total de la venta (fn_total_venta)
--- no cambia.
 DROP FUNCTION IF EXISTS fn_base_gravable_venta;
 DELIMITER $$
 CREATE FUNCTION fn_base_gravable_venta(p_id_venta INT UNSIGNED)
@@ -525,8 +515,6 @@ DELIMITER ;
 
 -- ============================================================
 -- VALIDACIÓN DE CLIENTE (fecha de nacimiento no futura)
--- Ver punto 8 del encabezado: en Postgres era un CHECK; MySQL prohíbe
--- CURRENT_DATE dentro de un CHECK constraint.
 -- ============================================================
 
 DROP PROCEDURE IF EXISTS sp_validar_cliente;
@@ -556,6 +544,41 @@ END$$
 DELIMITER ;
 
 -- ============================================================
+-- PROTECCIÓN DE ROL ADMINISTRADOR Y ADMIN PRINCIPAL
+-- AGREGADO: pedido explícito del negocio — el rol ADMINISTRADOR nunca se
+-- puede desactivar, y el primer usuario administrador del sistema tampoco
+-- (ni él mismo). "Solo un administrador puede desactivar a otro" y "nadie
+-- puede desactivarse a sí mismo" quedan como reglas de la capa de
+-- aplicación (dependen de quién hizo la petición autenticada); aquí solo
+-- se protege el dato en sí.
+-- ============================================================
+
+DROP TRIGGER IF EXISTS trg_proteger_rol_administrador;
+DELIMITER $$
+CREATE TRIGGER trg_proteger_rol_administrador BEFORE UPDATE ON rol
+FOR EACH ROW
+BEGIN
+    IF OLD.nombre = 'ADMINISTRADOR' AND NEW.estado = FALSE THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El rol ADMINISTRADOR no puede desactivarse.';
+    END IF;
+END$$
+DELIMITER ;
+
+DROP TRIGGER IF EXISTS trg_proteger_admin_principal;
+DELIMITER $$
+CREATE TRIGGER trg_proteger_admin_principal BEFORE UPDATE ON usuario
+FOR EACH ROW
+BEGIN
+    IF OLD.es_admin_principal = TRUE AND NEW.estado = FALSE THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El administrador principal del sistema no puede desactivarse.';
+    END IF;
+    IF OLD.es_admin_principal <> NEW.es_admin_principal THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La marca de administrador principal no puede modificarse.';
+    END IF;
+END$$
+DELIMITER ;
+
+-- ============================================================
 -- VALIDACIÓN DE LOTES
 -- ============================================================
 
@@ -580,9 +603,14 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El producto requiere fecha de vencimiento.';
     END IF;
 
-    IF p_fecha_vencimiento IS NOT NULL AND p_fecha_vencimiento < v_fecha_compra THEN
+    -- CAMBIO: se endurece de "no anterior a la fecha de compra" a "al menos
+    -- 15 días después de la fecha de compra" — no se pueden registrar
+    -- productos ya vencidos o próximos a vencer. Se compara contra
+    -- fecha_compra y no CURDATE() para no romper el registro de compras
+    -- históricas/atrasadas.
+    IF p_fecha_vencimiento IS NOT NULL AND p_fecha_vencimiento < DATE_ADD(v_fecha_compra, INTERVAL 15 DAY) THEN
         SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'La fecha de vencimiento no puede ser anterior a la fecha de compra.';
+            SET MESSAGE_TEXT = 'La fecha de vencimiento debe ser al menos 15 días posterior a la fecha de compra (no se pueden registrar productos ya vencidos o próximos a vencer).';
     END IF;
 END$$
 DELIMITER ;
@@ -631,6 +659,29 @@ BEGIN
 END$$
 DELIMITER ;
 
+-- AGREGADO: baja automática de lotes ya vencidos (pedido explícito del
+-- negocio). El backend debe llamarlo una vez al día (cron de aplicación)
+-- con el id de un usuario "sistema" o del administrador que corre el
+-- proceso. No se usa el EVENT SCHEDULER de MySQL porque muchos hostings
+-- administrados lo traen desactivado.
+DROP PROCEDURE IF EXISTS sp_dar_baja_lotes_vencidos;
+DELIMITER $$
+CREATE PROCEDURE sp_dar_baja_lotes_vencidos(IN p_id_usuario INT UNSIGNED)
+BEGIN
+    DECLARE v_id_motivo SMALLINT UNSIGNED;
+    SELECT id_motivo_baja INTO v_id_motivo FROM motivo_baja WHERE nombre = 'Vencimiento';
+
+    INSERT INTO baja_inventario (id_lote, id_motivo_baja, cantidad, id_usuario, observaciones)
+    SELECT l.id_lote, v_id_motivo, fn_stock_lote(l.id_lote), p_id_usuario, 'Baja automática por vencimiento'
+    FROM lote l
+    JOIN compra c ON c.id_compra = l.id_compra
+    WHERE l.fecha_vencimiento IS NOT NULL
+      AND l.fecha_vencimiento < CURDATE()
+      AND c.estado = 'REGISTRADA'
+      AND fn_stock_lote(l.id_lote) > 0;
+END$$
+DELIMITER ;
+
 -- ============================================================
 -- VALIDACIÓN DE VENTA: JORNADA, ESTADO, EDAD Y STOCK
 -- ============================================================
@@ -642,8 +693,6 @@ CREATE PROCEDURE sp_validar_detalle_venta(
     IN p_id_lote INT UNSIGNED,
     IN p_cantidad DECIMAL(10,2),
     IN p_cantidad_anterior DECIMAL(10,2),
-    -- AGREGADO: IVA de la categoría del producto vendido, devuelto al
-    -- trigger para que congele el valor en detalle_venta.porcentaje_impuesto_aplicado.
     OUT p_porcentaje_iva DECIMAL(5,2)
 )
 BEGIN
@@ -670,7 +719,6 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No se pueden agregar detalles a una venta ANULADA.';
     END IF;
 
-    -- AGREGADO: ver punto 7 del encabezado (el original no bloqueaba esto).
     IF v_estado_venta = 'COMPLETADA' THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'No se pueden modificar los detalles de una venta ya COMPLETADA.';
@@ -706,9 +754,6 @@ BEGIN
     END IF;
 
     IF v_requiere_edad = TRUE THEN
-        -- v_cliente puede ser NULL (venta de mostrador): la subconsulta no
-        -- encuentra fila y v_fecha_nacimiento queda NULL, lo que dispara
-        -- correctamente el rechazo de abajo. No hace falta un caso especial.
         SELECT fecha_nacimiento INTO v_fecha_nacimiento
         FROM cliente WHERE id_cliente = v_cliente;
 
@@ -734,8 +779,6 @@ FOR EACH ROW
 BEGIN
     DECLARE v_iva DECIMAL(5,2);
     CALL sp_validar_detalle_venta(NEW.id_venta, NEW.id_lote, NEW.cantidad, 0, v_iva);
-    -- AGREGADO: la tasa de IVA nunca la manda el cliente/app, siempre se
-    -- toma de la categoría del producto en el momento de la venta.
     SET NEW.porcentaje_impuesto_aplicado = v_iva;
 END$$
 
@@ -769,7 +812,6 @@ BEGIN
             SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No se puede completar la venta: la jornada no está ABIERTA.';
         END IF;
 
-        -- CAMBIO: id_cliente ahora es nullable; solo se valida si se registró uno.
         IF p_id_cliente IS NOT NULL THEN
             SELECT COUNT(*) INTO v_existe FROM cliente WHERE id_cliente = p_id_cliente AND estado = TRUE;
             IF v_existe = 0 THEN
@@ -803,11 +845,6 @@ DELIMITER ;
 
 -- ============================================================
 -- CIERRE / COMPLETADO DE VENTA
--- Ver punto 5 del encabezado: reemplaza el CONSTRAINT TRIGGER DEFERRABLE
--- de Postgres. Se dispara en AFTER INSERT/UPDATE cuando estado pasa a
--- COMPLETADA (en la práctica, siempre en el UPDATE final del flujo
--- PENDIENTE -> COMPLETADA, porque insertar directo como COMPLETADA falla
--- por no tener detalles todavía).
 -- ============================================================
 
 DROP PROCEDURE IF EXISTS sp_validar_cierre_venta;
@@ -857,7 +894,6 @@ BEGIN
 END$$
 DELIMITER ;
 
--- Procedimiento de conveniencia para la capa de aplicación (punto 9).
 DROP PROCEDURE IF EXISTS sp_completar_venta;
 DELIMITER $$
 CREATE PROCEDURE sp_completar_venta(IN p_id_venta INT UNSIGNED)
@@ -920,9 +956,6 @@ BEGIN
             SIGNAL SQLSTATE '45000'
                 SET MESSAGE_TEXT = 'Una venta ANULADA no puede reactivarse. Debe registrarse una nueva venta.';
         END IF;
-        -- Anular una venta PENDIENTE (cancelar un carrito antes de cerrarlo) sí
-        -- se permite: fn_stock_lote libera el stock automáticamente porque solo
-        -- cuenta ventas PENDIENTE/COMPLETADA.
     END IF;
 END$$
 DELIMITER ;
@@ -1064,16 +1097,16 @@ INSERT INTO rol (nombre) VALUES
 ('ADMINISTRADOR'),
 ('EMPLEADO');
 
-INSERT INTO permiso (nombre, descripcion, modulo) VALUES
-('GESTIONAR_ROLES', 'Registrar, editar, consultar y administrar roles y permisos', 'SEGURIDAD'),
-('GESTIONAR_USUARIOS', 'Registrar, editar, consultar y administrar usuarios', 'SEGURIDAD'),
-('GESTIONAR_CATEGORIAS', 'Administrar categorías de productos', 'COMPRAS'),
-('GESTIONAR_PRODUCTOS', 'Administrar productos y existencias', 'COMPRAS'),
-('GESTIONAR_PROVEEDORES', 'Administrar proveedores y contactos', 'COMPRAS'),
-('GESTIONAR_COMPRAS', 'Registrar y administrar compras', 'COMPRAS'),
-('GESTIONAR_CLIENTES', 'Administrar clientes', 'VENTAS'),
-('GESTIONAR_VENTAS', 'Registrar y administrar ventas', 'VENTAS'),
-('VER_REPORTES', 'Consultar dashboard y reportes', 'DASHBOARD');
+INSERT INTO permiso (nombre, modulo) VALUES
+('GESTIONAR_ROLES', 'SEGURIDAD'),
+('GESTIONAR_USUARIOS', 'SEGURIDAD'),
+('GESTIONAR_CATEGORIAS', 'COMPRAS'),
+('GESTIONAR_PRODUCTOS', 'COMPRAS'),
+('GESTIONAR_PROVEEDORES', 'COMPRAS'),
+('GESTIONAR_COMPRAS', 'COMPRAS'),
+('GESTIONAR_CLIENTES', 'VENTAS'),
+('GESTIONAR_VENTAS', 'VENTAS'),
+('VER_REPORTES', 'DASHBOARD');
 
 INSERT INTO metodo_pago (nombre) VALUES
 ('Efectivo'),
@@ -1104,6 +1137,12 @@ VALUES
 ('Cigarrillos', 'Productos de tabaco', 12.00, 19.00, TRUE),
 ('Snacks', 'Dulces, confitería y productos secos', 40.00, 19.00, FALSE);
 
+-- NOTA: el cliente genérico "Consumidor Final" para ventas de mostrador NO
+-- se siembra aquí (rompería los id_cliente fijos que usan los scripts de
+-- datos de prueba). Igual que el primer usuario administrador, lo crea la
+-- aplicación una sola vez en el arranque inicial (INSERT ... si no existe
+-- ya un cliente con numero_documento='0000000000').
+
 -- Permisos del administrador
 INSERT INTO rol_permiso (id_rol, id_permiso)
 SELECT r.id_rol, p.id_permiso
@@ -1126,20 +1165,16 @@ WHERE r.nombre = 'EMPLEADO';
 -- 1. El hash de contraseña debe generarse en la aplicación con un algoritmo
 --    seguro (Argon2id o bcrypt). Nunca guardar contraseñas en texto plano.
 --
--- 2. Flujo obligatorio de una venta (ver punto 5 del encabezado):
+-- 2. Flujo obligatorio de una venta:
 --       BEGIN
 --       INSERT venta (queda en PENDIENTE por defecto)
 --       INSERT detalle_venta (...)
 --       INSERT venta_pago (...)
 --       CALL sp_completar_venta(id_venta);   -- o UPDATE venta SET estado='COMPLETADA'
 --       COMMIT;
---    Este último paso es el que valida detalle + pagos. Si falla, la
---    aplicación puede reintentar corrigiendo detalle/pagos sin haber
---    perdido la cabecera (sigue en PENDIENTE) o anular la venta.
 --
 -- 3. La edad mínima está fijada en 18 en el trigger porque la ficha del
 --    proyecto solo exige verificación de edad, sin una edad configurable.
---    Si el negocio requiere parametrizarla, crear un parámetro de config.
 --
 -- 4. La anulación de una venta (PENDIENTE o COMPLETADA) libera el stock
 --    porque fn_stock_lote solo descuenta ventas PENDIENTE/COMPLETADA.
@@ -1148,3 +1183,12 @@ WHERE r.nombre = 'EMPLEADO';
 --    dentro de transacciones y, para máxima robustez, bloquear el lote
 --    con SELECT ... FOR UPDATE en la capa de servicio antes de calcular
 --    y consumir stock.
+--
+-- 6. El backend debe llamar sp_dar_baja_lotes_vencidos(p_id_usuario) una
+--    vez al día (cron de aplicación) con el id de un usuario "sistema".
+--
+-- 7. En el arranque inicial de la aplicación (una sola vez, cuando todavía
+--    no existen esas filas): crear el primer usuario ADMINISTRADOR con
+--    es_admin_principal=TRUE, y el cliente "Consumidor Final"
+--    (numero_documento='0000000000', sin fecha_nacimiento). Ningún endpoint
+--    posterior debe poder tocar es_admin_principal.

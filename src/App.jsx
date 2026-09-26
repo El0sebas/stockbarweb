@@ -17,7 +17,6 @@ import { BajasPage } from './pages/bajas/BajasPage';
 import { JornadaPage } from './pages/jornada/JornadaPage';
 import { ClientesPage } from './pages/clientes/ClientesPage';
 import { VentasPage } from './pages/ventas/VentasPage';
-import { MetodosPagoPage } from './pages/metodospago/MetodosPagoPage';
 
 const AppContent = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -38,7 +37,6 @@ const AppContent = () => {
       case 'categorias': return <CategoriasPage />;
       case 'productos': return <ProductosPage />;
       case 'proveedores': return <ProveedoresPage />;
-      case 'metodospago': return <MetodosPagoPage />;
       case 'compras': return <ComprasPage />;
       case 'bajas': return <BajasPage />;
       case 'jornada': return <JornadaPage />;

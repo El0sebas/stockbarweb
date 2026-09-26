@@ -13,6 +13,7 @@ import { defaultCategorias } from '../../data/defaultCategorias';
 import { defaultLotes } from '../../data/defaultLotes';
 import { defaultMotivosBaja } from '../../data/defaultMotivosBaja';
 import { defaultBajas } from '../../data/defaultBajas';
+import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
 import { getStockDisponible } from '../../utils/stock';
 import { aplicarBaja } from '../../utils/bajas';
 import { useAuth } from '../../context/AuthContext';
@@ -24,6 +25,7 @@ export const ProductosPage = () => {
   const [lotes, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
   const [motivos] = usePersistentState('stockbar_motivos_baja', defaultMotivosBaja);
   const [bajas, setBajas] = usePersistentState('stockbar_bajas', defaultBajas);
+  const [productoProveedor, setProductoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
   const { currentUser } = useAuth();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -86,14 +88,26 @@ export const ProductosPage = () => {
   };
 
   const handleSaveProducto = (formData) => {
+    const { proveedoresSeleccionados = [], ...productoData } = formData;
+    let codigoProducto;
     if (selectedProducto) {
-      setProductos(productos.map(p => p.codigo === formData.codigo ? formData : p));
+      codigoProducto = productoData.codigo;
+      setProductos(productos.map(p => p.codigo === codigoProducto ? productoData : p));
       showToast('success', 'Producto actualizado exitosamente');
     } else {
-      const nuevoCodigo = generateNextIdentifier({ items: productos, key: 'codigo', prefix: 'PROD', pad: 2, separator: '-' });
-      setProductos([...productos, { ...formData, codigo: nuevoCodigo }]);
-      showToast('success', `Producto ${nuevoCodigo} creado exitosamente`);
+      codigoProducto = generateNextIdentifier({ items: productos, key: 'codigo', prefix: 'PROD', pad: 2, separator: '-' });
+      setProductos([...productos, { ...productoData, codigo: codigoProducto }]);
+      showToast('success', `Producto ${codigoProducto} creado exitosamente`);
     }
+    setProductoProveedor([
+      ...productoProveedor.filter((pp) => pp.id_producto !== codigoProducto),
+      ...proveedoresSeleccionados.map((idProveedor) => ({
+        id_producto: codigoProducto,
+        id_proveedor: idProveedor,
+        precio_referencia: null,
+        estado: 'Activo'
+      }))
+    ]);
     setShowFormModal(false);
     setSelectedProducto(null);
   };

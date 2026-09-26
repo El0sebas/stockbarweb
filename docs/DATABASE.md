@@ -37,12 +37,13 @@ Campos:
       aperitivos >15° vigente en Colombia desde abril 2026). Editable por
       un administrador si la ley cambia, sin tocar código ni el frontend.
   - requiere_verificacion_edad (BOOLEAN, NOT NULL, DEFAULT FALSE)
-  - estado (BOOLEAN, NOT NULL, DEFAULT TRUE)
 
 Índices:
   - PK: id_categoria
   - UNIQUE: nombre
 ```
+
+**Sin `estado`:** la Ficha de Proyecto aprobada no lista "cambio de estado" en el alcance del subproceso de categorías (a diferencia de producto, proveedor, compra, cliente, venta, usuario y rol, que sí lo listan) — se sigue ese criterio aunque la Matriz de Historias de Usuario mencione un estado. Si el negocio confirma que sí lo necesita, es un `ALTER TABLE categoria ADD COLUMN estado ...` de una sola columna.
 
 **Importante:** el impuesto al consumo de licores/cigarrillos (monofásico, pagado por el productor/importador) **no vive aquí ni en ninguna tabla de StockBar** — ya está diluido en `lote.precio_unitario_compra`. `categoria.porcentaje_iva` es exclusivamente el IVA que el cajero cobra al cliente final.
 
@@ -138,9 +139,15 @@ Campos:
 #### `rol`, `permiso`, `rol_permiso`
 ```
 rol:            id_rol, nombre (UNIQUE), estado
-permiso:        id_permiso, nombre (UNIQUE), descripcion, modulo
+permiso:        id_permiso, nombre (UNIQUE), modulo
 rol_permiso:    PK compuesta (id_rol, id_permiso)
 ```
+
+**Sin `descripcion` en `rol` ni en `permiso`:** ninguno se gestiona como entidad con ficha propia (el rol se identifica por nombre; el permiso solo se asigna desde la matriz rol×permiso) — decisión explícita del negocio, aunque la Matriz de Historias de Usuario mencione una descripción opcional para `rol`.
+
+**Protección del rol `ADMINISTRADOR`:** `trg_proteger_rol_administrador` rechaza `UPDATE rol SET estado=FALSE` cuando `nombre='ADMINISTRADOR'`. Cualquier otro rol (incluido `EMPLEADO`) se activa/desactiva libremente.
+
+**Regla de aplicación (no de BD):** un rol no se puede crear sin al menos un permiso asignado. La BD no puede validarlo en el `INSERT INTO rol` porque los permisos se asignan después en `rol_permiso` (dos pasos, mismo patrón que "venta"); el backend debe envolver "crear rol" + "asignar permisos" en una transacción y rechazar el conjunto si el arreglo de permisos viene vacío.
 
 #### `usuario`
 ```
@@ -155,11 +162,19 @@ Campos:
   - contrasena_hash (VARCHAR(255), NOT NULL) — Argon2id o bcrypt, nunca texto plano
   - fecha_nacimiento (DATE, NOT NULL)
   - fecha_registro (TIMESTAMP), estado (BOOLEAN)
+  - es_admin_principal (BOOLEAN, NOT NULL, DEFAULT FALSE) — marca al primer
+    ADMINISTRADOR que existió en el sistema. Nunca editable desde el UI; la
+    app la fija en TRUE una sola vez, en el arranque inicial.
 
 Índices:
   - PK: id_usuario
   - UNIQUE: correo, (tipo_documento, numero_documento)
+  - UNIQUE: id_usuario_admin_principal (columna GENERATED sobre
+    es_admin_principal — a lo sumo un usuario en todo el sistema puede
+    tener esta marca, mismo truco que jornada/contacto_proveedor).
 ```
+
+**Protección del admin principal:** `trg_proteger_admin_principal` rechaza desactivar a ese usuario (ni siquiera él mismo puede) y rechaza cambiar la marca una vez puesta. Dos reglas más viven en la capa de aplicación, no en la BD (dependen de quién hizo la petición autenticada): solo un `ADMINISTRADOR` puede desactivar a otro usuario, y nadie puede desactivarse a sí mismo — el backend compara el `id_usuario` del JWT contra el `id_usuario` objetivo.
 
 #### `recuperacion_contrasena`
 Token de un solo uso enviado por SMTP para el flujo de "olvidé mi contraseña".
@@ -211,13 +226,17 @@ Campos:
   - id_producto (FK → producto.id_producto, NOT NULL)
   - cantidad (DECIMAL(10,2), NOT NULL, > 0) — cantidad comprada, inmutable
   - precio_unitario_compra (DECIMAL(12,2), NOT NULL, >= 0)
-  - fecha_vencimiento (DATE, nullable — obligatoria si producto.maneja_vencimiento)
+  - fecha_vencimiento (DATE, nullable — obligatoria si producto.maneja_vencimiento;
+      si viene, debe ser al menos 15 días posterior a fecha_compra —
+      no se registran productos ya vencidos o próximos a vencer)
   - numero_lote_proveedor (VARCHAR(40), nullable)
 
 Índices:
   - PK: id_lote
   - FK: id_compra, id_producto
 ```
+
+**Baja automática de vencidos:** `sp_dar_baja_lotes_vencidos(p_id_usuario)` da de baja (motivo "Vencimiento") todos los lotes de compras `REGISTRADA` con `fecha_vencimiento < CURDATE()` y stock disponible > 0. La BD no se ejecuta sola: el backend debe llamarlo una vez al día (cron de aplicación, no el EVENT SCHEDULER de MySQL — muchos hostings lo traen desactivado).
 
 El **stock disponible no es una columna**: se calcula con `fn_stock_lote(id_lote)` = `cantidad` − unidades vendidas en ventas PENDIENTE/COMPLETADA − unidades dadas de baja. Ver `vw_stock_lotes` / `vw_stock_producto`.
 
@@ -321,8 +340,10 @@ FROM venta v;
 | Trigger | Evento | Qué hace |
 |---|---|---|
 | `trg_validar_cliente_ins` / `_upd` | BEFORE INSERT/UPDATE `cliente` | Rechaza `fecha_nacimiento` futura (vía `sp_validar_cliente`; CHECK no puede usar `CURDATE()` en MySQL). |
-| `trg_validar_lote_ins` / `_upd` | BEFORE INSERT/UPDATE `lote` | Exige `fecha_vencimiento` si `producto.maneja_vencimiento`; rechaza vencimiento anterior a la fecha de compra. |
+| `trg_validar_lote_ins` / `_upd` | BEFORE INSERT/UPDATE `lote` | Exige `fecha_vencimiento` si `producto.maneja_vencimiento`; rechaza vencimiento a menos de 15 días de la fecha de compra. |
 | `trg_validar_baja_ins` / `_upd` | BEFORE INSERT/UPDATE `baja_inventario` | Rechaza una baja mayor al disponible del lote. |
+| `trg_proteger_rol_administrador` | BEFORE UPDATE `rol` | Rechaza desactivar el rol `ADMINISTRADOR`. |
+| `trg_proteger_admin_principal` | BEFORE UPDATE `usuario` | Rechaza desactivar al admin principal y rechaza modificar la marca `es_admin_principal`. |
 | `trg_validar_detalle_venta_ins` / `_upd` | BEFORE INSERT/UPDATE `detalle_venta` | Valida jornada abierta, venta no ANULADA/COMPLETADA, stock disponible, vencimiento del lote y edad mínima (18) si la categoría lo exige; **rellena `porcentaje_impuesto_aplicado`** desde `categoria.porcentaje_iva`. |
 | `trg_validar_venta_ins` / `_upd` | BEFORE INSERT/UPDATE `venta` | Si `estado = 'COMPLETADA'`: exige jornada ABIERTA, cliente activo (si hay) y usuario activo. |
 | `trg_validar_cierre_venta_ins` / `_upd` | AFTER INSERT/UPDATE `venta` | Cuando `estado` pasa a `COMPLETADA`: exige al menos un detalle, total > 0 y `total_venta = total_pagado`. |
@@ -333,7 +354,7 @@ FROM venta v;
 
 **Funciones auxiliares** (usadas por triggers y vistas, no expuestas al frontend): `fn_stock_lote`, `fn_total_venta`, `fn_base_gravable_venta`, `fn_iva_venta`, `fn_total_pagado`.
 
-**Procedimientos de conveniencia**: `sp_completar_venta(id_venta)` para el paso final del flujo de venta (equivalente a `UPDATE venta SET estado='COMPLETADA'`).
+**Procedimientos de conveniencia**: `sp_completar_venta(id_venta)` para el paso final del flujo de venta (equivalente a `UPDATE venta SET estado='COMPLETADA'`); `sp_dar_baja_lotes_vencidos(id_usuario)` para la baja automática diaria de lotes vencidos (llamado por un cron del backend, no por la BD).
 
 ---
 
