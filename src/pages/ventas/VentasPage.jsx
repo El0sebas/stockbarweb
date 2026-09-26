@@ -28,7 +28,7 @@ export const VentasPage = () => {
   const [lotes, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
   const [productos] = usePersistentState('stockbar_productos', defaultProductos);
   const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
-  const [clientes] = usePersistentState('stockbar_clientes_v2', defaultClientes);
+  const [clientes] = usePersistentState('stockbar_clientes', defaultClientes);
   const [jornadas] = usePersistentState('stockbar_jornadas', defaultJornadas);
   const jornadaAbierta = getJornadaAbierta(jornadas);
 
@@ -505,10 +505,10 @@ export const VentasPage = () => {
                        </option>
                      ))}
                    </select>
-                   {ventaActiva && ventaActiva.productos.some((p) => getRequiereEdad(p.categoria)) && (
+                   {ventaActiva && ventaActiva.productos.some((p) => getRequiereEdad(p.categoria)) && clienteSeleccionado && clienteSeleccionado.id_cliente !== 0 && (
                      <div className="small mt-1 d-flex align-items-center gap-1" style={{ color: 'var(--brand-danger)' }}>
                        <ShieldExclamation size={12} />
-                       El carrito tiene productos +18: requiere cliente con fecha de nacimiento y mayor de edad.
+                       El carrito tiene productos +18: este cliente registrado necesita fecha de nacimiento y ser mayor de edad. Una venta de mostrador o al Consumidor Final no lo exige.
                      </div>
                    )}
                  </div>

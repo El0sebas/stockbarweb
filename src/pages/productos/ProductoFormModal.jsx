@@ -12,7 +12,7 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
   // aparecer aquí de inmediato, en vez de mantener una lista fija aparte.
   const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
   const [unidadesMedida] = usePersistentState('stockbar_unidades_medida', defaultUnidadesMedida);
-  const [proveedores] = usePersistentState('stockbar_proveedores_v2', defaultProveedores);
+  const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
   const [productoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
 
   const proveedoresActivos = proveedores.filter((p) => p.estado === 'Activo');
@@ -175,14 +175,14 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
               <div>
                 <label className="form-label small fw-semibold">Proveedores</label>
                 <div
-                  className="p-2 rounded-3 d-flex flex-wrap gap-3"
-                  style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}
+                  className="p-2 rounded-3 d-flex flex-column"
+                  style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}`, maxHeight: '180px', overflowY: 'auto' }}
                 >
                   {proveedoresActivos.length === 0 ? (
-                    <span className="small" style={{ color: styles.mutedColor }}>No hay proveedores activos.</span>
+                    <span className="small p-1" style={{ color: styles.mutedColor }}>No hay proveedores activos.</span>
                   ) : (
                     proveedoresActivos.map((prov) => (
-                      <div key={prov.codigo} className="form-check m-0">
+                      <div key={prov.codigo} className="form-check py-1 px-2 m-0">
                         <input
                           type="checkbox"
                           className="form-check-input"
@@ -190,7 +190,7 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
                           checked={proveedoresSeleccionados.includes(prov.codigo)}
                           onChange={() => toggleProveedor(prov.codigo)}
                         />
-                        <label className="form-check-label small" htmlFor={`prov-${prov.codigo}`}>
+                        <label className="form-check-label small d-block" htmlFor={`prov-${prov.codigo}`}>
                           {prov.razon_social}
                         </label>
                       </div>

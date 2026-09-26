@@ -7,8 +7,10 @@
 // cliente genérico de mostrador que el script SQL NO siembra (rompería los
 // id_cliente fijos de sus datos de prueba) y que la app crea una sola vez en
 // el arranque inicial — aquí, el seed inicial del mock cumple ese rol. A
-// propósito SIN fecha_nacimiento: nunca puede pasar la verificación de edad,
-// así que jamás puede comprar productos con requiere_verificacion_edad.
+// propósito SIN fecha_nacimiento: no tiene documento de identidad real, así
+// que (por decisión de negocio) NO se le exige verificación de edad — se
+// confía en la verificación visual del cajero, igual que un mostrador real
+// (ver utils/edad.js validarEdadCliente).
 export const defaultConsumidorFinal = {
   id_cliente: 0,
   tipo_documento: 'CC',

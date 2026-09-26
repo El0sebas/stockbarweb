@@ -20,7 +20,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
   // Mismos catálogos reales que ProveedoresPage/ProductosPage — nada de
   // listas hardcodeadas por proveedor: cualquier producto activo puede
   // buscarse y agregarse a la compra.
-  const [proveedores] = usePersistentState('stockbar_proveedores_v2', defaultProveedores);
+  const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
   const proveedoresActivos = proveedores.filter((p) => p.estado === 'Activo');
   const [productos] = usePersistentState('stockbar_productos', defaultProductos);
   const productosActivos = productos.filter((p) => p.estado === 'Activo');
@@ -323,7 +323,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
               <div className="p-3 rounded-3 mt-2" style={{ backgroundColor: styles.tableBg, border: `1px solid ${styles.borderCol}` }}>
                 <h6 className="fw-bold small mb-3" style={{ color: 'var(--amber-action)' }}>Agregar Productos</h6>
                 <div className="row g-2 align-items-end">
-                  <div className="col-md-4">
+                  <div className="col-12 col-md-3">
                     <label className="form-label small text-muted">Buscar producto (nombre o código)</label>
                     <div className="position-relative">
                       <Search size={14} className="position-absolute top-50 start-0 translate-middle-y ms-2" style={{ color: styles.mutedColor }} />
@@ -367,12 +367,12 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                     )}
                   </div>
 
-                  <div className="col-md-2">
+                  <div className="col-6 col-md-2">
                     <label className="form-label small text-muted">Cantidad</label>
                     <QuantityStepper value={cantidad} onChange={setCantidad} />
                   </div>
 
-                  <div className="col-md-2">
+                  <div className="col-6 col-md-2">
                     <label className="form-label small text-muted">Costo</label>
                     <MoneyInput
                       className="form-control form-control-sm"
@@ -385,7 +385,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                   {selectedProductToAdd &&
                     (selectedProductToAdd.maneja_vencimiento ? (
                       <>
-                        <div className="col-md-2">
+                        <div className="col-6 col-md-2">
                           <label className="form-label small text-muted">Lote</label>
                           <input
                             type="text"
@@ -396,7 +396,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                             style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                           />
                         </div>
-                        <div className="col-md-2">
+                        <div className="col-6 col-md-2">
                           <label className="form-label small text-muted">Vence</label>
                           <input
                             type="date"
@@ -406,18 +406,15 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                             onChange={(e) => setFechaVencimiento(e.target.value)}
                             style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                           />
-                          <div className="form-text small" style={{ color: styles.mutedColor }}>
-                            Mínimo {minimoVencimiento} (15 días después de la compra).
-                          </div>
                         </div>
                       </>
                     ) : (
-                      <div className="col-md-4">
+                      <div className="col-12 col-md-4">
                         <span className="small text-muted">Sin control de vencimiento.</span>
                       </div>
                     ))}
 
-                  <div className="col-md-1 d-grid">
+                  <div className="col-12 col-md-1 d-grid">
                     <button
                       type="button"
                       className="btn btn-sm text-white"
@@ -430,6 +427,11 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                     </button>
                   </div>
                 </div>
+                {selectedProductToAdd?.maneja_vencimiento && (
+                  <div className="form-text small mt-1" style={{ color: styles.mutedColor }}>
+                    Fecha de vencimiento mínima: {minimoVencimiento} (15 días después de la compra).
+                  </div>
+                )}
               </div>
 
               <div className="table-responsive mt-2">
