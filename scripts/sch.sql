@@ -76,8 +76,10 @@
 --    real: vw_stock_producto solo suma lotes de compras RECIBIDA. Al
 --    marcar la compra RECIBIDA (mercancía ya llegó), los mismos lotes
 --    empiezan a contar de inmediato. Solo se puede editar una compra
---    mientras esté PENDIENTE; RECIBIDA y ANULADA quedan bloqueadas. Ver
---    trg_validar_anulacion_compra para las transiciones válidas.
+--    mientras esté PENDIENTE; RECIBIDA y ANULADA son estados terminales:
+--    ninguna de las dos puede editarse ni cambiar de estado nunca más (ni
+--    anularse una RECIBIDA, ni reactivarse una ANULADA) — ver
+--    trg_validar_anulacion_compra.
 --
 -- Cambios heredados de revisiones previas (ver docs/DATABASE.md para el
 -- detalle completo): venta.id_cliente nullable, UNIQUE
@@ -975,44 +977,20 @@ DELIMITER ;
 -- ============================================================
 -- TRANSICIONES DE ESTADO DE COMPRA (PENDIENTE -> RECIBIDA | ANULADA)
 -- ============================================================
--- Transiciones válidas: PENDIENTE->RECIBIDA, PENDIENTE->ANULADA,
--- RECIBIDA->ANULADA. Cualquier otro cambio (revertir ANULADA, revertir
--- RECIBIDA a PENDIENTE) se rechaza. El chequeo de movimientos de inventario
--- solo aplica al anular una compra RECIBIDA (una PENDIENTE nunca tuvo
--- lotes contando como stock, así que jamás pudo generar ventas/bajas).
+-- Únicas transiciones válidas: PENDIENTE->RECIBIDA y PENDIENTE->ANULADA.
+-- RECIBIDA y ANULADA son estados terminales: ninguna de las dos puede
+-- cambiar de estado nunca más (ni anularse una RECIBIDA, ni reactivarse
+-- una ANULADA). No hace falta chequear movimientos de inventario: una
+-- compra solo puede anularse mientras es PENDIENTE, y una PENDIENTE nunca
+-- tuvo lotes contando como stock, así que jamás pudo generar ventas/bajas.
 DROP TRIGGER IF EXISTS trg_validar_anulacion_compra;
 DELIMITER $$
 CREATE TRIGGER trg_validar_anulacion_compra BEFORE UPDATE ON compra
 FOR EACH ROW
 BEGIN
-    DECLARE v_movimientos INT DEFAULT 0;
-
-    IF OLD.estado <> NEW.estado THEN
-        IF OLD.estado = 'ANULADA' THEN
-            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Una compra ANULADA no puede reactivarse.';
-        ELSEIF OLD.estado = 'RECIBIDA' AND NEW.estado = 'PENDIENTE' THEN
-            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Una compra RECIBIDA no puede volver a PENDIENTE.';
-        ELSEIF OLD.estado = 'RECIBIDA' AND NEW.estado = 'ANULADA' THEN
-            SELECT COUNT(*) INTO v_movimientos
-            FROM lote l
-            WHERE l.id_compra = NEW.id_compra
-              AND (
-                EXISTS (
-                    SELECT 1 FROM detalle_venta dv
-                    JOIN venta v ON v.id_venta = dv.id_venta
-                    WHERE dv.id_lote = l.id_lote
-                      AND v.estado IN ('PENDIENTE', 'COMPLETADA')
-                )
-                OR EXISTS (
-                    SELECT 1 FROM baja_inventario bi WHERE bi.id_lote = l.id_lote
-                )
-              );
-
-            IF v_movimientos > 0 THEN
-                SIGNAL SQLSTATE '45000'
-                    SET MESSAGE_TEXT = 'No se puede anular la compra porque sus lotes ya tienen movimientos de inventario.';
-            END IF;
-        END IF;
+    IF OLD.estado <> NEW.estado AND OLD.estado <> 'PENDIENTE' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Una compra RECIBIDA o ANULADA no puede cambiar de estado.';
     END IF;
 END$$
 DELIMITER ;

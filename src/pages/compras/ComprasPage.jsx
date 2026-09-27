@@ -8,9 +8,6 @@ import { showToast, showAlert } from '../../utils/alerts';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultCompras } from '../../data/defaultCompras';
 import { defaultLotes } from '../../data/defaultLotes';
-import { defaultVentas } from '../../data/defaultVentas';
-import { defaultBajas } from '../../data/defaultBajas';
-import { tieneMovimientos } from '../../utils/compras';
 
 export const ComprasPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -20,9 +17,7 @@ export const ComprasPage = () => {
   const [compras, setCompras] = usePersistentState('stockbar_compras', defaultCompras);
   // Cada línea de una compra crea un lote real (nunca un lote suelto ni un
   // stock editable en Productos): ver utils/stock.js y docs/DATABASE.md.
-  const [lotes, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
-  const [ventas] = usePersistentState('stockbar_ventas', defaultVentas);
-  const [bajas] = usePersistentState('stockbar_bajas', defaultBajas);
+  const [, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
 
   const styles = {
     cardBg: 'var(--bg-card)',
@@ -96,20 +91,13 @@ export const ComprasPage = () => {
     showToast('success', `Compra ${compra.numero_factura_proveedor} marcada como RECIBIDA`);
   };
 
-  // Espejo de trg_validar_anulacion_compra: no se borra nunca, solo se
-  // marca ANULADA. Desde PENDIENTE siempre se puede (sus lotes nunca
-  // contaron como stock); desde RECIBIDA solo si ninguno de sus lotes tiene
-  // ventas/bajas encima. Es de una sola vía (una ANULADA no puede reactivarse).
+  // Espejo de trg_validar_anulacion_compra: solo una compra PENDIENTE puede
+  // anularse. RECIBIDA y ANULADA son estados terminales — ninguna de las
+  // dos puede cambiar de estado nunca más.
   const handleAnularCompra = async (compra) => {
-    if (compra.estado === 'RECIBIDA' && tieneMovimientos(compra, lotes, ventas, bajas)) {
-      showAlert.error('No se puede anular', 'No se puede anular la compra porque sus lotes ya tienen movimientos de inventario.');
-      return;
-    }
-    const confirmado = await showAlert.confirm('¿Anular esta compra?', 'Esta acción no se puede revertir. Los lotes quedan en la compra pero sin poder usarse en nuevas ventas.');
+    const confirmado = await showAlert.confirm('¿Anular esta compra?', 'Esta acción no se puede revertir.');
     if (!confirmado) return;
     setCompras(prev => prev.map(item => item.id === compra.id ? { ...item, estado: 'ANULADA' } : item));
-    // Espejo de vw_stock_lotes.estado_compra: sus lotes dejan de contar como
-    // stock y de poder venderse/darse de baja (ver utils/stock.js).
     setLotes(prev => prev.map(l => l.id_compra === compra.id ? { ...l, estado_compra: 'ANULADA' } : l));
     showToast('success', `Compra ${compra.numero_factura_proveedor} anulada`);
   };
@@ -163,16 +151,12 @@ export const ComprasPage = () => {
           <tbody>
             {filteredCompras.map((c) => {
               const pendiente = c.estado === 'PENDIENTE';
-              const recibida = c.estado === 'RECIBIDA';
-              const anulada = c.estado === 'ANULADA';
-              // Solo se edita mientras está PENDIENTE (regla de negocio, no
-              // de la BD: RECIBIDA y ANULADA quedan bloqueadas sin importar
-              // si ya tienen movimientos).
-              const razonBloqueo = anulada
-                ? 'Una compra ANULADA no puede modificarse'
-                : recibida
-                  ? 'Una compra RECIBIDA no puede editarse; solo se puede anular'
-                  : undefined;
+              // RECIBIDA y ANULADA son estados terminales: no se editan ni
+              // cambian de estado nunca más. Solo PENDIENTE es editable y
+              // puede pasar a RECIBIDA o ANULADA.
+              const razonBloqueo = !pendiente
+                ? `Una compra ${c.estado} no puede modificarse`
+                : undefined;
               const estadoColores = {
                 PENDIENTE: { bg: 'var(--amber-soft-bg)', color: 'var(--amber-action)' },
                 RECIBIDA: { bg: 'var(--success-soft-bg)', color: 'var(--brand-success)' },
@@ -189,11 +173,7 @@ export const ComprasPage = () => {
                 <td className="py-3" style={{ color: styles.mutedColor }}>{c.fecha_compra}</td>
                 <td className="py-3 fw-bold">$ {Number(c.total).toLocaleString()}</td>
                 <td className="py-3">
-                  {anulada ? (
-                    <span className="badge px-3 py-2" style={{ backgroundColor: estadoColores.bg, color: estadoColores.color }}>
-                      {c.estado}
-                    </span>
-                  ) : (
+                  {pendiente ? (
                     <div className="dropdown">
                       <button
                         type="button"
@@ -206,18 +186,16 @@ export const ComprasPage = () => {
                         {c.estado}
                       </button>
                       <ul className="dropdown-menu shadow-sm border-0 py-2" style={{ minWidth: '210px' }}>
-                        {pendiente && (
-                          <li>
-                            <button
-                              type="button"
-                              className="dropdown-item d-flex align-items-center gap-2"
-                              style={{ color: 'var(--brand-success)' }}
-                              onClick={() => handleMarcarRecibida(c)}
-                            >
-                              <CheckCircle size={16} /> Marcar como recibida
-                            </button>
-                          </li>
-                        )}
+                        <li>
+                          <button
+                            type="button"
+                            className="dropdown-item d-flex align-items-center gap-2"
+                            style={{ color: 'var(--brand-success)' }}
+                            onClick={() => handleMarcarRecibida(c)}
+                          >
+                            <CheckCircle size={16} /> Marcar como recibida
+                          </button>
+                        </li>
                         <li>
                           <button
                             type="button"
@@ -230,6 +208,10 @@ export const ComprasPage = () => {
                         </li>
                       </ul>
                     </div>
+                  ) : (
+                    <span className="badge px-3 py-2" style={{ backgroundColor: estadoColores.bg, color: estadoColores.color }}>
+                      {c.estado}
+                    </span>
                   )}
                 </td>
                 <td className="py-3 text-center">
@@ -261,7 +243,6 @@ export const ComprasPage = () => {
         compra={selectedCompra}
         onAnular={handleAnularCompra}
         onMarcarRecibida={handleMarcarRecibida}
-        bloqueada={selectedCompra ? tieneMovimientos(selectedCompra, lotes, ventas, bajas) : false}
       />
     </div>
   );

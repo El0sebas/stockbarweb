@@ -9,7 +9,7 @@ const ESTADO_COLORES = {
   ANULADA: { bg: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' }
 };
 
-export const CompraDetailModal = ({ show, onClose, compra, onAnular, onMarcarRecibida, bloqueada }) => {
+export const CompraDetailModal = ({ show, onClose, compra, onAnular, onMarcarRecibida }) => {
   // Resuelve el método de pago tanto si viene como nombre (semilla antigua)
   // como si viene por id_metodo_pago (compras creadas desde el formulario).
   const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
@@ -181,13 +181,12 @@ export const CompraDetailModal = ({ show, onClose, compra, onAnular, onMarcarRec
                 <CheckCircle size={16} /> Marcar como recibida
               </button>
             )}
-            {compra.estado !== 'ANULADA' && onAnular && (
+            {compra.estado === 'PENDIENTE' && onAnular && (
               <button
                 type="button"
                 className="btn btn-sm px-4 fw-bold text-white d-flex align-items-center gap-2 border-0"
-                style={{ backgroundColor: 'var(--brand-danger)', opacity: bloqueada ? 0.6 : 1 }}
+                style={{ backgroundColor: 'var(--brand-danger)' }}
                 onClick={() => onAnular(compra)}
-                title={bloqueada ? 'Sus lotes ya tienen movimientos de inventario' : undefined}
               >
                 <XCircle size={16} /> Anular compra
               </button>

@@ -215,7 +215,7 @@ Campos:
   - UNIQUE: (id_proveedor, numero_factura_proveedor) — evita registrar la misma factura dos veces
 ```
 
-Ciclo de vida: `PENDIENTE → RECIBIDA → ANULADA` (o `PENDIENTE → ANULADA` directo). Una compra ANULADA no puede reactivarse, una RECIBIDA no puede volver a PENDIENTE, y no puede anularse una RECIBIDA si alguno de sus lotes ya tuvo movimiento (venta o baja) — ver `trg_validar_anulacion_compra`.
+Ciclo de vida: nace `PENDIENTE`, y desde ahí pasa a `RECIBIDA` o a `ANULADA` — esas dos son estados terminales, ninguna puede cambiar de estado nunca más (ni anularse una RECIBIDA, ni reactivarse una ANULADA, ni volver una RECIBIDA a PENDIENTE) — ver `trg_validar_anulacion_compra`.
 
 #### `lote` (detalle de compra — también es el inventario)
 **Todo lote nace de una compra**; `id_compra` es `NOT NULL` y no existe un lote suelto. Cada línea que se agrega en el formulario de Compras crea una fila aquí.
@@ -238,7 +238,7 @@ Campos:
 
 **Baja automática de vencidos:** `sp_dar_baja_lotes_vencidos(p_id_usuario)` da de baja (motivo "Vencimiento") todos los lotes de compras `RECIBIDA` con `fecha_vencimiento < CURDATE()` y stock disponible > 0. La BD no se ejecuta sola: el backend debe llamarlo una vez al día (cron de aplicación, no el EVENT SCHEDULER de MySQL — muchos hostings lo traen desactivado).
 
-**Ciclo de vida de una compra:** nace `PENDIENTE` (pedido hecho al proveedor, mercancía todavía no llega); sus lotes se insertan en ese mismo momento, pero no cuentan como stock mientras la compra sea `PENDIENTE` (`vw_stock_producto` solo suma lotes de compras `RECIBIDA`). Al marcarla `RECIBIDA` (la mercancía ya llegó), los mismos lotes empiezan a contar de inmediato — no se vuelven a insertar. Solo se puede editar una compra mientras esté `PENDIENTE`; `RECIBIDA` y `ANULADA` quedan bloqueadas. Transiciones válidas: `PENDIENTE→RECIBIDA`, `PENDIENTE→ANULADA`, `RECIBIDA→ANULADA` (con chequeo de movimientos de inventario). Cualquier otra (revertir `ANULADA`, o `RECIBIDA→PENDIENTE`) la rechaza `trg_validar_anulacion_compra`.
+**Ciclo de vida de una compra:** nace `PENDIENTE` (pedido hecho al proveedor, mercancía todavía no llega); sus lotes se insertan en ese mismo momento, pero no cuentan como stock mientras la compra sea `PENDIENTE` (`vw_stock_producto` solo suma lotes de compras `RECIBIDA`). Al marcarla `RECIBIDA` (la mercancía ya llegó), los mismos lotes empiezan a contar de inmediato — no se vuelven a insertar. Solo se puede editar una compra mientras esté `PENDIENTE`. Únicas transiciones válidas: `PENDIENTE→RECIBIDA` y `PENDIENTE→ANULADA`; `RECIBIDA` y `ANULADA` son estados terminales — ninguna puede editarse ni cambiar de estado nunca más (`trg_validar_anulacion_compra` lo rechaza).
 
 El **stock disponible no es una columna**: se calcula con `fn_stock_lote(id_lote)` = `cantidad` − unidades vendidas en ventas PENDIENTE/COMPLETADA − unidades dadas de baja. Ver `vw_stock_lotes` / `vw_stock_producto`.
 
@@ -351,7 +351,7 @@ FROM venta v;
 | `trg_validar_cierre_venta_ins` / `_upd` | AFTER INSERT/UPDATE `venta` | Cuando `estado` pasa a `COMPLETADA`: exige al menos un detalle, total > 0 y `total_venta = total_pagado`. |
 | `trg_bloquear_pago_ins` / `_upd` / `_del` | BEFORE INSERT/UPDATE/DELETE `venta_pago` | Bloquea cambios a los pagos de una venta ya COMPLETADA. |
 | `trg_validar_anulacion_venta` | BEFORE UPDATE `venta` | Impide reactivar una venta ANULADA. |
-| `trg_validar_anulacion_compra` | BEFORE UPDATE `compra` | Solo permite PENDIENTE→RECIBIDA/ANULADA y RECIBIDA→ANULADA; bloquea reactivar ANULADA, revertir RECIBIDA→PENDIENTE, y anular una RECIBIDA cuyos lotes ya tuvieron movimientos. |
+| `trg_validar_anulacion_compra` | BEFORE UPDATE `compra` | Solo permite cambiar de estado desde PENDIENTE (a RECIBIDA o ANULADA); RECIBIDA y ANULADA son terminales, cualquier cambio desde ellas se rechaza. |
 | `trg_validar_jornada_ins` / `_upd` | BEFORE INSERT/UPDATE `jornada` | Exige/prohíbe datos de cierre según el estado. |
 
 **Funciones auxiliares** (usadas por triggers y vistas, no expuestas al frontend): `fn_stock_lote`, `fn_total_venta`, `fn_base_gravable_venta`, `fn_iva_venta`, `fn_total_pagado`.

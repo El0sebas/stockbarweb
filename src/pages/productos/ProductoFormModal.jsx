@@ -228,7 +228,7 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
                       proveedoresPagina.map((prov, idx) => (
                         <div
                           key={prov.codigo}
-                          className="form-check py-1 px-2 m-0"
+                          className="form-check py-1 ps-4 pe-2 m-0"
                           style={{ borderBottom: idx < proveedoresPagina.length - 1 ? `1px solid ${styles.borderCol}` : 'none' }}
                         >
                           <input
