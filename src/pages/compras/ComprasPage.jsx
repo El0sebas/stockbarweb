@@ -189,9 +189,48 @@ export const ComprasPage = () => {
                 <td className="py-3" style={{ color: styles.mutedColor }}>{c.fecha_compra}</td>
                 <td className="py-3 fw-bold">$ {Number(c.total).toLocaleString()}</td>
                 <td className="py-3">
-                  <span className="badge px-3 py-2" style={{ backgroundColor: estadoColores.bg, color: estadoColores.color }}>
-                    {c.estado}
-                  </span>
+                  {anulada ? (
+                    <span className="badge px-3 py-2" style={{ backgroundColor: estadoColores.bg, color: estadoColores.color }}>
+                      {c.estado}
+                    </span>
+                  ) : (
+                    <div className="dropdown">
+                      <button
+                        type="button"
+                        className="badge px-3 py-2 border-0 dropdown-toggle"
+                        data-bs-toggle="dropdown"
+                        aria-expanded="false"
+                        style={{ backgroundColor: estadoColores.bg, color: estadoColores.color, cursor: 'pointer' }}
+                        title="Cambiar estado de la compra"
+                      >
+                        {c.estado}
+                      </button>
+                      <ul className="dropdown-menu shadow-sm border-0 py-2" style={{ minWidth: '210px' }}>
+                        {pendiente && (
+                          <li>
+                            <button
+                              type="button"
+                              className="dropdown-item d-flex align-items-center gap-2"
+                              style={{ color: 'var(--brand-success)' }}
+                              onClick={() => handleMarcarRecibida(c)}
+                            >
+                              <CheckCircle size={16} /> Marcar como recibida
+                            </button>
+                          </li>
+                        )}
+                        <li>
+                          <button
+                            type="button"
+                            className="dropdown-item d-flex align-items-center gap-2"
+                            style={{ color: 'var(--brand-danger)' }}
+                            onClick={() => handleAnularCompra(c)}
+                          >
+                            <XCircle size={16} /> Anular compra
+                          </button>
+                        </li>
+                      </ul>
+                    </div>
+                  )}
                 </td>
                 <td className="py-3 text-center">
                   <RowActions
@@ -200,26 +239,6 @@ export const ComprasPage = () => {
                     hideDelete
                     disabledReason={razonBloqueo}
                   />
-                  {pendiente && (
-                    <button
-                      className="btn btn-sm p-1 border-0"
-                      style={{ color: 'var(--brand-success)' }}
-                      title="Marcar como recibida"
-                      onClick={() => handleMarcarRecibida(c)}
-                    >
-                      <CheckCircle size={18} />
-                    </button>
-                  )}
-                  {!anulada && (
-                    <button
-                      className="btn btn-sm p-1 border-0"
-                      style={{ color: 'var(--brand-danger)' }}
-                      title="Anular compra"
-                      onClick={() => handleAnularCompra(c)}
-                    >
-                      <XCircle size={18} />
-                    </button>
-                  )}
                 </td>
               </tr>
               );

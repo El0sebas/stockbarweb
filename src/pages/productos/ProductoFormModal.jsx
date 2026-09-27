@@ -204,41 +204,47 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
                     {proveedoresSeleccionados.length} seleccionado{proveedoresSeleccionados.length === 1 ? '' : 's'}
                   </span>
                 </div>
-                <div className="position-relative mb-2">
-                  <Search size={14} className="position-absolute top-50 start-0 translate-middle-y ms-2" style={{ color: styles.mutedColor }} />
-                  <input
-                    type="text"
-                    className="form-control form-control-sm ps-4"
-                    placeholder="Buscar proveedor..."
-                    value={proveedorSearch}
-                    onChange={(e) => { setProveedorSearch(e.target.value); setProveedorPagina(0); }}
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  />
-                </div>
                 <div
-                  className="rounded-3 d-flex flex-column"
-                  style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}`, minHeight: '184px' }}
+                  className="rounded-3"
+                  style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}`, overflow: 'hidden' }}
                 >
-                  {proveedoresPagina.length === 0 ? (
-                    <span className="small p-2" style={{ color: styles.mutedColor }}>
-                      {proveedoresActivos.length === 0 ? 'No hay proveedores activos.' : 'Sin resultados.'}
-                    </span>
-                  ) : (
-                    proveedoresPagina.map((prov) => (
-                      <div key={prov.codigo} className="form-check py-1 px-2 m-0 border-bottom" style={{ borderColor: styles.borderCol }}>
-                        <input
-                          type="checkbox"
-                          className="form-check-input"
-                          id={`prov-${prov.codigo}`}
-                          checked={proveedoresSeleccionados.includes(prov.codigo)}
-                          onChange={() => toggleProveedor(prov.codigo)}
-                        />
-                        <label className="form-check-label small d-block" htmlFor={`prov-${prov.codigo}`}>
-                          {prov.razon_social}
-                        </label>
-                      </div>
-                    ))
-                  )}
+                  <div className="position-relative p-2 border-bottom" style={{ borderColor: styles.borderCol }}>
+                    <Search size={14} className="position-absolute top-50 start-0 translate-middle-y ms-3" style={{ color: styles.mutedColor }} />
+                    <input
+                      type="text"
+                      className="form-control form-control-sm ps-4 border-0"
+                      placeholder="Buscar proveedor..."
+                      value={proveedorSearch}
+                      onChange={(e) => { setProveedorSearch(e.target.value); setProveedorPagina(0); }}
+                      style={{ backgroundColor: 'transparent', color: styles.textColor, boxShadow: 'none' }}
+                    />
+                  </div>
+                  <div className="d-flex flex-column" style={{ minHeight: '176px' }}>
+                    {proveedoresPagina.length === 0 ? (
+                      <span className="small p-2" style={{ color: styles.mutedColor }}>
+                        {proveedoresActivos.length === 0 ? 'No hay proveedores activos.' : 'Sin resultados.'}
+                      </span>
+                    ) : (
+                      proveedoresPagina.map((prov, idx) => (
+                        <div
+                          key={prov.codigo}
+                          className="form-check py-1 px-2 m-0"
+                          style={{ borderBottom: idx < proveedoresPagina.length - 1 ? `1px solid ${styles.borderCol}` : 'none' }}
+                        >
+                          <input
+                            type="checkbox"
+                            className="form-check-input"
+                            id={`prov-${prov.codigo}`}
+                            checked={proveedoresSeleccionados.includes(prov.codigo)}
+                            onChange={() => toggleProveedor(prov.codigo)}
+                          />
+                          <label className="form-check-label small d-block" htmlFor={`prov-${prov.codigo}`}>
+                            {prov.razon_social}
+                          </label>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
                 {proveedoresFiltrados.length > PROVEEDORES_POR_PAGINA && (
                   <div className="d-flex justify-content-between align-items-center mt-2">

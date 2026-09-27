@@ -326,7 +326,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                   <div className="col-12 col-md-3">
                     <label className="form-label small text-muted">Buscar producto (nombre o código)</label>
                     <div className="position-relative">
-                      <Search size={14} className="position-absolute top-50 start-0 translate-middle-y ms-2" style={{ color: styles.mutedColor, zIndex: 2 }} />
+                      <Search size={14} className="position-absolute top-50 start-0 translate-middle-y ms-2" style={{ color: styles.mutedColor }} />
                       <input
                         type="text"
                         className="form-control form-control-sm ps-4"
@@ -339,42 +339,6 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                         }}
                         style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                       />
-                      {proveedorSeleccionado && !selectedProductToAdd && (
-                        <div
-                          className="rounded-3 shadow-sm position-absolute start-0 w-100"
-                          style={{
-                            top: 'calc(100% + 4px)',
-                            zIndex: 30,
-                            backgroundColor: styles.modalBg,
-                            border: `1px solid ${styles.borderCol}`,
-                            maxHeight: '180px',
-                            overflowY: 'auto'
-                          }}
-                        >
-                          {resultadosBusqueda.length === 0 ? (
-                            <div className="small text-center py-2" style={{ color: styles.mutedColor }}>
-                              {debouncedSearch ? 'Sin resultados.' : 'Este proveedor no tiene productos afiliados.'}
-                            </div>
-                          ) : (
-                            resultadosBusqueda.map((prod, idx) => (
-                              <button
-                                type="button"
-                                key={prod.codigo}
-                                className="btn btn-sm d-block w-100 text-start border-0 rounded-0 px-3 py-2"
-                                style={{
-                                  backgroundColor: 'transparent',
-                                  color: styles.textColor,
-                                  borderBottom: idx < resultadosBusqueda.length - 1 ? `1px solid ${styles.borderCol}` : 'none'
-                                }}
-                                onClick={() => handleSelectProduct(prod)}
-                              >
-                                <span className="fw-semibold">{prod.nombre}</span>{' '}
-                                <span className="small" style={{ color: styles.mutedColor }}>({prod.codigo})</span>
-                              </button>
-                            ))
-                          )}
-                        </div>
-                      )}
                     </div>
                   </div>
 
@@ -438,6 +402,37 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                     </button>
                   </div>
                 </div>
+
+                {proveedorSeleccionado && !selectedProductToAdd && (
+                  <div
+                    className="rounded-3 mt-2"
+                    style={{ border: `1px solid ${styles.borderCol}`, maxHeight: '180px', overflowY: 'auto' }}
+                  >
+                    {resultadosBusqueda.length === 0 ? (
+                      <div className="small text-center py-2" style={{ color: styles.mutedColor }}>
+                        {debouncedSearch ? 'Sin resultados.' : 'Este proveedor no tiene productos afiliados.'}
+                      </div>
+                    ) : (
+                      resultadosBusqueda.map((prod, idx) => (
+                        <button
+                          type="button"
+                          key={prod.codigo}
+                          className="btn btn-sm d-block w-100 text-start border-0 rounded-0 px-3 py-2"
+                          style={{
+                            backgroundColor: 'transparent',
+                            color: styles.textColor,
+                            borderBottom: idx < resultadosBusqueda.length - 1 ? `1px solid ${styles.borderCol}` : 'none'
+                          }}
+                          onClick={() => handleSelectProduct(prod)}
+                        >
+                          <span className="fw-semibold">{prod.nombre}</span>{' '}
+                          <span className="small" style={{ color: styles.mutedColor }}>({prod.codigo})</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+
                 {selectedProductToAdd?.maneja_vencimiento && (
                   <div className="form-text small mt-1" style={{ color: styles.mutedColor }}>
                     Fecha de vencimiento mínima: {minimoVencimiento} (15 días después de la compra).
