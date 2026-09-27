@@ -1,19 +1,27 @@
 import React from 'react';
-import { BoxSeam, Tag, CurrencyDollar, Layers, ShieldExclamation, ExclamationTriangle } from 'react-bootstrap-icons';
+import { BoxSeam, Tag, CurrencyDollar, Layers, ShieldExclamation, ExclamationTriangle, Truck } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultCategorias } from '../../data/defaultCategorias';
 import { defaultLotes } from '../../data/defaultLotes';
+import { defaultProveedores } from '../../data/defaultProveedores';
+import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
 import { getLotesProducto, getStockDisponible, getEstadoVencimiento } from '../../utils/stock';
 
 export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) => {
   const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
   const [lotes] = usePersistentState('stockbar_lotes', defaultLotes);
+  const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
+  const [productoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
 
   if (!show || !producto) return null;
 
   const porcentajeIva = categorias.find((c) => c.nombre === producto.categoria)?.porcentaje_iva ?? 19;
   const lotesProducto = getLotesProducto(lotes, producto.codigo);
   const stockActual = getStockDisponible(lotes, producto.codigo);
+  const proveedoresProducto = productoProveedor
+    .filter((pp) => pp.id_producto === producto.codigo && pp.estado === 'Activo')
+    .map((pp) => proveedores.find((p) => p.codigo === pp.id_proveedor))
+    .filter(Boolean);
 
   const styles = {
     modalBg: 'var(--bg-card)',
@@ -137,6 +145,30 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
                 <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
                   <div className="small" style={{ color: styles.mutedColor }}>Maneja vencimiento / lote</div>
                   <div className="fw-semibold mt-1">{producto.maneja_vencimiento || producto.manejaVencimiento ? 'Sí' : 'No'}</div>
+                </div>
+              </div>
+
+              <div className="col-12">
+                <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
+                  <div className="d-flex align-items-center gap-2 mb-2" style={{ color: styles.mutedColor }}>
+                    <Truck size={16} />
+                    <span className="small fw-semibold">Proveedores (de dónde se consigue)</span>
+                  </div>
+                  {proveedoresProducto.length === 0 ? (
+                    <div className="small" style={{ color: styles.mutedColor }}>Sin proveedores asociados.</div>
+                  ) : (
+                    <div className="d-flex flex-wrap gap-2">
+                      {proveedoresProducto.map((prov) => (
+                        <span
+                          key={prov.codigo}
+                          className="badge px-2 py-1 fw-medium"
+                          style={{ backgroundColor: 'var(--blue-soft-bg)', color: 'var(--brand-blue)' }}
+                        >
+                          {prov.razon_social}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 

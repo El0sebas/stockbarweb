@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { BoxSeam } from 'react-bootstrap-icons';
+import { BoxSeam, Search, ChevronLeft, ChevronRight } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultCategorias } from '../../data/defaultCategorias';
 import { defaultUnidadesMedida } from '../../data/defaultUnidadesMedida';
 import { defaultProveedores } from '../../data/defaultProveedores';
 import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
 import { MoneyInput } from '../../components/common/MoneyInput';
+import { showAlert } from '../../utils/alerts';
+
+const PROVEEDORES_POR_PAGINA = 7;
 
 export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
   // Mismo catálogo que CategoriasPage: crear una categoría nueva la hace
@@ -31,6 +34,8 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
 
   const [formData, setFormData] = useState(initialState);
   const [proveedoresSeleccionados, setProveedoresSeleccionados] = useState([]);
+  const [proveedorSearch, setProveedorSearch] = useState('');
+  const [proveedorPagina, setProveedorPagina] = useState(0);
 
   useEffect(() => {
     if (producto) {
@@ -44,6 +49,8 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
       setFormData({ ...initialState, estado: 'Activo' });
       setProveedoresSeleccionados([]);
     }
+    setProveedorSearch('');
+    setProveedorPagina(0);
   }, [producto, show]);
 
   const toggleProveedor = (codigoProveedor) => {
@@ -54,10 +61,28 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
     );
   };
 
+  // Búsqueda + paginación (7 por página): listar los N proveedores activos
+  // sin filtro se vuelve inmanejable en cuanto el catálogo crece.
+  const proveedoresFiltrados = proveedoresActivos.filter((p) =>
+    p.razon_social.toLowerCase().includes(proveedorSearch.toLowerCase())
+  );
+  const totalPaginas = Math.max(1, Math.ceil(proveedoresFiltrados.length / PROVEEDORES_POR_PAGINA));
+  const paginaActual = Math.min(proveedorPagina, totalPaginas - 1);
+  const proveedoresPagina = proveedoresFiltrados.slice(
+    paginaActual * PROVEEDORES_POR_PAGINA,
+    paginaActual * PROVEEDORES_POR_PAGINA + PROVEEDORES_POR_PAGINA
+  );
+
   if (!show) return null;
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    // Espejo de producto_proveedor: un producto siempre debe poder
+    // conseguirse de al menos un proveedor (no existe un producto huérfano).
+    if (proveedoresSeleccionados.length === 0) {
+      showAlert.error('Falta el proveedor', 'Un producto debe estar asociado a al menos un proveedor.');
+      return;
+    }
     const dataToSave = producto ? formData : { ...formData, estado: 'Activo' };
     onSave({ ...dataToSave, proveedoresSeleccionados });
   };
@@ -173,16 +198,34 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
               </div>
 
               <div>
-                <label className="form-label small fw-semibold">Proveedores</label>
+                <div className="d-flex justify-content-between align-items-baseline">
+                  <label className="form-label small fw-semibold">Proveedores</label>
+                  <span className="small" style={{ color: styles.mutedColor }}>
+                    {proveedoresSeleccionados.length} seleccionado{proveedoresSeleccionados.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <div className="position-relative mb-2">
+                  <Search size={14} className="position-absolute top-50 start-0 translate-middle-y ms-2" style={{ color: styles.mutedColor }} />
+                  <input
+                    type="text"
+                    className="form-control form-control-sm ps-4"
+                    placeholder="Buscar proveedor..."
+                    value={proveedorSearch}
+                    onChange={(e) => { setProveedorSearch(e.target.value); setProveedorPagina(0); }}
+                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                  />
+                </div>
                 <div
-                  className="p-2 rounded-3 d-flex flex-column"
-                  style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}`, maxHeight: '180px', overflowY: 'auto' }}
+                  className="rounded-3 d-flex flex-column"
+                  style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}`, minHeight: '184px' }}
                 >
-                  {proveedoresActivos.length === 0 ? (
-                    <span className="small p-1" style={{ color: styles.mutedColor }}>No hay proveedores activos.</span>
+                  {proveedoresPagina.length === 0 ? (
+                    <span className="small p-2" style={{ color: styles.mutedColor }}>
+                      {proveedoresActivos.length === 0 ? 'No hay proveedores activos.' : 'Sin resultados.'}
+                    </span>
                   ) : (
-                    proveedoresActivos.map((prov) => (
-                      <div key={prov.codigo} className="form-check py-1 px-2 m-0">
+                    proveedoresPagina.map((prov) => (
+                      <div key={prov.codigo} className="form-check py-1 px-2 m-0 border-bottom" style={{ borderColor: styles.borderCol }}>
                         <input
                           type="checkbox"
                           className="form-check-input"
@@ -197,6 +240,31 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
                     ))
                   )}
                 </div>
+                {proveedoresFiltrados.length > PROVEEDORES_POR_PAGINA && (
+                  <div className="d-flex justify-content-between align-items-center mt-2">
+                    <button
+                      type="button"
+                      className="btn btn-sm p-1 border-0"
+                      style={{ color: styles.mutedColor, opacity: paginaActual === 0 ? 0.4 : 1 }}
+                      disabled={paginaActual === 0}
+                      onClick={() => setProveedorPagina((p) => p - 1)}
+                    >
+                      <ChevronLeft size={16} /> Anterior
+                    </button>
+                    <span className="small" style={{ color: styles.mutedColor }}>
+                      Página {paginaActual + 1} de {totalPaginas}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-sm p-1 border-0"
+                      style={{ color: styles.mutedColor, opacity: paginaActual >= totalPaginas - 1 ? 0.4 : 1 }}
+                      disabled={paginaActual >= totalPaginas - 1}
+                      onClick={() => setProveedorPagina((p) => p + 1)}
+                    >
+                      Siguiente <ChevronRight size={16} />
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="row g-3">

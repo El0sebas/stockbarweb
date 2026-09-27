@@ -53,7 +53,7 @@
 --    sin que la fecha del sistema rompa la regla.
 --
 -- 6) AGREGADO sp_dar_baja_lotes_vencidos(p_id_usuario): da de baja sola
---    (motivo 'Vencimiento') todos los lotes de compras REGISTRADA con
+--    (motivo 'Vencimiento') todos los lotes de compras RECIBIDA con
 --    fecha_vencimiento < CURDATE() y stock disponible > 0. La BD no puede
 --    "despertarse sola" cada día: el backend debe llamarlo una vez al día
 --    (cron de aplicación, ej. node-cron a las 00:05) con el id de un
@@ -66,6 +66,18 @@
 --    se siembra aquí para no chocar con los IDs fijos de los scripts de
 --    datos de prueba — la aplicación lo crea una sola vez en el arranque
 --    inicial, igual que el primer admin_principal.
+--
+-- 8) CAMBIO compra.estado: pasa de ('REGISTRADA','ANULADA') a
+--    ('PENDIENTE','RECIBIDA','ANULADA'), default 'PENDIENTE'. Una compra
+--    nace PENDIENTE (pedido hecho al proveedor, aún no llega la mercancía);
+--    sus lotes YA se insertan en ese momento (con id_compra, cantidad,
+--    fecha_vencimiento, etc. — no hace falta una tabla nueva de detalle),
+--    pero mientras la compra sea PENDIENTE esos lotes no cuentan como stock
+--    real: vw_stock_producto solo suma lotes de compras RECIBIDA. Al
+--    marcar la compra RECIBIDA (mercancía ya llegó), los mismos lotes
+--    empiezan a contar de inmediato. Solo se puede editar una compra
+--    mientras esté PENDIENTE; RECIBIDA y ANULADA quedan bloqueadas. Ver
+--    trg_validar_anulacion_compra para las transiciones válidas.
 --
 -- Cambios heredados de revisiones previas (ver docs/DATABASE.md para el
 -- detalle completo): venta.id_cliente nullable, UNIQUE
@@ -344,9 +356,9 @@ CREATE TABLE compra (
     ruta_factura VARCHAR(255),
     fecha_compra DATE NOT NULL,
     fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    estado VARCHAR(12) NOT NULL DEFAULT 'REGISTRADA',
+    estado VARCHAR(12) NOT NULL DEFAULT 'PENDIENTE',
     observaciones VARCHAR(255),
-    CONSTRAINT ck_compra_estado CHECK (estado IN ('REGISTRADA','ANULADA')),
+    CONSTRAINT ck_compra_estado CHECK (estado IN ('PENDIENTE','RECIBIDA','ANULADA')),
     CONSTRAINT uq_factura_proveedor UNIQUE (id_proveedor, numero_factura_proveedor),
     FOREIGN KEY (id_proveedor) REFERENCES proveedor(id_proveedor),
     FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
@@ -677,7 +689,7 @@ BEGIN
     JOIN compra c ON c.id_compra = l.id_compra
     WHERE l.fecha_vencimiento IS NOT NULL
       AND l.fecha_vencimiento < CURDATE()
-      AND c.estado = 'REGISTRADA'
+      AND c.estado = 'RECIBIDA'
       AND fn_stock_lote(l.id_lote) > 0;
 END$$
 DELIMITER ;
@@ -961,9 +973,13 @@ END$$
 DELIMITER ;
 
 -- ============================================================
--- ANULACIÓN DE COMPRA
+-- TRANSICIONES DE ESTADO DE COMPRA (PENDIENTE -> RECIBIDA | ANULADA)
 -- ============================================================
-
+-- Transiciones válidas: PENDIENTE->RECIBIDA, PENDIENTE->ANULADA,
+-- RECIBIDA->ANULADA. Cualquier otro cambio (revertir ANULADA, revertir
+-- RECIBIDA a PENDIENTE) se rechaza. El chequeo de movimientos de inventario
+-- solo aplica al anular una compra RECIBIDA (una PENDIENTE nunca tuvo
+-- lotes contando como stock, así que jamás pudo generar ventas/bajas).
 DROP TRIGGER IF EXISTS trg_validar_anulacion_compra;
 DELIMITER $$
 CREATE TRIGGER trg_validar_anulacion_compra BEFORE UPDATE ON compra
@@ -972,7 +988,11 @@ BEGIN
     DECLARE v_movimientos INT DEFAULT 0;
 
     IF OLD.estado <> NEW.estado THEN
-        IF OLD.estado = 'REGISTRADA' AND NEW.estado = 'ANULADA' THEN
+        IF OLD.estado = 'ANULADA' THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Una compra ANULADA no puede reactivarse.';
+        ELSEIF OLD.estado = 'RECIBIDA' AND NEW.estado = 'PENDIENTE' THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Una compra RECIBIDA no puede volver a PENDIENTE.';
+        ELSEIF OLD.estado = 'RECIBIDA' AND NEW.estado = 'ANULADA' THEN
             SELECT COUNT(*) INTO v_movimientos
             FROM lote l
             WHERE l.id_compra = NEW.id_compra
@@ -992,10 +1012,6 @@ BEGIN
                 SIGNAL SQLSTATE '45000'
                     SET MESSAGE_TEXT = 'No se puede anular la compra porque sus lotes ya tienen movimientos de inventario.';
             END IF;
-        END IF;
-
-        IF OLD.estado = 'ANULADA' AND NEW.estado = 'REGISTRADA' THEN
-            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Una compra ANULADA no puede reactivarse.';
         END IF;
     END IF;
 END$$
@@ -1075,7 +1091,7 @@ SELECT
 FROM producto p
 LEFT JOIN vw_stock_lotes s
     ON s.id_producto = p.id_producto
-   AND s.estado_compra = 'REGISTRADA'
+   AND s.estado_compra = 'RECIBIDA'
 GROUP BY p.id_producto, p.codigo_sku, p.nombre, p.stock_minimo;
 
 CREATE OR REPLACE VIEW vw_totales_venta AS

@@ -1,9 +1,15 @@
 import React from 'react';
-import { BagCheck, Truck, Calendar3, CreditCard, FileEarmarkText, Hash, XCircle } from 'react-bootstrap-icons';
+import { BagCheck, Truck, Calendar3, CreditCard, FileEarmarkText, Hash, XCircle, CheckCircle } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 
-export const CompraDetailModal = ({ show, onClose, compra, onAnular, bloqueada }) => {
+const ESTADO_COLORES = {
+  PENDIENTE: { bg: 'var(--amber-soft-bg)', color: 'var(--amber-action)' },
+  RECIBIDA: { bg: 'var(--success-soft-bg)', color: 'var(--brand-success)' },
+  ANULADA: { bg: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' }
+};
+
+export const CompraDetailModal = ({ show, onClose, compra, onAnular, onMarcarRecibida, bloqueada }) => {
   // Resuelve el método de pago tanto si viene como nombre (semilla antigua)
   // como si viene por id_metodo_pago (compras creadas desde el formulario).
   const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
@@ -52,8 +58,8 @@ export const CompraDetailModal = ({ show, onClose, compra, onAnular, bloqueada }
               <span
                 className="badge px-3 py-2 fw-medium"
                 style={{
-                  backgroundColor: compra.estado === 'ANULADA' ? 'var(--danger-soft-bg)' : 'var(--success-soft-bg)',
-                  color: compra.estado === 'ANULADA' ? 'var(--brand-danger)' : 'var(--brand-success)',
+                  backgroundColor: ESTADO_COLORES[compra.estado]?.bg,
+                  color: ESTADO_COLORES[compra.estado]?.color,
                   borderRadius: '12px'
                 }}
               >
@@ -165,6 +171,16 @@ export const CompraDetailModal = ({ show, onClose, compra, onAnular, bloqueada }
             >
               Cerrar
             </button>
+            {compra.estado === 'PENDIENTE' && onMarcarRecibida && (
+              <button
+                type="button"
+                className="btn btn-sm px-4 fw-bold text-white d-flex align-items-center gap-2 border-0"
+                style={{ backgroundColor: 'var(--brand-success)' }}
+                onClick={() => onMarcarRecibida(compra)}
+              >
+                <CheckCircle size={16} /> Marcar como recibida
+              </button>
+            )}
             {compra.estado !== 'ANULADA' && onAnular && (
               <button
                 type="button"

@@ -43,7 +43,7 @@ html, body, #root {
   --bg-surface: #0F172A;
   --text-main: #F8FAFC;
   --text-muted: #94A3B8;
-  --border-color: #233044;
+  --border-color: #334155;
   --amber-action: #F59E0B;
   --amber-action-hover: #FBBF24;
   --sidebar-active-bg: rgba(245, 158, 11, 0.22);
@@ -123,12 +123,9 @@ textarea:focus {
    mismo border-radius/background siempre (incluso :checked) hacía que los
    checkboxes se vieran como radios (círculo) y que marcar/desmarcar no se
    notara visualmente — el color debe comunicar estado (SISTEMA_DE_DISENO.md). */
-/* border-color usa --text-muted (no --border-color): en modo oscuro
-   --border-color queda casi del mismo tono que el fondo del propio
-   checkbox y se volvía casi invisible sin marcar. */
 .form-check-input {
   background-color: var(--bg-input) !important;
-  border-color: var(--text-muted) !important;
+  border-color: var(--border-color) !important;
 }
 
 .form-check-input:checked {

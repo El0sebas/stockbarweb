@@ -3,8 +3,9 @@
 // número editable) y VentasPage (descuenta cantidad_disponible al vender).
 // Todo lote nace de una compra: id_compra nunca es null (ver stockbar_schema_mysql.sql).
 // estado_compra denormaliza compra.estado (igual que vw_stock_lotes): un
-// lote de una compra ANULADA no cuenta como stock ni puede venderse/darse
-// de baja — ver utils/stock.js.
+// lote solo cuenta como stock/puede venderse o darse de baja cuando su
+// compra está RECIBIDA — uno de una compra PENDIENTE o ANULADA no cuenta
+// — ver utils/stock.js.
 export const defaultLotes = [
   {
     id_lote: 1,
@@ -15,7 +16,7 @@ export const defaultLotes = [
     precio_unitario_compra: 45000,
     fecha_vencimiento: '2026-12-01',
     numero_lote_proveedor: 'AG-208',
-    estado_compra: 'REGISTRADA'
+    estado_compra: 'RECIBIDA'
   },
   {
     id_lote: 2,
@@ -26,7 +27,7 @@ export const defaultLotes = [
     precio_unitario_compra: 5500,
     fecha_vencimiento: '2026-10-15',
     numero_lote_proveedor: 'CR-110',
-    estado_compra: 'REGISTRADA'
+    estado_compra: 'RECIBIDA'
   },
   {
     id_lote: 3,
@@ -37,6 +38,6 @@ export const defaultLotes = [
     precio_unitario_compra: 180000,
     fecha_vencimiento: '2027-03-01',
     numero_lote_proveedor: 'TQ-045',
-    estado_compra: 'REGISTRADA'
+    estado_compra: 'RECIBIDA'
   }
 ];

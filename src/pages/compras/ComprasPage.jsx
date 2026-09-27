@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { PlusLg, Search, BagCheck, XCircle } from 'react-bootstrap-icons';
+import { PlusLg, Search, BagCheck, XCircle, CheckCircle } from 'react-bootstrap-icons';
 import { CompraFormModal } from './ComprasFormModal';
 import { CompraDetailModal } from './CompraDetailModal';
 import { RowActions } from '../../components/common/RowActions';
@@ -47,8 +47,10 @@ export const ComprasPage = () => {
 
   // Reemplaza los lotes que pertenecían a esta compra (si la estaban
   // editando) por los que vienen en sus líneas actuales — cada línea de
-  // compra es, siempre, un lote real (ver docs/DATABASE.md).
-  const sincronizarLotes = (idCompra, items) => {
+  // compra es, siempre, un lote real (ver docs/DATABASE.md). Los lotes se
+  // insertan ya, pero estado_compra (PENDIENTE) hace que utils/stock.js los
+  // excluya de "stock disponible" hasta que la compra se marque RECIBIDA.
+  const sincronizarLotes = (idCompra, items, estadoCompra) => {
     setLotes((prev) => {
       const sinEstaCompra = prev.filter((l) => l.id_compra !== idCompra);
       let siguienteId = sinEstaCompra.reduce((max, l) => Math.max(max, l.id_lote), 0) + 1;
@@ -61,7 +63,7 @@ export const ComprasPage = () => {
         precio_unitario_compra: item.costoUnitario,
         fecha_vencimiento: item.fecha_vencimiento || null,
         numero_lote_proveedor: item.numero_lote || null,
-        estado_compra: 'REGISTRADA'
+        estado_compra: estadoCompra
       }));
       return [...sinEstaCompra, ...nuevosLotes];
     });
@@ -70,24 +72,36 @@ export const ComprasPage = () => {
   const handleSaveCompra = (compra) => {
     if (selectedCompra) {
       setCompras(prev => prev.map(item => item.id === selectedCompra.id ? { ...item, ...compra } : item));
-      sincronizarLotes(selectedCompra.id, compra.items);
+      sincronizarLotes(selectedCompra.id, compra.items, selectedCompra.estado);
       showToast('success', 'Compra actualizada correctamente');
     } else {
       const facturaGenerada = (compra.numero_factura_proveedor || nextFactura).trim();
       const idCompra = Date.now();
-      setCompras(prev => [{ ...compra, id: idCompra, numero_factura_proveedor: facturaGenerada, estado: 'REGISTRADA' }, ...prev]);
-      sincronizarLotes(idCompra, compra.items);
-      showToast('success', `Compra ${facturaGenerada} registrada exitosamente`);
+      setCompras(prev => [{ ...compra, id: idCompra, numero_factura_proveedor: facturaGenerada, estado: 'PENDIENTE' }, ...prev]);
+      sincronizarLotes(idCompra, compra.items, 'PENDIENTE');
+      showToast('success', `Compra ${facturaGenerada} registrada como PENDIENTE`);
     }
     setShowFormModal(false);
     setSelectedCompra(null);
   };
 
+  // PENDIENTE -> RECIBIDA: la mercancía ya llegó. Los lotes ya existían
+  // (creados al registrar la compra); solo pasan a contar como stock real
+  // (ver utils/stock.js, que solo suma estado_compra === 'RECIBIDA').
+  const handleMarcarRecibida = async (compra) => {
+    const confirmado = await showAlert.confirm('¿Marcar esta compra como recibida?', 'Sus lotes empezarán a contar como stock disponible de inmediato.');
+    if (!confirmado) return;
+    setCompras(prev => prev.map(item => item.id === compra.id ? { ...item, estado: 'RECIBIDA' } : item));
+    setLotes(prev => prev.map(l => l.id_compra === compra.id ? { ...l, estado_compra: 'RECIBIDA' } : l));
+    showToast('success', `Compra ${compra.numero_factura_proveedor} marcada como RECIBIDA`);
+  };
+
   // Espejo de trg_validar_anulacion_compra: no se borra nunca, solo se
-  // marca ANULADA, y solo si ninguno de sus lotes tiene ventas/bajas
-  // encima. Es de una sola vía (una ANULADA no puede reactivarse).
+  // marca ANULADA. Desde PENDIENTE siempre se puede (sus lotes nunca
+  // contaron como stock); desde RECIBIDA solo si ninguno de sus lotes tiene
+  // ventas/bajas encima. Es de una sola vía (una ANULADA no puede reactivarse).
   const handleAnularCompra = async (compra) => {
-    if (tieneMovimientos(compra, lotes, ventas, bajas)) {
+    if (compra.estado === 'RECIBIDA' && tieneMovimientos(compra, lotes, ventas, bajas)) {
       showAlert.error('No se puede anular', 'No se puede anular la compra porque sus lotes ya tienen movimientos de inventario.');
       return;
     }
@@ -148,13 +162,22 @@ export const ComprasPage = () => {
           </thead>
           <tbody>
             {filteredCompras.map((c) => {
+              const pendiente = c.estado === 'PENDIENTE';
+              const recibida = c.estado === 'RECIBIDA';
               const anulada = c.estado === 'ANULADA';
-              const bloqueadaPorMovimientos = !anulada && tieneMovimientos(c, lotes, ventas, bajas);
+              // Solo se edita mientras está PENDIENTE (regla de negocio, no
+              // de la BD: RECIBIDA y ANULADA quedan bloqueadas sin importar
+              // si ya tienen movimientos).
               const razonBloqueo = anulada
                 ? 'Una compra ANULADA no puede modificarse'
-                : bloqueadaPorMovimientos
-                  ? 'Esta compra ya tiene movimientos de inventario (ventas o bajas) sobre sus lotes'
+                : recibida
+                  ? 'Una compra RECIBIDA no puede editarse; solo se puede anular'
                   : undefined;
+              const estadoColores = {
+                PENDIENTE: { bg: 'var(--amber-soft-bg)', color: 'var(--amber-action)' },
+                RECIBIDA: { bg: 'var(--success-soft-bg)', color: 'var(--brand-success)' },
+                ANULADA: { bg: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' }
+              }[c.estado];
               return (
               <tr key={c.id} style={{ borderBottom: `1px solid ${styles.borderCol}` }}>
                 <td className="py-3 fw-bold" style={{ color: 'var(--amber-action)' }}>{c.numero_factura_proveedor}</td>
@@ -166,13 +189,7 @@ export const ComprasPage = () => {
                 <td className="py-3" style={{ color: styles.mutedColor }}>{c.fecha_compra}</td>
                 <td className="py-3 fw-bold">$ {Number(c.total).toLocaleString()}</td>
                 <td className="py-3">
-                  <span
-                    className="badge px-3 py-2"
-                    style={{
-                      backgroundColor: anulada ? 'var(--danger-soft-bg)' : 'var(--success-soft-bg)',
-                      color: anulada ? 'var(--brand-danger)' : 'var(--brand-success)'
-                    }}
-                  >
+                  <span className="badge px-3 py-2" style={{ backgroundColor: estadoColores.bg, color: estadoColores.color }}>
                     {c.estado}
                   </span>
                 </td>
@@ -183,6 +200,16 @@ export const ComprasPage = () => {
                     hideDelete
                     disabledReason={razonBloqueo}
                   />
+                  {pendiente && (
+                    <button
+                      className="btn btn-sm p-1 border-0"
+                      style={{ color: 'var(--brand-success)' }}
+                      title="Marcar como recibida"
+                      onClick={() => handleMarcarRecibida(c)}
+                    >
+                      <CheckCircle size={18} />
+                    </button>
+                  )}
                   {!anulada && (
                     <button
                       className="btn btn-sm p-1 border-0"
@@ -214,6 +241,7 @@ export const ComprasPage = () => {
         onClose={() => { setShowDetailModal(false); setSelectedCompra(null); }}
         compra={selectedCompra}
         onAnular={handleAnularCompra}
+        onMarcarRecibida={handleMarcarRecibida}
         bloqueada={selectedCompra ? tieneMovimientos(selectedCompra, lotes, ventas, bajas) : false}
       />
     </div>

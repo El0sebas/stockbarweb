@@ -28,9 +28,10 @@ export const BajaFormModal = ({ show, onClose, onSave, lotes, productos, motivos
 
   const getProducto = (codigo) => productos.find((p) => p.codigo === codigo);
 
-  // Un lote de una compra ANULADA no cuenta como stock (ver utils/stock.js):
-  // no se puede dar de baja algo que nunca contó como inventario real.
-  const lotesConDisponible = lotes.filter((l) => Number(l.cantidad_disponible) > 0 && l.estado_compra !== 'ANULADA');
+  // Solo un lote de una compra RECIBIDA cuenta como stock real (ver
+  // utils/stock.js): uno PENDIENTE (aún no llega) o ANULADA no puede darse
+  // de baja porque nunca contó como inventario real.
+  const lotesConDisponible = lotes.filter((l) => Number(l.cantidad_disponible) > 0 && l.estado_compra === 'RECIBIDA');
   const resultadosBusqueda = busqueda
     ? lotesConDisponible.filter((l) => {
         const prod = getProducto(l.producto_codigo);

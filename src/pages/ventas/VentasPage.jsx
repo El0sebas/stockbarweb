@@ -81,12 +81,13 @@ export const VentasPage = () => {
       return;
     }
     setVentaActivaId(ventaExistente?.id_venta || null);
-    // Cliente "Consumidor Final" (id_cliente 0) por defecto en el punto de
-    // venta: nunca pasa la verificación de edad (no tiene fecha_nacimiento),
-    // así que el cajero debe cambiarlo explícitamente si el producto la exige.
+    // Cliente "Consumidor Final" (id_cliente 0) es el único cliente "sin
+    // registro" — por defecto en el punto de venta, y sin verificación de
+    // edad (ver utils/edad.js), así que el cajero debe cambiarlo
+    // explícitamente a un cliente real si el producto la exige.
     setIdCliente(
       ventaExistente
-        ? (ventaExistente.id_cliente != null ? String(ventaExistente.id_cliente) : '')
+        ? (ventaExistente.id_cliente != null ? String(ventaExistente.id_cliente) : '0')
         : '0'
     );
     setProductoSearch('');
@@ -132,8 +133,10 @@ export const VentasPage = () => {
   const handleCambiarCliente = (value) => {
     setIdCliente(value);
     if (ventaActivaId) {
+      // ojo: "cli?.id_cliente || null" rompía para Consumidor Final porque
+      // 0 || null da null en JS — hay que comparar explícitamente con null.
       const cli = value ? clientes.find((c) => c.id_cliente === Number(value)) : null;
-      actualizarVenta(ventaActivaId, (v) => ({ ...v, id_cliente: cli?.id_cliente || null, cliente: cli ? cli.nombre_completo : 'Cliente de mostrador' }));
+      actualizarVenta(ventaActivaId, (v) => ({ ...v, id_cliente: cli ? cli.id_cliente : null, cliente: cli ? cli.nombre_completo : 'Cliente de mostrador' }));
     }
   };
 
@@ -498,7 +501,6 @@ export const VentasPage = () => {
                      onChange={(e) => handleCambiarCliente(e.target.value)}
                      style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                    >
-                     <option value="">Cliente de mostrador (sin registrar)</option>
                      {clientesActivos.map((c) => (
                        <option key={c.id_cliente} value={c.id_cliente}>
                          {c.nombre_completo}{!c.fecha_nacimiento ? ' — sin fecha de nacimiento' : ''}

@@ -34,11 +34,12 @@ export const aplicarBaja = ({ lotes, bajas, baja }) => {
 // diario (no existe aquí, ver ComprasFormModal/instrucciones), así que en
 // este mock se ejecuta una vez por login como sustituto pragmático. Da de
 // baja automáticamente (motivo "Vencimiento") todo lote de una compra
-// REGISTRADA cuya fecha_vencimiento ya pasó y que aún tiene stock.
+// RECIBIDA cuya fecha_vencimiento ya pasó y que aún tiene stock (uno
+// PENDIENTE nunca contó como stock real, así que tampoco puede vencerse).
 export const generarBajasPorVencimiento = ({ lotes, bajas, idUsuario, usuario }) => {
   const hoy = new Date().toISOString().split('T')[0];
   const lotesVencidos = lotes.filter(
-    (l) => l.estado_compra !== 'ANULADA' && l.fecha_vencimiento && l.fecha_vencimiento < hoy && Number(l.cantidad_disponible) > 0
+    (l) => l.estado_compra === 'RECIBIDA' && l.fecha_vencimiento && l.fecha_vencimiento < hoy && Number(l.cantidad_disponible) > 0
   );
 
   let nuevosLotes = lotes;

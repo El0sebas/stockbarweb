@@ -2,15 +2,16 @@
 // sumando lo disponible en sus lotes (mismo criterio que vw_stock_producto /
 // vw_stock_lotes en la base de datos). Ver docs/DATABASE.md sección 3.
 // getLotesProducto no filtra por estado_compra (igual que vw_stock_lotes,
-// que muestra el lote sin importar si su compra sigue REGISTRADA) — se usa
-// para listar. getStockDisponible / getLotesVendibles sí filtran (igual que
-// vw_stock_producto, que solo suma estado_compra = 'REGISTRADA'): un lote de
-// una compra ANULADA no cuenta como stock ni puede venderse o darse de baja.
+// que muestra el lote sin importar el estado de su compra) — se usa para
+// listar. getStockDisponible / getLotesVendibles sí filtran (igual que
+// vw_stock_producto, que solo suma estado_compra = 'RECIBIDA'): un lote de
+// una compra PENDIENTE (todavía no llega) o ANULADA no cuenta como stock ni
+// puede venderse o darse de baja.
 export const getLotesProducto = (lotes, codigoProducto) =>
   (lotes || []).filter((lote) => lote.producto_codigo === codigoProducto);
 
 export const getLotesVendibles = (lotes, codigoProducto) =>
-  getLotesProducto(lotes, codigoProducto).filter((lote) => lote.estado_compra !== 'ANULADA');
+  getLotesProducto(lotes, codigoProducto).filter((lote) => lote.estado_compra === 'RECIBIDA');
 
 export const getStockDisponible = (lotes, codigoProducto) =>
   getLotesVendibles(lotes, codigoProducto).reduce(
