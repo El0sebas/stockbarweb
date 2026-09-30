@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ClockHistory, DoorOpen, DoorClosed, Search, Eye } from 'react-bootstrap-icons';
-import { EstadoFilter } from '../../components/common/EstadoFilter';
+import { FechaRangoFilter } from '../../components/common/FechaRangoFilter';
+import { estaEnRangoFecha } from '../../utils/fechas';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { useAuth } from '../../context/AuthContext';
 import { defaultJornadas } from '../../data/defaultJornadas';
@@ -19,7 +20,8 @@ export const JornadaPage = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedJornada, setSelectedJornada] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filtroEstado, setFiltroEstado] = useState('');
+  const [filtroDesde, setFiltroDesde] = useState('');
+  const [filtroHasta, setFiltroHasta] = useState('');
 
   const jornadaAbierta = getJornadaAbierta(jornadas);
 
@@ -73,7 +75,7 @@ export const JornadaPage = () => {
   const filteredJornadas = jornadas.filter((j) =>
     ((j.usuario_apertura || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (j.usuario_cierre || '').toLowerCase().includes(searchTerm.toLowerCase())) &&
-    (!filtroEstado || j.estado === filtroEstado)
+    estaEnRangoFecha(j.fecha_hora_apertura, filtroDesde, filtroHasta)
   );
 
   const styles = {
@@ -143,7 +145,7 @@ export const JornadaPage = () => {
                 style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor, width: '220px' }}
               />
             </div>
-            <EstadoFilter value={filtroEstado} onChange={setFiltroEstado} options={['ABIERTA', 'CERRADA']} />
+            <FechaRangoFilter desde={filtroDesde} hasta={filtroHasta} onDesdeChange={setFiltroDesde} onHastaChange={setFiltroHasta} />
           </div>
         </div>
         <div className="table-responsive">
