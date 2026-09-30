@@ -29,9 +29,6 @@ export const MainLayout = ({ children, activeTab, setActiveTab, onLogout }) => {
           style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
         >
           <div className="d-flex align-items-center gap-3">
-            <h5 className="m-0 fw-bold text-capitalize" style={{ color: 'var(--text-main)' }}>
-              {activeTab}
-            </h5>
             <button
               className="btn btn-sm d-flex align-items-center gap-1 px-2 py-1 border-0"
               onClick={() => setActiveTab('jornada')}

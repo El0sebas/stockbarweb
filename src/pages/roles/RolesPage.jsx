@@ -3,6 +3,7 @@ import { Search, PlusLg, ShieldCheck, LockFill } from 'react-bootstrap-icons';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
 import { RowActions } from '../../components/common/RowActions';
 import { StatusToggle } from '../../components/common/StatusToggle';
+import { EstadoFilter } from '../../components/common/EstadoFilter';
 import { RolFormModal } from './RolFormModal';
 import { RolDetailModal } from './RolDetailModal';
 import { showToast, showAlert } from '../../utils/alerts';
@@ -14,6 +15,7 @@ export const RolesPage = () => {
   const [roles, setRoles] = usePersistentState('stockbar_roles', defaultRoles);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('');
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -79,8 +81,9 @@ export const RolesPage = () => {
   };
 
   const filteredRoles = roles.filter(r =>
-    r.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.codigo.toLowerCase().includes(searchTerm.toLowerCase())
+    (r.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      r.codigo.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (!filtroEstado || r.estado === filtroEstado)
   );
 
   const styles = {
@@ -111,9 +114,10 @@ export const RolesPage = () => {
               style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor, width: '240px' }}
             />
           </div>
-          <button 
-            className="btn fw-semibold d-flex align-items-center gap-2 text-white px-3" 
-            style={{ backgroundColor: 'var(--amber-action)', border: 'none' }} 
+          <EstadoFilter value={filtroEstado} onChange={setFiltroEstado} options={['Activo', 'Inactivo']} />
+          <button
+            className="btn fw-semibold d-flex align-items-center gap-2 text-white px-3"
+            style={{ backgroundColor: 'var(--amber-action)', border: 'none' }}
             onClick={handleOpenCreate}
           >
             <PlusLg size={16} />

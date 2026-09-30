@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ClockHistory, DoorOpen, DoorClosed, CashCoin } from 'react-bootstrap-icons';
+import { ClockHistory, DoorOpen, DoorClosed, CashCoin, Search } from 'react-bootstrap-icons';
+import { EstadoFilter } from '../../components/common/EstadoFilter';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { useAuth } from '../../context/AuthContext';
 import { defaultJornadas } from '../../data/defaultJornadas';
@@ -16,6 +17,8 @@ export const JornadaPage = () => {
   const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
   const { currentUser } = useAuth();
   const [showCierreModal, setShowCierreModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('');
 
   const jornadaAbierta = getJornadaAbierta(jornadas);
 
@@ -73,6 +76,12 @@ export const JornadaPage = () => {
     showToast('success', 'Jornada cerrada correctamente');
   };
 
+  const filteredJornadas = jornadas.filter((j) =>
+    ((j.usuario_apertura || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (j.usuario_cierre || '').toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (!filtroEstado || j.estado === filtroEstado)
+  );
+
   const styles = {
     cardBg: 'var(--bg-card)',
     borderCol: 'var(--border-color)',
@@ -124,9 +133,25 @@ export const JornadaPage = () => {
       </div>
 
       <div className="card border-0 shadow-sm p-4" style={{ backgroundColor: styles.cardBg, borderRadius: '12px' }}>
-        <h5 className="fw-bold mb-3 d-flex align-items-center gap-2" style={{ color: styles.textColor }}>
-          <ClockHistory size={18} /> Historial de jornadas
-        </h5>
+        <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
+          <h5 className="fw-bold m-0 d-flex align-items-center gap-2" style={{ color: styles.textColor }}>
+            <ClockHistory size={18} /> Historial de jornadas
+          </h5>
+          <div className="d-flex align-items-center gap-2">
+            <div className="position-relative">
+              <Search size={16} className="position-absolute top-50 start-0 translate-middle-y ms-3" style={{ color: styles.mutedColor }} />
+              <input
+                type="text"
+                placeholder="Buscar por usuario..."
+                className="form-control ps-5 shadow-none"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor, width: '220px' }}
+              />
+            </div>
+            <EstadoFilter value={filtroEstado} onChange={setFiltroEstado} options={['ABIERTA', 'CERRADA']} />
+          </div>
+        </div>
         <div className="table-responsive">
           <table className="table align-middle" style={{ color: styles.textColor }}>
             <thead>
@@ -139,14 +164,14 @@ export const JornadaPage = () => {
               </tr>
             </thead>
             <tbody>
-              {jornadas.length === 0 ? (
+              {filteredJornadas.length === 0 ? (
                 <tr>
                   <td colSpan="5" className="text-center py-4" style={{ color: styles.mutedColor }}>
-                    Todavía no se ha abierto ninguna jornada.
+                    {jornadas.length === 0 ? 'Todavía no se ha abierto ninguna jornada.' : 'No se encontraron jornadas con ese filtro.'}
                   </td>
                 </tr>
               ) : (
-                jornadas.map((j) => (
+                filteredJornadas.map((j) => (
                   <tr key={j.id_jornada} style={{ borderBottom: `1px solid ${styles.borderCol}` }}>
                     <td className="py-2 small">{new Date(j.fecha_hora_apertura).toLocaleString('es-CO')}</td>
                     <td className="py-2 small">{j.usuario_apertura}</td>

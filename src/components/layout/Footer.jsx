@@ -20,16 +20,13 @@ export const Footer = () => {
         &copy; {new Date().getFullYear()} — Sistema POS & Gestión de Inventarios
       </div>
 
-      {/* Versión y Ficha */}
-      <div className="d-flex align-items-center gap-3">
-        <span
-          className="badge rounded-pill fw-medium px-2 py-1"
-          style={{ backgroundColor: 'var(--neutral-soft-bg)', color: 'var(--text-muted)' }}
-        >
-          v1.0.0
-        </span>
-        <span className="small">ADSO Ficha 3256538</span>
-      </div>
+      {/* Versión */}
+      <span
+        className="badge rounded-pill fw-medium px-2 py-1"
+        style={{ backgroundColor: 'var(--neutral-soft-bg)', color: 'var(--text-muted)' }}
+      >
+        v1.0.0
+      </span>
     </footer>
   );
 };

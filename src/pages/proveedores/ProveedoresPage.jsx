@@ -3,6 +3,7 @@ import { Search, PlusLg } from 'react-bootstrap-icons';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
 import { RowActions } from '../../components/common/RowActions';
 import { StatusToggle } from '../../components/common/StatusToggle';
+import { EstadoFilter } from '../../components/common/EstadoFilter';
 import { ProveedorDetailModal } from './ProveedorDetailModal.jsx';
 import { ProveedorFormModal } from './ProveedorFormModal.jsx';
 import { showToast } from '../../utils/alerts';
@@ -19,6 +20,7 @@ export const ProveedoresPage = () => {
     contactos.find((c) => c.id_proveedor === codigoProveedor && c.es_principal && c.estado === 'Activo');
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('');
 
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -75,9 +77,10 @@ export const ProveedoresPage = () => {
   };
 
   const filteredProveedores = proveedores.filter(p =>
-    p.razon_social.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.nit || '').toLowerCase().includes(searchTerm.toLowerCase())
+    (p.razon_social.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.nit || '').toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (!filtroEstado || p.estado === filtroEstado)
   );
 
   const styles = {
@@ -119,6 +122,8 @@ export const ProveedoresPage = () => {
               }}
             />
           </div>
+
+          <EstadoFilter value={filtroEstado} onChange={setFiltroEstado} options={['Activo', 'Inactivo']} />
 
           <button
             className="btn fw-semibold d-flex align-items-center gap-2 text-white px-3"

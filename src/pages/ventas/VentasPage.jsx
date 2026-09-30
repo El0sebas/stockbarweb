@@ -18,6 +18,7 @@ import { getJornadaAbierta } from '../../utils/jornada';
 import { QuantityStepper } from '../../components/common/QuantityStepper';
 import { MoneyInput } from '../../components/common/MoneyInput';
 import { VentaDetailModal } from './VentaDetailModal';
+import { EstadoFilter } from '../../components/common/EstadoFilter';
 
 export const VentasPage = () => {
   const { currentUser } = useAuth();
@@ -33,6 +34,7 @@ export const VentasPage = () => {
   const jornadaAbierta = getJornadaAbierta(jornadas);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [ventaActivaId, setVentaActivaId] = useState(null);
   const [productoSearch, setProductoSearch] = useState('');
@@ -351,8 +353,9 @@ export const VentasPage = () => {
   };
 
   const filteredVentas = ventas.filter((v) =>
-    v.cliente.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    v.idVenta.toLowerCase().includes(searchTerm.toLowerCase())
+    (v.cliente.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      v.idVenta.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (!filtroEstado || v.estado === filtroEstado)
   );
 
   const styles = {
@@ -389,6 +392,7 @@ export const VentasPage = () => {
               style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor, width: '240px' }}
             />
           </div>
+          <EstadoFilter value={filtroEstado} onChange={setFiltroEstado} options={['PENDIENTE', 'COMPLETADA', 'ANULADA']} />
           <button
             className="btn fw-semibold d-flex align-items-center gap-2 text-white px-3"
             style={{ backgroundColor: jornadaAbierta ? 'var(--amber-action)' : 'var(--text-muted)', border: 'none', opacity: jornadaAbierta ? 1 : 0.6 }}

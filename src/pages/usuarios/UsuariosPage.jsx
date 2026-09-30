@@ -3,6 +3,7 @@ import { Search, PlusLg, People, PersonCheck, PersonX } from 'react-bootstrap-ic
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
 import { RowActions } from '../../components/common/RowActions';
 import { StatusToggle } from '../../components/common/StatusToggle';
+import { EstadoFilter } from '../../components/common/EstadoFilter';
 import { UsuarioDetailModal } from './UsuarioDetailModal';
 import { UsuarioFormModal } from './UsuarioFormModal';
 import { showToast, showAlert } from '../../utils/alerts';
@@ -19,6 +20,7 @@ export const UsuariosPage = () => {
   const { currentUser } = useAuth();
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [filtroRol, setFiltroRol] = useState('');
 
   // Modales
   const [showFormModal, setShowFormModal] = useState(false);
@@ -96,11 +98,14 @@ export const UsuariosPage = () => {
   };
 
   const filteredUsuarios = usuarios.filter(u =>
-    (u.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (u.documento || '').includes(searchTerm) ||
-    (u.correo || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (u.rol || '').toLowerCase().includes(searchTerm.toLowerCase())
+    ((u.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (u.documento || '').includes(searchTerm) ||
+      (u.correo || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (u.rol || '').toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (!filtroRol || u.rol === filtroRol)
   );
+
+  const rolesDisponibles = [...new Set(usuarios.map((u) => u.rol).filter(Boolean))];
 
   const styles = {
     bgCard: 'var(--bg-card)',
@@ -136,6 +141,7 @@ export const UsuariosPage = () => {
               style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor, width: '240px' }}
             />
           </div>
+          <EstadoFilter value={filtroRol} onChange={setFiltroRol} options={rolesDisponibles} label="Todos los roles" />
           <button className="btn fw-semibold d-flex align-items-center gap-2 text-white px-3" style={{ backgroundColor: 'var(--amber-action)', border: 'none' }} onClick={handleOpenCreate}>
             <PlusLg size={16} />
             <span>Nuevo Usuario</span>

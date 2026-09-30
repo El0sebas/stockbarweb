@@ -3,6 +3,7 @@ import { Search, PlusLg } from 'react-bootstrap-icons';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
 import { RowActions } from '../../components/common/RowActions';
 import { StatusToggle } from '../../components/common/StatusToggle';
+import { EstadoFilter } from '../../components/common/EstadoFilter';
 import { ProductoDetailModal } from './ProductoDetailModal';
 import { ProductoFormModal } from './ProductoFormModal';
 import { showToast } from '../../utils/alerts';
@@ -29,6 +30,7 @@ export const ProductosPage = () => {
   const { currentUser } = useAuth();
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [filtroCategoria, setFiltroCategoria] = useState('');
 
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -122,9 +124,10 @@ export const ProductosPage = () => {
   };
 
   const filteredProductos = productos.filter(p =>
-    p.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.categoria.toLowerCase().includes(searchTerm.toLowerCase())
+    (p.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.categoria.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (!filtroCategoria || p.categoria === filtroCategoria)
   );
 
   const styles = {
@@ -166,6 +169,13 @@ export const ProductosPage = () => {
               }}
             />
           </div>
+
+          <EstadoFilter
+            value={filtroCategoria}
+            onChange={setFiltroCategoria}
+            options={categorias.map((c) => c.nombre)}
+            label="Todas las categorías"
+          />
 
           <button
             className="btn fw-semibold d-flex align-items-center gap-2 text-white px-3"

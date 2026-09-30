@@ -3,6 +3,7 @@ import { PlusLg, Search, BagCheck, XCircle, CheckCircle } from 'react-bootstrap-
 import { CompraFormModal } from './ComprasFormModal';
 import { CompraDetailModal } from './CompraDetailModal';
 import { RowActions } from '../../components/common/RowActions';
+import { EstadoFilter } from '../../components/common/EstadoFilter';
 import { generateNextIdentifier } from '../../utils/identifiers';
 import { showToast, showAlert } from '../../utils/alerts';
 import { usePersistentState } from '../../hooks/usePersistentState';
@@ -11,6 +12,7 @@ import { defaultLotes } from '../../data/defaultLotes';
 
 export const ComprasPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('');
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedCompra, setSelectedCompra] = useState(null);
@@ -28,8 +30,9 @@ export const ComprasPage = () => {
   };
 
   const filteredCompras = compras.filter(c =>
-    (c.numero_factura_proveedor || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (c.proveedor || '').toLowerCase().includes(searchTerm.toLowerCase())
+    ((c.numero_factura_proveedor || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.proveedor || '').toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (!filtroEstado || c.estado === filtroEstado)
   );
 
   const nextFactura = generateNextIdentifier({
@@ -124,6 +127,7 @@ export const ComprasPage = () => {
               style={{ backgroundColor: styles.inputBg, color: styles.textColor, borderColor: styles.borderCol }}
             />
           </div>
+          <EstadoFilter value={filtroEstado} onChange={setFiltroEstado} options={['PENDIENTE', 'RECIBIDA', 'ANULADA']} />
           <button
             className="btn fw-semibold text-white d-flex align-items-center gap-2 px-3"
             style={{ backgroundColor: 'var(--amber-action)', border: 'none', borderRadius: '8px' }}
