@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, PlusLg, ExclamationTriangle } from 'react-bootstrap-icons';
+import { Search, PlusLg, ExclamationTriangle, Eye } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { useAuth } from '../../context/AuthContext';
 import { defaultLotes } from '../../data/defaultLotes';
@@ -9,6 +9,7 @@ import { defaultBajas } from '../../data/defaultBajas';
 import { showToast } from '../../utils/alerts';
 import { aplicarBaja } from '../../utils/bajas';
 import { BajaFormModal } from './BajaFormModal';
+import { BajaDetailModal } from './BajaDetailModal';
 
 export const BajasPage = () => {
   const [lotes, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
@@ -19,6 +20,8 @@ export const BajasPage = () => {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showFormModal, setShowFormModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedBaja, setSelectedBaja] = useState(null);
 
   const getProducto = (codigo) => productos.find((p) => p.codigo === codigo);
   const getLote = (idLote) => lotes.find((l) => l.id_lote === idLote);
@@ -102,12 +105,13 @@ export const BajasPage = () => {
               <th className="small text-uppercase fw-bold py-3 text-center" style={{ color: styles.mutedColor }}>Cantidad</th>
               <th className="small text-uppercase fw-bold py-3" style={{ color: styles.mutedColor }}>Usuario</th>
               <th className="small text-uppercase fw-bold py-3" style={{ color: styles.mutedColor }}>Observaciones</th>
+              <th className="small text-uppercase fw-bold py-3 text-center" style={{ color: styles.mutedColor }}>Acciones</th>
             </tr>
           </thead>
           <tbody>
             {filteredBajas.length === 0 ? (
               <tr>
-                <td colSpan="6" className="text-center py-4" style={{ color: styles.mutedColor }}>
+                <td colSpan="7" className="text-center py-4" style={{ color: styles.mutedColor }}>
                   No hay bajas registradas todavía.
                 </td>
               </tr>
@@ -135,6 +139,16 @@ export const BajasPage = () => {
                     <td className="py-3 text-center fw-bold">{b.cantidad} un.</td>
                     <td className="py-3 small" style={{ color: styles.mutedColor }}>{b.usuario || 'N/A'}</td>
                     <td className="py-3 small" style={{ color: styles.mutedColor }}>{b.observaciones || '—'}</td>
+                    <td className="py-3 text-center">
+                      <button
+                        className="btn btn-sm p-1 border-0"
+                        style={{ color: 'var(--brand-blue)' }}
+                        title="Ver detalle"
+                        onClick={() => { setSelectedBaja(b); setShowDetailModal(true); }}
+                      >
+                        <Eye size={18} />
+                      </button>
+                    </td>
                   </tr>
                 );
               })
@@ -150,6 +164,15 @@ export const BajasPage = () => {
         lotes={lotes}
         productos={productos}
         motivos={motivos}
+      />
+
+      <BajaDetailModal
+        show={showDetailModal}
+        onClose={() => { setShowDetailModal(false); setSelectedBaja(null); }}
+        baja={selectedBaja}
+        lote={selectedBaja ? getLote(selectedBaja.id_lote) : null}
+        producto={selectedBaja ? getProducto(getLote(selectedBaja.id_lote)?.producto_codigo) : null}
+        motivoNombre={selectedBaja ? getMotivo(selectedBaja.id_motivo_baja) : ''}
       />
     </div>
   );

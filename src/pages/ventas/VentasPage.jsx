@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Plus, Trash, CartCheck, ClockHistory, ShieldExclamation, CashCoin, PlayFill, XCircle, Eye } from 'react-bootstrap-icons';
+import { Search, Plus, Trash, CartCheck, ClockHistory, ShieldExclamation, CashCoin, PlayFill, XCircle, Eye, Printer } from 'react-bootstrap-icons';
 import { showToast, showAlert } from '../../utils/alerts';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { useAuth } from '../../context/AuthContext';
@@ -19,6 +19,7 @@ import { QuantityStepper } from '../../components/common/QuantityStepper';
 import { MoneyInput } from '../../components/common/MoneyInput';
 import { VentaDetailModal } from './VentaDetailModal';
 import { EstadoFilter } from '../../components/common/EstadoFilter';
+import { generarFacturaPDF } from '../../utils/factura';
 
 export const VentasPage = () => {
   const { currentUser } = useAuth();
@@ -315,6 +316,9 @@ export const VentasPage = () => {
     setShowModal(false);
     setVentaActivaId(null);
     showToast('success', `Venta ${ventaActiva.idVenta} completada`);
+    // Factura automática al confirmar (ver utils/factura.js): se genera con
+    // el estado ya en COMPLETADA aunque el state todavía no haya re-renderizado.
+    generarFacturaPDF({ ...ventaActiva, estado: 'COMPLETADA' }, clientes);
   };
 
   const cerrarModalDescartando = async () => {
@@ -456,6 +460,11 @@ export const VentasPage = () => {
                         <button className="btn btn-sm p-1 border-0" style={{ color: 'var(--brand-blue)' }} title="Ver detalle" onClick={() => { setSelectedVenta(v); setShowDetailModal(true); }}>
                           <Eye size={18} />
                         </button>
+                        {v.estado === 'COMPLETADA' && (
+                          <button className="btn btn-sm p-1 border-0" style={{ color: 'var(--amber-action)' }} title="Descargar factura" onClick={() => generarFacturaPDF(v, clientes)}>
+                            <Printer size={18} />
+                          </button>
+                        )}
                         {v.estado === 'PENDIENTE' && (
                           <>
                             <button className="btn btn-sm p-1 border-0" style={{ color: 'var(--amber-action)' }} title="Continuar" onClick={() => handleOpenModal(v)}>
@@ -724,6 +733,7 @@ export const VentasPage = () => {
         show={showDetailModal}
         onClose={() => { setShowDetailModal(false); setSelectedVenta(null); }}
         venta={selectedVenta}
+        clientes={clientes}
         onAnular={handleAnularCompletada}
       />
     </div>

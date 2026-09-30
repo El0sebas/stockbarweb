@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ClockHistory, DoorOpen, DoorClosed, CashCoin, Search } from 'react-bootstrap-icons';
+import { ClockHistory, DoorOpen, DoorClosed, Search, Eye } from 'react-bootstrap-icons';
 import { EstadoFilter } from '../../components/common/EstadoFilter';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { useAuth } from '../../context/AuthContext';
@@ -7,16 +7,17 @@ import { defaultJornadas } from '../../data/defaultJornadas';
 import { defaultVentas } from '../../data/defaultVentas';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 import { getJornadaAbierta } from '../../utils/jornada';
-import { calcularTotalesVenta } from '../../utils/impuestos';
 import { generateNextId } from '../../utils/identifiers';
 import { showToast, showAlert } from '../../utils/alerts';
+import { JornadaDetailModal } from './JornadaDetailModal';
 
 export const JornadaPage = () => {
   const [jornadas, setJornadas] = usePersistentState('stockbar_jornadas', defaultJornadas);
   const [ventas] = usePersistentState('stockbar_ventas', defaultVentas);
   const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
   const { currentUser } = useAuth();
-  const [showCierreModal, setShowCierreModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedJornada, setSelectedJornada] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
 
@@ -44,23 +45,17 @@ export const JornadaPage = () => {
     showToast('success', 'Jornada abierta. Ya puedes registrar ventas.');
   };
 
-  const ventasDeLaJornada = jornadaAbierta
-    ? ventas.filter((v) => v.id_jornada === jornadaAbierta.id_jornada && v.estado === 'COMPLETADA')
-    : [];
+  // Antes esto abría un modal con el desglose completo de la jornada y
+  // pedía "Confirmar cierre" ahí mismo; ahora cerrar es solo una
+  // confirmación simple — el desglose se ve aparte, en cualquier momento,
+  // con "Ver detalle" desde el historial (ver JornadaDetailModal).
+  const handleCerrarJornada = async () => {
+    const confirmado = await showAlert.confirm(
+      '¿Cerrar jornada?',
+      'No podrás registrar más ventas hasta abrir una nueva jornada.'
+    );
+    if (!confirmado) return;
 
-  const totalesJornada = calcularTotalesVenta(
-    ventasDeLaJornada.flatMap((v) => (v.productos || []).map((p) => ({ precio: p.precio, cantidad: p.cantidad, porcentajeIva: p.porcentajeIva })))
-  );
-
-  const totalesPorMetodo = metodosPago.map((m) => ({
-    nombre: m.nombre,
-    total: ventasDeLaJornada
-      .flatMap((v) => v.pagos || [])
-      .filter((p) => p.id_metodo_pago === m.id_metodo_pago)
-      .reduce((acc, p) => acc + Number(p.monto), 0)
-  })).filter((m) => m.total > 0);
-
-  const handleConfirmarCierre = () => {
     setJornadas((prev) => prev.map((j) =>
       j.id_jornada === jornadaAbierta.id_jornada
         ? {
@@ -72,7 +67,6 @@ export const JornadaPage = () => {
           }
         : j
     ));
-    setShowCierreModal(false);
     showToast('success', 'Jornada cerrada correctamente');
   };
 
@@ -116,7 +110,7 @@ export const JornadaPage = () => {
             <button
               className="btn fw-semibold text-white px-4"
               style={{ backgroundColor: 'var(--brand-danger)', border: 'none', borderRadius: '8px' }}
-              onClick={() => setShowCierreModal(true)}
+              onClick={handleCerrarJornada}
             >
               Cerrar jornada
             </button>
@@ -161,12 +155,13 @@ export const JornadaPage = () => {
                 <th className="small text-uppercase fw-bold py-2" style={{ color: styles.mutedColor }}>Cierre</th>
                 <th className="small text-uppercase fw-bold py-2" style={{ color: styles.mutedColor }}>Usuario cierre</th>
                 <th className="small text-uppercase fw-bold py-2 text-center" style={{ color: styles.mutedColor }}>Estado</th>
+                <th className="small text-uppercase fw-bold py-2 text-center" style={{ color: styles.mutedColor }}>Acciones</th>
               </tr>
             </thead>
             <tbody>
               {filteredJornadas.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="text-center py-4" style={{ color: styles.mutedColor }}>
+                  <td colSpan="6" className="text-center py-4" style={{ color: styles.mutedColor }}>
                     {jornadas.length === 0 ? 'Todavía no se ha abierto ninguna jornada.' : 'No se encontraron jornadas con ese filtro.'}
                   </td>
                 </tr>
@@ -190,6 +185,16 @@ export const JornadaPage = () => {
                         {j.estado}
                       </span>
                     </td>
+                    <td className="py-2 text-center">
+                      <button
+                        className="btn btn-sm p-1 border-0"
+                        style={{ color: 'var(--brand-blue)' }}
+                        title="Ver detalle"
+                        onClick={() => { setSelectedJornada(j); setShowDetailModal(true); }}
+                      >
+                        <Eye size={18} />
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -198,69 +203,13 @@ export const JornadaPage = () => {
         </div>
       </div>
 
-      {showCierreModal && jornadaAbierta && (
-        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'var(--overlay-scrim)', zIndex: 1050 }}>
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content border-0 shadow-lg" style={{ backgroundColor: styles.cardBg, color: styles.textColor, borderRadius: '12px' }}>
-              <div className="modal-header border-bottom p-3 px-4" style={{ borderColor: styles.borderCol }}>
-                <div className="d-flex align-items-center gap-2">
-                  <CashCoin size={20} color="var(--amber-action)" />
-                  <h5 className="modal-title fw-bold m-0">Cerrar jornada</h5>
-                </div>
-                <button type="button" className="btn-close shadow-none btn-close-themed" onClick={() => setShowCierreModal(false)}></button>
-              </div>
-              <div className="modal-body p-4 d-flex flex-column gap-3">
-                <p className="small m-0" style={{ color: styles.mutedColor }}>
-                  Resumen de ventas completadas en esta jornada (calculado, no se pide conteo manual de caja):
-                </p>
-                <div className="row g-2">
-                  <div className="col-6">
-                    <div className="p-3 rounded-3" style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}>
-                      <div className="small" style={{ color: styles.mutedColor }}>Ventas completadas</div>
-                      <div className="fw-bold fs-5">{ventasDeLaJornada.length}</div>
-                    </div>
-                  </div>
-                  <div className="col-6">
-                    <div className="p-3 rounded-3" style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}>
-                      <div className="small" style={{ color: styles.mutedColor }}>Total vendido</div>
-                      <div className="fw-bold fs-5" style={{ color: 'var(--amber-action)' }}>$ {Math.round(totalesJornada.total).toLocaleString()}</div>
-                    </div>
-                  </div>
-                  <div className="col-6">
-                    <div className="p-3 rounded-3" style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}>
-                      <div className="small" style={{ color: styles.mutedColor }}>Base gravable</div>
-                      <div className="fw-semibold">$ {Math.round(totalesJornada.baseGravable).toLocaleString()}</div>
-                    </div>
-                  </div>
-                  <div className="col-6">
-                    <div className="p-3 rounded-3" style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}>
-                      <div className="small" style={{ color: styles.mutedColor }}>IVA recaudado</div>
-                      <div className="fw-semibold">$ {Math.round(totalesJornada.iva).toLocaleString()}</div>
-                    </div>
-                  </div>
-                </div>
-                {totalesPorMetodo.length > 0 && (
-                  <div className="p-3 rounded-3" style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}>
-                    <div className="small fw-semibold mb-2" style={{ color: styles.mutedColor }}>Desglose por método de pago</div>
-                    {totalesPorMetodo.map((m) => (
-                      <div key={m.nombre} className="d-flex justify-content-between small">
-                        <span>{m.nombre}</span>
-                        <span className="fw-semibold">$ {Math.round(m.total).toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="modal-footer border-top p-3 d-flex gap-2" style={{ borderColor: styles.borderCol }}>
-                <button type="button" className="btn border-0 text-secondary fw-medium" onClick={() => setShowCierreModal(false)}>Cancelar</button>
-                <button type="button" className="btn fw-bold px-4 text-white border-0" style={{ backgroundColor: 'var(--brand-danger)' }} onClick={handleConfirmarCierre}>
-                  Confirmar cierre
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <JornadaDetailModal
+        show={showDetailModal}
+        onClose={() => { setShowDetailModal(false); setSelectedJornada(null); }}
+        jornada={selectedJornada}
+        ventas={ventas}
+        metodosPago={metodosPago}
+      />
     </div>
   );
 };

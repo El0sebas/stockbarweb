@@ -1,8 +1,9 @@
 import React from 'react';
-import { CartCheck, Person, CreditCard, Calendar3, XCircle } from 'react-bootstrap-icons';
+import { CartCheck, Person, CreditCard, Calendar3, XCircle, Printer } from 'react-bootstrap-icons';
 import { calcularTotalesVenta } from '../../utils/impuestos';
+import { generarFacturaPDF } from '../../utils/factura';
 
-export const VentaDetailModal = ({ show, onClose, venta, onAnular }) => {
+export const VentaDetailModal = ({ show, onClose, venta, clientes = [], onAnular }) => {
   if (!show || !venta) return null;
 
   // Espejo de vw_totales_venta: base gravable + IVA a partir de la tasa
@@ -150,6 +151,16 @@ export const VentaDetailModal = ({ show, onClose, venta, onAnular }) => {
             >
               Cerrar
             </button>
+            {venta.estado === 'COMPLETADA' && (
+              <button
+                type="button"
+                className="btn btn-sm px-4 fw-bold text-white d-flex align-items-center gap-2 border-0"
+                style={{ backgroundColor: 'var(--amber-action)' }}
+                onClick={() => generarFacturaPDF(venta, clientes)}
+              >
+                <Printer size={16} /> Descargar factura
+              </button>
+            )}
             {venta.estado === 'COMPLETADA' && onAnular && (
               <button
                 type="button"
