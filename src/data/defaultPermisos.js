@@ -10,7 +10,9 @@ export const defaultPermisos = [
   { id_permiso: 4, nombre: 'GESTIONAR_PRODUCTOS', modulo: 'COMPRAS' },
   { id_permiso: 5, nombre: 'GESTIONAR_PROVEEDORES', modulo: 'COMPRAS' },
   { id_permiso: 6, nombre: 'GESTIONAR_COMPRAS', modulo: 'COMPRAS' },
-  { id_permiso: 7, nombre: 'GESTIONAR_CLIENTES', modulo: 'VENTAS' },
-  { id_permiso: 8, nombre: 'GESTIONAR_VENTAS', modulo: 'VENTAS' },
-  { id_permiso: 9, nombre: 'VER_REPORTES', modulo: 'DASHBOARD' },
+  { id_permiso: 7, nombre: 'GESTIONAR_BAJAS', modulo: 'COMPRAS' },
+  { id_permiso: 8, nombre: 'GESTIONAR_CLIENTES', modulo: 'VENTAS' },
+  { id_permiso: 9, nombre: 'GESTIONAR_VENTAS', modulo: 'VENTAS' },
+  { id_permiso: 10, nombre: 'GESTIONAR_JORNADA', modulo: 'VENTAS' },
+  { id_permiso: 11, nombre: 'VER_REPORTES', modulo: 'DASHBOARD' },
 ];

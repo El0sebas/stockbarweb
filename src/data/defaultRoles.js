@@ -8,19 +8,21 @@
 // permisos guarda nombres reales de la tabla permiso (data/defaultPermisos.js),
 // nunca nombres de módulo inventados. EMPLEADO recibe exactamente lo que el
 // INSERT INTO rol_permiso de scripts/sch.sql le asigna (GESTIONAR_CLIENTES +
-// GESTIONAR_VENTAS) — no queda sin ningún permiso.
+// GESTIONAR_VENTAS + GESTIONAR_JORNADA + GESTIONAR_BAJAS) — no queda sin
+// ningún permiso. El empleado da de baja inventario desde ventanilla
+// (vencimiento, daño, pérdida) sin depender del administrador.
 export const defaultRoles = [
   {
     codigo: 'ROL-01',
     nombre: 'ADMINISTRADOR',
-    permisos: ['GESTIONAR_ROLES', 'GESTIONAR_USUARIOS', 'GESTIONAR_CATEGORIAS', 'GESTIONAR_PRODUCTOS', 'GESTIONAR_PROVEEDORES', 'GESTIONAR_COMPRAS', 'GESTIONAR_CLIENTES', 'GESTIONAR_VENTAS', 'VER_REPORTES'],
+    permisos: ['GESTIONAR_ROLES', 'GESTIONAR_USUARIOS', 'GESTIONAR_CATEGORIAS', 'GESTIONAR_PRODUCTOS', 'GESTIONAR_PROVEEDORES', 'GESTIONAR_COMPRAS', 'GESTIONAR_BAJAS', 'GESTIONAR_CLIENTES', 'GESTIONAR_VENTAS', 'GESTIONAR_JORNADA', 'VER_REPORTES'],
     estado: 'Activo',
     isSystem: true
   },
   {
     codigo: 'ROL-02',
     nombre: 'EMPLEADO',
-    permisos: ['GESTIONAR_CLIENTES', 'GESTIONAR_VENTAS'],
+    permisos: ['GESTIONAR_CLIENTES', 'GESTIONAR_VENTAS', 'GESTIONAR_JORNADA', 'GESTIONAR_BAJAS'],
     estado: 'Activo',
     isSystem: false
   }

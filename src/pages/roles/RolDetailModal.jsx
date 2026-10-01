@@ -1,5 +1,6 @@
 import React from 'react';
 import { ShieldCheck, CheckCircleFill } from 'react-bootstrap-icons';
+import { humanizarPermiso } from '../../utils/permisos';
 
 export const RolDetailModal = ({ show, onClose, rol }) => {
   
@@ -53,7 +54,7 @@ export const RolDetailModal = ({ show, onClose, rol }) => {
                 {rol.permisos.map((p, index) => (
                   <span key={index} className="badge d-flex align-items-center gap-1 px-2 py-2" style={{ backgroundColor: 'var(--border-color)', color: styles.textColor }}>
                     <CheckCircleFill size={12} color="var(--brand-success)" />
-                    {p}
+                    {humanizarPermiso(p)}
                   </span>
                 ))}
               </div>

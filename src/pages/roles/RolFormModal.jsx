@@ -3,6 +3,7 @@ import { ShieldCheck } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultPermisos } from '../../data/defaultPermisos';
 import { showAlert } from '../../utils/alerts';
+import { humanizarPermiso } from '../../utils/permisos';
 
 export const RolFormModal = ({ show, onClose, onSave, rol }) => {
   // Catálogo real de permiso (scripts/sch.sql) — nunca nombres de módulo
@@ -117,7 +118,7 @@ export const RolFormModal = ({ show, onClose, onSave, rol }) => {
                             style={{ cursor: 'pointer' }}
                           />
                           <label className="form-check-label small" htmlFor={`perm-${permiso.id_permiso}`} style={{ cursor: 'pointer' }}>
-                            {permiso.nombre}
+                            {humanizarPermiso(permiso.nombre)}
                           </label>
                         </div>
                       ))}
