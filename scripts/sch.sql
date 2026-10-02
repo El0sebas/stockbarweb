@@ -152,8 +152,7 @@ CREATE TABLE rol_permiso (
 
 CREATE TABLE metodo_pago (
     id_metodo_pago SMALLINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    nombre VARCHAR(30) NOT NULL UNIQUE,
-   
+    nombre VARCHAR(30) NOT NULL UNIQUE
 ) ENGINE=InnoDB;
 
 CREATE TABLE unidad_medida (
@@ -622,9 +621,12 @@ BEGIN
     -- productos ya vencidos o próximos a vencer. Se compara contra
     -- fecha_compra y no CURDATE() para no romper el registro de compras
     -- históricas/atrasadas.
+    -- MESSAGE_TEXT de SIGNAL está limitado a 128 caracteres en MySQL; un
+    -- mensaje más largo aquí falla con error 1648 "Data too long for
+    -- condition item 'MESSAGE_TEXT'" en vez de mostrar la regla de negocio.
     IF p_fecha_vencimiento IS NOT NULL AND p_fecha_vencimiento < DATE_ADD(v_fecha_compra, INTERVAL 15 DAY) THEN
         SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'La fecha de vencimiento debe ser al menos 15 días posterior a la fecha de compra (no se pueden registrar productos ya vencidos o próximos a vencer).';
+            SET MESSAGE_TEXT = 'La fecha de vencimiento debe ser al menos 15 días posterior a la fecha de compra (sin mercancía vencida o próxima a vencer).';
     END IF;
 END$$
 DELIMITER ;
@@ -713,6 +715,7 @@ BEGIN
     DECLARE v_disponible DECIMAL(10,2);
     DECLARE v_vencimiento DATE;
     DECLARE v_maneja_vencimiento BOOLEAN;
+    DECLARE v_estado_compra VARCHAR(12);
     DECLARE v_estado_venta VARCHAR(12);
     DECLARE v_id_jornada INT UNSIGNED;
     DECLARE v_cliente INT UNSIGNED;
@@ -746,15 +749,26 @@ BEGIN
             SET MESSAGE_TEXT = 'La venta no puede registrarse porque su jornada no está ABIERTA.';
     END IF;
 
-    SELECT l.fecha_vencimiento, p.maneja_vencimiento, c.requiere_verificacion_edad, c.porcentaje_iva
-      INTO v_vencimiento, v_maneja_vencimiento, v_requiere_edad, p_porcentaje_iva
+    SELECT l.fecha_vencimiento, p.maneja_vencimiento, c.requiere_verificacion_edad, c.porcentaje_iva, co.estado
+      INTO v_vencimiento, v_maneja_vencimiento, v_requiere_edad, p_porcentaje_iva, v_estado_compra
     FROM lote l
     JOIN producto p ON p.id_producto = l.id_producto
     JOIN categoria c ON c.id_categoria = p.id_categoria
+    JOIN compra co ON co.id_compra = l.id_compra
     WHERE l.id_lote = p_id_lote;
 
     IF v_maneja_vencimiento IS NULL THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El lote no existe.';
+    END IF;
+
+    -- AGREGADO: un lote solo es vendible si su compra ya fue RECIBIDA.
+    -- Antes de este chequeo, fn_stock_lote() no distinguía el estado de la
+    -- compra: se podía vender mercancía de una compra PENDIENTE (aún no
+    -- llega físicamente) o ANULADA, aunque vw_stock_producto ya la mostrara
+    -- en 0 — una inconsistencia real entre el punto de venta y el reporte
+    -- de inventario, detectada ejecutando los casos de prueba.
+    IF v_estado_compra <> 'RECIBIDA' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No se puede vender un lote cuya compra no está RECIBIDA.';
     END IF;
 
     SET v_disponible = fn_stock_lote(p_id_lote) + p_cantidad_anterior;

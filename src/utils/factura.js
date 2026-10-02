@@ -51,17 +51,25 @@ export const generarFacturaPDF = (venta, clientes = []) => {
     56
   );
 
-  // Detalle de productos
+  // Detalle de productos. "Precio unit." ya trae el IVA incluido (como se
+  // exhibe en el mostrador); "Precio unit. sin IVA" es ese mismo valor
+  // desglosado línea por línea, para que quede explícito cuánto de cada
+  // unidad es base gravable.
   autoTable(doc, {
     startY: 63,
-    head: [['Cant.', 'Descripción', 'Precio unit.', 'IVA', 'Subtotal']],
-    body: (venta.productos || []).map((p) => [
-      p.cantidad,
-      p.nombre,
-      money(p.precio),
-      `${p.porcentajeIva ?? 0}%`,
-      money(p.precio * p.cantidad)
-    ]),
+    head: [['Cant.', 'Descripción', 'Precio unit. sin IVA', 'IVA', 'Precio unit.', 'Subtotal']],
+    body: (venta.productos || []).map((p) => {
+      const tasa = Number(p.porcentajeIva || 0);
+      const precioSinIva = Number(p.precio) / (1 + tasa / 100);
+      return [
+        p.cantidad,
+        p.nombre,
+        money(precioSinIva),
+        `${tasa}%`,
+        money(p.precio),
+        money(p.precio * p.cantidad)
+      ];
+    }),
     headStyles: { fillColor: [26, 54, 93] },
     styles: { fontSize: 8 }
   });
