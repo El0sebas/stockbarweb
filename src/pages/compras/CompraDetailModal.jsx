@@ -1,5 +1,5 @@
 import React from 'react';
-import { BagCheck, Truck, Calendar3, CreditCard, FileEarmarkText, Hash, XCircle, CheckCircle } from 'react-bootstrap-icons';
+import { BagCheck, Truck, Calendar3, CreditCard, FileEarmarkText, Hash, XCircle, CheckCircle, Person } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 
@@ -104,6 +104,15 @@ export const CompraDetailModal = ({ show, onClose, compra, onAnular, onMarcarRec
                   <span className="fw-semibold">{compra.proveedor}</span>
                 </div>
               </div>
+              <div className="col-6">
+                <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
+                  <div className="d-flex align-items-center gap-2 mb-1" style={{ color: styles.mutedColor }}>
+                    <Person size={16} />
+                    <span className="small">Registrado por</span>
+                  </div>
+                  <span className="fw-semibold">{compra.usuario || 'N/A'}</span>
+                </div>
+              </div>
               <div className="col-12">
                 <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
                   <div className="d-flex align-items-center gap-2 mb-1" style={{ color: styles.mutedColor }}>
@@ -154,6 +163,13 @@ export const CompraDetailModal = ({ show, onClose, compra, onAnular, onMarcarRec
               <p className="small m-0" style={{ color: styles.mutedColor }}>
                 Esta compra no tiene detalle de productos por línea registrado.
               </p>
+            )}
+
+            {compra.observaciones && (
+              <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
+                <div className="small mb-1" style={{ color: styles.mutedColor }}>Observaciones</div>
+                <p className="m-0">{compra.observaciones}</p>
+              </div>
             )}
 
             <div className="d-flex justify-content-end align-items-center gap-3 pt-2 border-top" style={{ borderColor: styles.borderCol }}>

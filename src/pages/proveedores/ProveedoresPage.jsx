@@ -60,7 +60,7 @@ export const ProveedoresPage = () => {
       showToast('success', 'Proveedor actualizado exitosamente');
     } else {
       const nuevoCodigo = generateNextIdentifier({ items: proveedores, key: 'codigo', prefix: 'PROV', pad: 2, separator: '-' });
-      setProveedores([...proveedores, { ...formData, codigo: nuevoCodigo }]);
+      setProveedores([...proveedores, { ...formData, codigo: nuevoCodigo, fecha_registro: new Date().toISOString() }]);
       showToast('success', `Proveedor ${nuevoCodigo} creado exitosamente`);
     }
     setShowFormModal(false);

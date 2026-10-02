@@ -6,6 +6,7 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
     codigo: '',
     nombre: '',
     descripcion: '',
+    margen_defecto_porcentaje: '',
     porcentaje_iva: 19,
     requiere_verificacion_edad: false
   };
@@ -86,6 +87,25 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
                   value={formData.descripcion} 
                   onChange={handleChange}
                 ></textarea>
+              </div>
+
+              <div>
+                <label className="form-label small fw-semibold">Margen de ganancia por defecto (%)</label>
+                <input
+                  type="number"
+                  name="margen_defecto_porcentaje"
+                  min="0"
+                  step="0.01"
+                  required
+                  className="form-control shadow-none"
+                  placeholder="Ej: 35"
+                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                  value={formData.margen_defecto_porcentaje}
+                  onChange={handleChange}
+                />
+                <div className="form-text small" style={{ color: styles.mutedColor }}>
+                  Margen que heredan los productos de esta categoría. Un producto puede definir su propio margen y sobreescribir este valor.
+                </div>
               </div>
 
               <div>

@@ -160,7 +160,6 @@ Campos:
   - telefono (nullable)
   - id_rol (FK → rol.id_rol, NOT NULL)
   - contrasena_hash (VARCHAR(255), NOT NULL) — Argon2id o bcrypt, nunca texto plano
-  - fecha_nacimiento (DATE, NOT NULL)
   - fecha_registro (TIMESTAMP), estado (BOOLEAN)
   - es_admin_principal (BOOLEAN, NOT NULL, DEFAULT FALSE) — marca al primer
     ADMINISTRADOR que existió en el sistema. Nunca editable desde el UI; la

@@ -32,6 +32,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
     id_metodo_pago: 1,
     ruta_factura: '',
     ruta_factura_url: '',
+    observaciones: '',
     items: []
   };
 
@@ -317,6 +318,18 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                       <span className="small" style={{ color: styles.mutedColor }}>Sin factura adjunta</span>
                     )}
                   </div>
+                </div>
+
+                <div className="col-md-12">
+                  <label className="form-label small fw-semibold">Observaciones (opcional)</label>
+                  <textarea
+                    className="form-control shadow-none"
+                    rows="2"
+                    placeholder="Novedades de la compra, acuerdos con el proveedor, etc."
+                    value={formData.observaciones}
+                    onChange={(e) => setFormData({ ...formData, observaciones: e.target.value })}
+                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                  />
                 </div>
               </div>
 

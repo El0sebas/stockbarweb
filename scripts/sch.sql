@@ -199,7 +199,6 @@ CREATE TABLE usuario (
     telefono VARCHAR(20),
     id_rol SMALLINT UNSIGNED NOT NULL,
     contrasena_hash VARCHAR(255) NOT NULL,
-    fecha_nacimiento DATE NOT NULL,
     fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     estado BOOLEAN NOT NULL DEFAULT TRUE,
     -- AGREGADO: marca al primer usuario ADMINISTRADOR que existió en el

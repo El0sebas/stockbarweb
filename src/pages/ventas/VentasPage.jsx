@@ -710,6 +710,19 @@ export const VentasPage = () => {
                    </span>
                  </div>
                </div>
+
+               <div className="mt-3">
+                 <label className="form-label small text-muted">Observaciones (opcional)</label>
+                 <textarea
+                   className="form-control form-control-sm"
+                   rows="2"
+                   placeholder="Notas de la venta, acuerdos con el cliente, etc."
+                   disabled={!ventaActiva}
+                   value={ventaActiva?.observaciones || ''}
+                   onChange={(e) => actualizarVenta(ventaActiva.id_venta, (v) => ({ ...v, observaciones: e.target.value }))}
+                   style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                 />
+               </div>
              </div>
 
              <div className="modal-footer border-0 p-4 pt-0">

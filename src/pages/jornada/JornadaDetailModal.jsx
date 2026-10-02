@@ -127,6 +127,13 @@ export const JornadaDetailModal = ({ show, onClose, jornada, ventas, metodosPago
               </div>
             </div>
 
+            {jornada.observaciones && (
+              <div className="p-3 rounded-3" style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}>
+                <div className="small mb-1" style={{ color: styles.mutedColor }}>Observaciones del cierre</div>
+                <p className="m-0">{jornada.observaciones}</p>
+              </div>
+            )}
+
             {totalesPorMetodo.length > 0 ? (
               <div className="p-3 rounded-3" style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}>
                 <div className="small fw-semibold mb-2" style={{ color: styles.mutedColor }}>Desglose por método de pago</div>

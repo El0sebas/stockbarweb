@@ -16,6 +16,10 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
   if (!show || !producto) return null;
 
   const porcentajeIva = categorias.find((c) => c.nombre === producto.categoria)?.porcentaje_iva ?? 19;
+  const margenCategoria = categorias.find((c) => c.nombre === producto.categoria)?.margen_defecto_porcentaje;
+  const margenEfectivo = producto.margenPersonalizado || producto.margenPersonalizado === 0
+    ? { valor: producto.margenPersonalizado, origen: 'personalizado' }
+    : { valor: margenCategoria, origen: 'de la categoría' };
   const lotesProducto = getLotesProducto(lotes, producto.codigo);
   const stockActual = getStockDisponible(lotes, producto.codigo);
   const proveedoresProducto = productoProveedor
@@ -66,6 +70,11 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
                   {producto.codigo}
                 </span>
                 <h4 className="fw-bold m-0">{producto.nombre}</h4>
+                {producto.fechaCreacion && (
+                  <div className="small mt-1" style={{ color: styles.mutedColor }}>
+                    Creado el {new Date(producto.fechaCreacion).toLocaleDateString('es-CO')}
+                  </div>
+                )}
               </div>
               <span
                 className="badge px-3 py-2 fw-medium"
@@ -141,6 +150,13 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
                 <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
                   <div className="small" style={{ color: styles.mutedColor }}>% IVA (de la categoría)</div>
                   <div className="fw-semibold mt-1">{porcentajeIva}%</div>
+                </div>
+              </div>
+
+              <div className="col-6">
+                <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
+                  <div className="small" style={{ color: styles.mutedColor }}>Margen de ganancia ({margenEfectivo.origen})</div>
+                  <div className="fw-semibold mt-1">{margenEfectivo.valor != null ? `${margenEfectivo.valor}%` : '—'}</div>
                 </div>
               </div>
 

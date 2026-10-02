@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building, Person, Telephone, Envelope, StarFill, Star, PlusLg, Trash } from 'react-bootstrap-icons';
+import { Building, Person, Telephone, Envelope, StarFill, Star, PlusLg, Trash, Calendar3 } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultContactosProveedor } from '../../data/defaultContactosProveedor';
 import { generateNextId } from '../../utils/identifiers';
@@ -128,6 +128,17 @@ export const ProveedorDetailModal = ({ show, onClose, proveedor }) => {
                   </div>
                 </div>
               </div>
+              {proveedor.fecha_registro && (
+                <div className="col-6">
+                  <div className="d-flex align-items-center gap-3 p-2 rounded-2" style={{ backgroundColor: styles.cardBg }}>
+                    <Calendar3 size={18} style={{ color: styles.mutedColor }} />
+                    <div>
+                      <span className="d-block small text-muted" style={{ fontSize: '0.75rem' }}>Registrado el</span>
+                      <span className="fw-semibold" style={{ color: styles.textColor }}>{new Date(proveedor.fecha_registro).toLocaleDateString('es-CO')}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>

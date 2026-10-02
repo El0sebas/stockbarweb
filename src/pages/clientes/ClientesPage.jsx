@@ -59,7 +59,7 @@ export const ClientesPage = () => {
       showToast('success', 'Cliente actualizado exitosamente');
     } else {
       const nuevoId = generateNextId(clientes, 'id_cliente');
-      setClientes([...clientes, { ...formData, id_cliente: nuevoId, estado: 'Activo' }]);
+      setClientes([...clientes, { ...formData, id_cliente: nuevoId, estado: 'Activo', fecha_registro: new Date().toISOString() }]);
       showToast('success', `Cliente ${nuevoId} creado exitosamente`);
     }
     setShowFormModal(false);

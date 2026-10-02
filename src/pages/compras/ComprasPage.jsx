@@ -10,8 +10,10 @@ import { showToast, showAlert } from '../../utils/alerts';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultCompras } from '../../data/defaultCompras';
 import { defaultLotes } from '../../data/defaultLotes';
+import { useAuth } from '../../context/AuthContext';
 
 export const ComprasPage = () => {
+  const { currentUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroDesde, setFiltroDesde] = useState('');
   const [filtroHasta, setFiltroHasta] = useState('');
@@ -77,7 +79,15 @@ export const ComprasPage = () => {
     } else {
       const facturaGenerada = (compra.numero_factura_proveedor || nextFactura).trim();
       const idCompra = Date.now();
-      setCompras(prev => [{ ...compra, id: idCompra, numero_factura_proveedor: facturaGenerada, estado: 'PENDIENTE' }, ...prev]);
+      setCompras(prev => [{
+        ...compra,
+        id: idCompra,
+        numero_factura_proveedor: facturaGenerada,
+        estado: 'PENDIENTE',
+        id_usuario: currentUser?.id_usuario || null,
+        usuario: currentUser?.nombre || 'N/A',
+        fecha_registro: new Date().toISOString()
+      }, ...prev]);
       sincronizarLotes(idCompra, compra.items, 'PENDIENTE');
       showToast('success', `Compra ${facturaGenerada} registrada como PENDIENTE`);
     }

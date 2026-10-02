@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Person } from 'react-bootstrap-icons';
 
 export const ClienteFormModal = ({ show, onClose, onSave, cliente }) => {
-  const initialState = { tipo_documento: 'CC', numero_documento: '', nombre_completo: '', telefono: '', correo: '', fecha_nacimiento: '' };
+  const initialState = { tipo_documento: 'CC', numero_documento: '', nombre_completo: '', telefono: '', correo: '', fecha_nacimiento: '', genero: '' };
   const [formData, setFormData] = useState(initialState);
 
   useEffect(() => {
@@ -13,7 +13,8 @@ export const ClienteFormModal = ({ show, onClose, onSave, cliente }) => {
         nombre_completo: cliente.nombre_completo,
         telefono: cliente.telefono || '',
         correo: cliente.correo || '',
-        fecha_nacimiento: cliente.fecha_nacimiento || ''
+        fecha_nacimiento: cliente.fecha_nacimiento || '',
+        genero: cliente.genero || ''
       });
     } else {
       setFormData(initialState);
@@ -76,11 +77,22 @@ export const ClienteFormModal = ({ show, onClose, onSave, cliente }) => {
                   <input type="email" name="correo" className="form-control shadow-none" placeholder="correo@ejemplo.com" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.correo} onChange={handleChange} />
                 </div>
               </div>
-              <div>
-                <label className="form-label small fw-semibold">Fecha de nacimiento</label>
-                <input type="date" name="fecha_nacimiento" className="form-control shadow-none" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.fecha_nacimiento} onChange={handleChange} />
-                <div className="form-text small" style={{ color: styles.mutedColor }}>
-                  Necesaria para vender productos con verificación de edad (licores, cerveza).
+              <div className="row g-3">
+                <div className="col-8">
+                  <label className="form-label small fw-semibold">Fecha de nacimiento</label>
+                  <input type="date" name="fecha_nacimiento" className="form-control shadow-none" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.fecha_nacimiento} onChange={handleChange} />
+                  <div className="form-text small" style={{ color: styles.mutedColor }}>
+                    Necesaria para vender productos con verificación de edad (licores, cerveza).
+                  </div>
+                </div>
+                <div className="col-4">
+                  <label className="form-label small fw-semibold">Género</label>
+                  <select name="genero" className="form-select shadow-none" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.genero} onChange={handleChange}>
+                    <option value="">No especifica</option>
+                    <option value="M">Masculino</option>
+                    <option value="F">Femenino</option>
+                    <option value="OTRO">Otro</option>
+                  </select>
                 </div>
               </div>
             </div>

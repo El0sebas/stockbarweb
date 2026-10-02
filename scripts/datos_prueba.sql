@@ -24,12 +24,12 @@ INSERT INTO categoria (nombre, descripcion, margen_defecto_porcentaje, porcentaj
 VALUES ('Bebidas no alcohólicas','Aguas, gaseosas y jugos',25.00,19.00,FALSE);
 
 -- -------- NIVEL 2: tablas con FK --------
-INSERT INTO usuario (tipo_documento,numero_documento,nombres,apellidos,correo,id_rol,contrasena_hash,fecha_nacimiento,es_admin_principal) VALUES
-('CC','1000000001','Sebastián','Gómez Ortiz','sebastian.admin@stockbar.com',1,'$2b$12$hashusuario0000000000001','1992-05-10',TRUE),
-('CC','1000000002','María','Pérez López','maria.perez@stockbar.com',2,'$2b$12$hashusuario0000000000002','1998-02-20',FALSE),
-('CC','1000000003','Carlos','Ruiz Mena','carlos.ruiz@stockbar.com',2,'$2b$12$hashusuario0000000000003','1995-11-03',FALSE),
-('CC','1000000004','Laura','Díaz Nieto','laura.diaz@stockbar.com',3,'$2b$12$hashusuario0000000000004','1990-07-15',FALSE),
-('CC','1000000005','Jorge','Salas Vega','jorge.salas@stockbar.com',4,'$2b$12$hashusuario0000000000005','2001-09-30',FALSE);
+INSERT INTO usuario (tipo_documento,numero_documento,nombres,apellidos,correo,id_rol,contrasena_hash,es_admin_principal) VALUES
+('CC','1000000001','Sebastián','Gómez Ortiz','sebastian.admin@stockbar.com',1,'$2b$12$hashusuario0000000000001',TRUE),
+('CC','1000000002','María','Pérez López','maria.perez@stockbar.com',2,'$2b$12$hashusuario0000000000002',FALSE),
+('CC','1000000003','Carlos','Ruiz Mena','carlos.ruiz@stockbar.com',2,'$2b$12$hashusuario0000000000003',FALSE),
+('CC','1000000004','Laura','Díaz Nieto','laura.diaz@stockbar.com',3,'$2b$12$hashusuario0000000000004',FALSE),
+('CC','1000000005','Jorge','Salas Vega','jorge.salas@stockbar.com',4,'$2b$12$hashusuario0000000000005',FALSE);
 
 INSERT INTO recuperacion_contrasena (id_usuario, token, fecha_generacion, fecha_expiracion, usado) VALUES
 (1,'a1f9c2000000000000000001','2026-09-28 08:00:00','2026-09-28 09:00:00',FALSE),

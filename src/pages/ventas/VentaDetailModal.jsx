@@ -120,6 +120,13 @@ export const VentaDetailModal = ({ show, onClose, venta, clientes = [], onAnular
               )}
             </div>
 
+            {venta.observaciones && (
+              <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
+                <div className="small mb-1" style={{ color: styles.mutedColor }}>Observaciones</div>
+                <p className="m-0">{venta.observaciones}</p>
+              </div>
+            )}
+
             <div className="d-flex flex-column align-items-end gap-1 pt-2 border-top" style={{ borderColor: styles.borderCol }}>
               <div className="d-flex justify-content-between gap-3 small" style={{ color: styles.mutedColor, minWidth: '220px' }}>
                 <span>Subtotal (base gravable)</span>

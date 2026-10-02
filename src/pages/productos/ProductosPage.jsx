@@ -98,7 +98,7 @@ export const ProductosPage = () => {
       showToast('success', 'Producto actualizado exitosamente');
     } else {
       codigoProducto = generateNextIdentifier({ items: productos, key: 'codigo', prefix: 'PROD', pad: 2, separator: '-' });
-      setProductos([...productos, { ...productoData, codigo: codigoProducto }]);
+      setProductos([...productos, { ...productoData, codigo: codigoProducto, fechaCreacion: new Date().toISOString() }]);
       showToast('success', `Producto ${codigoProducto} creado exitosamente`);
     }
     setProductoProveedor([

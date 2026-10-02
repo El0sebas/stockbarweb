@@ -11,6 +11,7 @@ import { getJornadaAbierta } from '../../utils/jornada';
 import { generateNextId } from '../../utils/identifiers';
 import { showToast, showAlert } from '../../utils/alerts';
 import { JornadaDetailModal } from './JornadaDetailModal';
+import Swal from 'sweetalert2';
 
 export const JornadaPage = () => {
   const [jornadas, setJornadas] = usePersistentState('stockbar_jornadas', defaultJornadas);
@@ -52,11 +53,22 @@ export const JornadaPage = () => {
   // confirmación simple — el desglose se ve aparte, en cualquier momento,
   // con "Ver detalle" desde el historial (ver JornadaDetailModal).
   const handleCerrarJornada = async () => {
-    const confirmado = await showAlert.confirm(
-      '¿Cerrar jornada?',
-      'No podrás registrar más ventas hasta abrir una nueva jornada.'
-    );
-    if (!confirmado) return;
+    const { isConfirmed, value: observaciones } = await Swal.fire({
+      icon: 'warning',
+      title: '¿Cerrar jornada?',
+      text: 'No podrás registrar más ventas hasta abrir una nueva jornada.',
+      input: 'textarea',
+      inputPlaceholder: 'Novedades del turno (opcional): faltantes, incidentes, etc.',
+      showCancelButton: true,
+      confirmButtonColor: 'var(--amber-action)',
+      cancelButtonColor: 'var(--text-muted)',
+      confirmButtonText: 'Continuar',
+      cancelButtonText: 'Cancelar',
+      background: 'var(--bg-card)',
+      color: 'var(--text-main)',
+      reverseButtons: true,
+    });
+    if (!isConfirmed) return;
 
     setJornadas((prev) => prev.map((j) =>
       j.id_jornada === jornadaAbierta.id_jornada
@@ -65,7 +77,8 @@ export const JornadaPage = () => {
             estado: 'CERRADA',
             id_usuario_cierre: currentUser?.id_usuario || null,
             usuario_cierre: currentUser?.nombre || 'N/A',
-            fecha_hora_cierre: new Date().toISOString()
+            fecha_hora_cierre: new Date().toISOString(),
+            observaciones: (observaciones || '').trim()
           }
         : j
     ));

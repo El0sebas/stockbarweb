@@ -27,6 +27,7 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
     categoria: '',
     unidad_medida: '',
     precioVenta: '',
+    margenPersonalizado: '',
     maneja_vencimiento: false,
     stockMinimo: '',
     estado: 'Activo'
@@ -323,6 +324,28 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
                     }
                     style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.mutedColor }}
                   />
+                </div>
+              </div>
+
+              <div>
+                <label className="form-label small fw-semibold">Margen de ganancia personalizado (%)</label>
+                <input
+                  type="number"
+                  name="margenPersonalizado"
+                  min="0"
+                  step="0.01"
+                  className="form-control shadow-none"
+                  placeholder={
+                    formData.categoria
+                      ? `Vacío = usa el ${categorias.find((c) => c.nombre === formData.categoria)?.margen_defecto_porcentaje ?? 0}% de la categoría`
+                      : 'Seleccione una categoría'
+                  }
+                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                  value={formData.margenPersonalizado}
+                  onChange={handleChange}
+                />
+                <div className="form-text small" style={{ color: styles.mutedColor }}>
+                  Opcional. Si lo dejas vacío, este producto hereda el margen por defecto de su categoría.
                 </div>
               </div>
 

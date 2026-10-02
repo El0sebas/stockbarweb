@@ -19,6 +19,8 @@ export const ClienteDetailModal = ({ show, onClose, cliente }) => {
     </div>
   );
 
+  const GENERO_LABELS = { M: 'Masculino', F: 'Femenino', OTRO: 'Otro' };
+
   return (
     <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'var(--overlay-scrim)', backdropFilter: 'blur(3px)', zIndex: 1050 }}>
       <div className="modal-dialog modal-dialog-centered">
@@ -37,6 +39,8 @@ export const ClienteDetailModal = ({ show, onClose, cliente }) => {
               <InfoItem label="Teléfono" value={cliente.telefono} />
               <InfoItem label="Correo" value={cliente.correo} />
               <InfoItem label="Fecha de nacimiento" value={cliente.fecha_nacimiento} />
+              <InfoItem label="Género" value={GENERO_LABELS[cliente.genero]} />
+              <InfoItem label="Cliente desde" value={cliente.fecha_registro ? new Date(cliente.fecha_registro).toLocaleDateString('es-CO') : null} />
               <div className="col-6">
                 <p className="small fw-semibold mb-1" style={{ color: styles.mutedColor }}>Estado</p>
                 <span className="badge px-3 py-2 fw-medium" style={{
