@@ -90,7 +90,7 @@ export const ProductosPage = () => {
   };
 
   const handleSaveProducto = (formData) => {
-    const { proveedoresSeleccionados = [], ...productoData } = formData;
+    const { proveedoresSeleccionados = [], preciosReferencia = {}, ...productoData } = formData;
     let codigoProducto;
     if (selectedProducto) {
       codigoProducto = productoData.codigo;
@@ -106,7 +106,7 @@ export const ProductosPage = () => {
       ...proveedoresSeleccionados.map((idProveedor) => ({
         id_producto: codigoProducto,
         id_proveedor: idProveedor,
-        precio_referencia: null,
+        precio_referencia: preciosReferencia[idProveedor] ? Number(preciosReferencia[idProveedor]) : null,
         estado: 'Activo'
       }))
     ]);

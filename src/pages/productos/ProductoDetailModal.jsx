@@ -20,7 +20,10 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
   const stockActual = getStockDisponible(lotes, producto.codigo);
   const proveedoresProducto = productoProveedor
     .filter((pp) => pp.id_producto === producto.codigo && pp.estado === 'Activo')
-    .map((pp) => proveedores.find((p) => p.codigo === pp.id_proveedor))
+    .map((pp) => {
+      const prov = proveedores.find((p) => p.codigo === pp.id_proveedor);
+      return prov ? { ...prov, precio_referencia: pp.precio_referencia } : null;
+    })
     .filter(Boolean);
 
   const styles = {
@@ -165,6 +168,7 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
                           style={{ backgroundColor: 'var(--blue-soft-bg)', color: 'var(--brand-blue)' }}
                         >
                           {prov.razon_social}
+                          {prov.precio_referencia ? ` — $ ${Number(prov.precio_referencia).toLocaleString()}` : ''}
                         </span>
                       ))}
                     </div>

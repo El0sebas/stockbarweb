@@ -34,20 +34,22 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
 
   const [formData, setFormData] = useState(initialState);
   const [proveedoresSeleccionados, setProveedoresSeleccionados] = useState([]);
+  const [preciosReferencia, setPreciosReferencia] = useState({});
   const [proveedorSearch, setProveedorSearch] = useState('');
   const [proveedorPagina, setProveedorPagina] = useState(0);
 
   useEffect(() => {
     if (producto) {
       setFormData(producto);
-      setProveedoresSeleccionados(
-        productoProveedor
-          .filter((pp) => pp.id_producto === producto.codigo && pp.estado === 'Activo')
-          .map((pp) => pp.id_proveedor)
+      const ppActivos = productoProveedor.filter((pp) => pp.id_producto === producto.codigo && pp.estado === 'Activo');
+      setProveedoresSeleccionados(ppActivos.map((pp) => pp.id_proveedor));
+      setPreciosReferencia(
+        Object.fromEntries(ppActivos.map((pp) => [pp.id_proveedor, pp.precio_referencia ?? '']))
       );
     } else {
       setFormData({ ...initialState, estado: 'Activo' });
       setProveedoresSeleccionados([]);
+      setPreciosReferencia({});
     }
     setProveedorSearch('');
     setProveedorPagina(0);
@@ -59,6 +61,10 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
         ? prev.filter((c) => c !== codigoProveedor)
         : [...prev, codigoProveedor]
     );
+  };
+
+  const handlePrecioReferencia = (codigoProveedor, valor) => {
+    setPreciosReferencia((prev) => ({ ...prev, [codigoProveedor]: valor }));
   };
 
   // Búsqueda + paginación (7 por página): listar los N proveedores activos
@@ -84,7 +90,7 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
       return;
     }
     const dataToSave = producto ? formData : { ...formData, estado: 'Activo' };
-    onSave({ ...dataToSave, proveedoresSeleccionados });
+    onSave({ ...dataToSave, proveedoresSeleccionados, preciosReferencia });
   };
 
   const handleChange = (e) => {
@@ -225,24 +231,38 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
                         {proveedoresActivos.length === 0 ? 'No hay proveedores activos.' : 'Sin resultados.'}
                       </span>
                     ) : (
-                      proveedoresPagina.map((prov, idx) => (
+                      proveedoresPagina.map((prov, idx) => {
+                        const seleccionado = proveedoresSeleccionados.includes(prov.codigo);
+                        return (
                         <div
                           key={prov.codigo}
-                          className="form-check py-1 ps-4 pe-2 m-0"
+                          className="form-check py-1 ps-4 pe-2 m-0 d-flex align-items-center justify-content-between gap-2"
                           style={{ borderBottom: idx < proveedoresPagina.length - 1 ? `1px solid ${styles.borderCol}` : 'none' }}
                         >
-                          <input
-                            type="checkbox"
-                            className="form-check-input"
-                            id={`prov-${prov.codigo}`}
-                            checked={proveedoresSeleccionados.includes(prov.codigo)}
-                            onChange={() => toggleProveedor(prov.codigo)}
-                          />
-                          <label className="form-check-label small d-block" htmlFor={`prov-${prov.codigo}`}>
-                            {prov.razon_social}
-                          </label>
+                          <div>
+                            <input
+                              type="checkbox"
+                              className="form-check-input"
+                              id={`prov-${prov.codigo}`}
+                              checked={seleccionado}
+                              onChange={() => toggleProveedor(prov.codigo)}
+                            />
+                            <label className="form-check-label small d-block" htmlFor={`prov-${prov.codigo}`}>
+                              {prov.razon_social}
+                            </label>
+                          </div>
+                          {seleccionado && (
+                            <MoneyInput
+                              placeholder="Precio ref."
+                              className="form-control form-control-sm"
+                              style={{ width: '110px' }}
+                              value={preciosReferencia[prov.codigo] ?? ''}
+                              onChange={(val) => handlePrecioReferencia(prov.codigo, val)}
+                            />
+                          )}
                         </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>
