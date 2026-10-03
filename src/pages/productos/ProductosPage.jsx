@@ -7,14 +7,12 @@ import { EstadoFilter } from '../../components/common/EstadoFilter';
 import { ProductoDetailModal } from './ProductoDetailModal';
 import { ProductoFormModal } from './ProductoFormModal';
 import { showToast } from '../../utils/alerts';
-import { generateNextIdentifier } from '../../utils/identifiers';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultProductos } from '../../data/defaultProductos';
 import { defaultCategorias } from '../../data/defaultCategorias';
 import { defaultLotes } from '../../data/defaultLotes';
 import { defaultMotivosBaja } from '../../data/defaultMotivosBaja';
 import { defaultBajas } from '../../data/defaultBajas';
-import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
 import { getStockDisponible } from '../../utils/stock';
 import { aplicarBaja } from '../../utils/bajas';
 import { useAuth } from '../../context/AuthContext';
@@ -26,7 +24,6 @@ export const ProductosPage = () => {
   const [lotes, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
   const [motivos] = usePersistentState('stockbar_motivos_baja', defaultMotivosBaja);
   const [bajas, setBajas] = usePersistentState('stockbar_bajas', defaultBajas);
-  const [productoProveedor, setProductoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
   const { currentUser } = useAuth();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -89,27 +86,16 @@ export const ProductosPage = () => {
     showToast('success', `Estado actualizado a ${nuevoEstado}`);
   };
 
-  const handleSaveProducto = (formData) => {
-    const { proveedoresSeleccionados = [], preciosReferencia = {}, ...productoData } = formData;
-    let codigoProducto;
+  const handleSaveProducto = (productoData) => {
+    // v3: id_producto ES el código (SKU) que escribió el usuario en el
+    // formulario — ProductoFormModal ya validó formato y unicidad.
     if (selectedProducto) {
-      codigoProducto = productoData.codigo;
-      setProductos(productos.map(p => p.codigo === codigoProducto ? productoData : p));
+      setProductos(productos.map(p => p.codigo === productoData.codigo ? productoData : p));
       showToast('success', 'Producto actualizado exitosamente');
     } else {
-      codigoProducto = generateNextIdentifier({ items: productos, key: 'codigo', prefix: 'PROD', pad: 2, separator: '-' });
-      setProductos([...productos, { ...productoData, codigo: codigoProducto, fechaCreacion: new Date().toISOString() }]);
-      showToast('success', `Producto ${codigoProducto} creado exitosamente`);
+      setProductos([...productos, { ...productoData, fechaCreacion: new Date().toISOString() }]);
+      showToast('success', `Producto ${productoData.codigo} creado exitosamente`);
     }
-    setProductoProveedor([
-      ...productoProveedor.filter((pp) => pp.id_producto !== codigoProducto),
-      ...proveedoresSeleccionados.map((idProveedor) => ({
-        id_producto: codigoProducto,
-        id_proveedor: idProveedor,
-        precio_referencia: preciosReferencia[idProveedor] ? Number(preciosReferencia[idProveedor]) : null,
-        estado: 'Activo'
-      }))
-    ]);
     setShowFormModal(false);
     setSelectedProducto(null);
   };
@@ -273,6 +259,7 @@ export const ProductosPage = () => {
         onClose={() => setShowFormModal(false)}
         onSave={handleSaveProducto}
         producto={selectedProducto}
+        productos={productos}
       />
 
       <ProductoDetailModal

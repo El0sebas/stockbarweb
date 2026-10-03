@@ -52,7 +52,7 @@ Al implementar features, ubicarlas dentro de uno de estos subprocesos y respetar
 9. Ventas
 10. Dashboard / Reportes (visualizar, filtrar, exportar PDF/Excel, alertas de bajo stock)
 
-**Alcance móvil (Flutter):** solo Acceso y Ventas. No implementar en móvil subprocesos fuera de este alcance salvo instrucción explícita del usuario.
+**Alcance móvil (Flutter):** Jornada, Acceso, Dashboard y Ventas — tal como lo aprobó el comité en la Ficha de Proyecto (página 9, "Alcance: Móvil"). No implementar en móvil subprocesos fuera de este alcance salvo instrucción explícita del usuario.
 
 ## 5. Identidad visual (aplicar en todo componente de UI)
 

@@ -15,12 +15,12 @@ export const JornadaDetailModal = ({ show, onClose, jornada, ventas, metodosPago
     ventasDeLaJornada.flatMap((v) => (v.productos || []).map((p) => ({ precio: p.precio, cantidad: p.cantidad, porcentajeIva: p.porcentajeIva })))
   );
 
+  // v3: venta.id_metodo_pago es único (ya no hay venta_pago/pago dividido).
   const totalesPorMetodo = metodosPago.map((m) => ({
     nombre: m.nombre,
     total: ventasDeLaJornada
-      .flatMap((v) => v.pagos || [])
-      .filter((p) => p.id_metodo_pago === m.id_metodo_pago)
-      .reduce((acc, p) => acc + Number(p.monto), 0)
+      .filter((v) => v.id_metodo_pago === m.id_metodo_pago)
+      .reduce((acc, v) => acc + Number(v.total), 0)
   })).filter((m) => m.total > 0);
 
   const styles = {

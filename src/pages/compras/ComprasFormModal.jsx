@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { BagCheck, Trash, Plus, Search, FileEarmarkText, Upload } from 'react-bootstrap-icons';
+import { BagCheck, Trash, Pencil, Plus, Search, FileEarmarkText, Upload } from 'react-bootstrap-icons';
 import { showAlert } from '../../utils/alerts';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 import { defaultProveedores } from '../../data/defaultProveedores';
 import { defaultProductos } from '../../data/defaultProductos';
-import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
 import { generateNextId } from '../../utils/identifiers';
 import { QuantityStepper } from '../../components/common/QuantityStepper';
 import { MoneyInput } from '../../components/common/MoneyInput';
@@ -17,14 +16,12 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
   const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
   const metodosPagoActivos = metodosPago.filter((m) => m.estado === 'Activo');
 
-  // Mismos catálogos reales que ProveedoresPage/ProductosPage — nada de
-  // listas hardcodeadas por proveedor: cualquier producto activo puede
-  // buscarse y agregarse a la compra.
+  // v3: ya no existe producto_proveedor — cualquier producto activo puede
+  // buscarse y agregarse a la compra, sin restringir por afiliación.
   const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
   const proveedoresActivos = proveedores.filter((p) => p.estado === 'Activo');
   const [productos] = usePersistentState('stockbar_productos', defaultProductos);
   const productosActivos = productos.filter((p) => p.estado === 'Activo');
-  const [productoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
 
   const initialState = {
     proveedor: '',
@@ -42,7 +39,6 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
   const [selectedProductToAdd, setSelectedProductToAdd] = useState(null);
   const [cantidad, setCantidad] = useState(1);
   const [costoUnitario, setCostoUnitario] = useState(0);
-  const [numeroLote, setNumeroLote] = useState('');
   const [fechaVencimiento, setFechaVencimiento] = useState('');
 
   // Debounce del buscador de productos (250ms) para no filtrar en cada tecla.
@@ -64,25 +60,15 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
     setSelectedProductToAdd(null);
     setCantidad(1);
     setCostoUnitario(0);
-    setNumeroLote('');
     setFechaVencimiento('');
   }, [compra, show, nextFactura]);
 
   if (!show) return null;
 
-  // Sugerencia automática del número de lote (el usuario aún puede
-  // corregirlo si el proveedor imprime uno distinto en la factura real):
-  // LT-<codigo_producto>-<consecutivo dentro de esta compra>.
-  const sugerirNumeroLote = (producto) => {
-    const consecutivo = formData.items.filter((i) => i.producto_codigo === producto.codigo).length + 1;
-    return `LT-${producto.codigo}-${String(consecutivo).padStart(2, '0')}`;
-  };
-
   const handleSelectProduct = (prod) => {
     setSelectedProductToAdd(prod);
     setProductSearch(prod.nombre);
     setCostoUnitario(0);
-    setNumeroLote(prod.maneja_vencimiento ? sugerirNumeroLote(prod) : '');
     setFechaVencimiento('');
   };
 
@@ -108,8 +94,8 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
 
     const requiereLote = selectedProductToAdd.maneja_vencimiento;
 
-    if (requiereLote && (!numeroLote.trim() || !fechaVencimiento)) {
-      showAlert.error('Falta información del lote', 'Este producto requiere número de lote y fecha de vencimiento para registrarse.');
+    if (requiereLote && !fechaVencimiento) {
+      showAlert.error('Falta información del lote', 'Este producto requiere fecha de vencimiento para registrarse.');
       return;
     }
 
@@ -135,7 +121,6 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
         producto_codigo: selectedProductToAdd.codigo,
         cantidad: Number(cantidad),
         costoUnitario: Number(costoUnitario),
-        numero_lote: requiereLote ? numeroLote.trim() : null,
         fecha_vencimiento: requiereLote ? fechaVencimiento : null
       }
     ];
@@ -145,13 +130,29 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
     setSelectedProductToAdd(null);
     setCantidad(1);
     setCostoUnitario(0);
-    setNumeroLote('');
     setFechaVencimiento('');
   };
 
   const handleRemoveItem = (index) => {
     const nuevosItems = formData.items.filter((_, i) => i !== index);
     setFormData({ ...formData, items: nuevosItems });
+  };
+
+  // Editar = devolver la línea al formulario de "Agregar Productos" para
+  // corregir cantidad/costo/vencimiento y volver a agregarla.
+  const handleEditItem = (index) => {
+    const item = formData.items[index];
+    const prod = productos.find((p) => p.codigo === item.producto_codigo);
+    if (!prod) {
+      showAlert.error('Producto no disponible', 'El producto de esta línea ya no existe en el catálogo.');
+      return;
+    }
+    setSelectedProductToAdd(prod);
+    setProductSearch(prod.nombre);
+    setCantidad(item.cantidad);
+    setCostoUnitario(item.costoUnitario);
+    setFechaVencimiento(item.fecha_vencimiento || '');
+    handleRemoveItem(index);
   };
 
   const calcularTotal = () =>
@@ -181,14 +182,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
     onSave(compraFinal);
   };
 
-  // Solo se pueden comprar productos afiliados al proveedor seleccionado
-  // (tabla producto_proveedor), no cualquier producto del catálogo.
   const proveedorSeleccionado = proveedoresActivos.find((p) => p.razon_social === formData.proveedor);
-  const codigosProductoDelProveedor = proveedorSeleccionado
-    ? productoProveedor
-        .filter((pp) => pp.id_proveedor === proveedorSeleccionado.codigo && pp.estado === 'Activo')
-        .map((pp) => pp.id_producto)
-    : [];
 
   // Fecha de referencia para la regla de 15 días (mirror sp_validar_lote):
   // fecha_compra real si se edita, o hoy si es una compra nueva.
@@ -199,17 +193,14 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
     return d.toISOString().split('T')[0];
   })();
 
-  // Se listan automáticamente todos los productos afiliados al proveedor
-  // apenas se elige (sin esperar a que el usuario escriba); el buscador solo
-  // acota esa lista.
+  // v3: sin producto_proveedor, cualquier producto activo del catálogo se
+  // puede agregar en cuanto haya un proveedor seleccionado.
   const resultadosBusqueda = proveedorSeleccionado
-    ? productosActivos
-        .filter((prod) => codigosProductoDelProveedor.includes(prod.codigo))
-        .filter((prod) =>
-          !debouncedSearch ||
-          prod.nombre.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-          prod.codigo.toLowerCase().includes(debouncedSearch.toLowerCase())
-        )
+    ? productosActivos.filter((prod) =>
+        !debouncedSearch ||
+        prod.nombre.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        prod.codigo.toLowerCase().includes(debouncedSearch.toLowerCase())
+      )
     : [];
 
   const styles = {
@@ -251,7 +242,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                   >
                     <option value="">Seleccione un proveedor...</option>
                     {proveedoresActivos.map((prov) => (
-                      <option key={prov.codigo} value={prov.razon_social}>{prov.razon_social}</option>
+                      <option key={prov.nit} value={prov.razon_social}>{prov.razon_social}</option>
                     ))}
                   </select>
                 </div>
@@ -372,30 +363,17 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
 
                   {selectedProductToAdd &&
                     (selectedProductToAdd.maneja_vencimiento ? (
-                      <>
-                        <div className="col-6 col-md-2">
-                          <label className="form-label small text-muted">Lote</label>
-                          <input
-                            type="text"
-                            className="form-control form-control-sm"
-                            value={numeroLote}
-                            onChange={(e) => setNumeroLote(e.target.value)}
-                            placeholder="LT-001"
-                            style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                          />
-                        </div>
-                        <div className="col-6 col-md-2">
-                          <label className="form-label small text-muted">Vence</label>
-                          <input
-                            type="date"
-                            min={minimoVencimiento}
-                            className="form-control form-control-sm"
-                            value={fechaVencimiento}
-                            onChange={(e) => setFechaVencimiento(e.target.value)}
-                            style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                          />
-                        </div>
-                      </>
+                      <div className="col-6 col-md-3">
+                        <label className="form-label small text-muted">Vence</label>
+                        <input
+                          type="date"
+                          min={minimoVencimiento}
+                          className="form-control form-control-sm"
+                          value={fechaVencimiento}
+                          onChange={(e) => setFechaVencimiento(e.target.value)}
+                          style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                        />
+                      </div>
                     ) : (
                       <div className="col-12 col-md-4">
                         <span className="small text-muted">Sin control de vencimiento.</span>
@@ -423,7 +401,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                   >
                     {resultadosBusqueda.length === 0 ? (
                       <div className="small text-center py-2" style={{ color: styles.mutedColor }}>
-                        {debouncedSearch ? 'Sin resultados.' : 'Este proveedor no tiene productos afiliados.'}
+                        {debouncedSearch ? 'Sin resultados.' : 'No hay productos activos en el catálogo.'}
                       </div>
                     ) : (
                       resultadosBusqueda.map((prod, idx) => (
@@ -460,7 +438,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                       <th className="small text-uppercase fw-bold" style={{ color: styles.mutedColor }}>Producto</th>
                       <th className="small text-uppercase fw-bold text-center" style={{ color: styles.mutedColor }}>Cantidad</th>
                       <th className="small text-uppercase fw-bold text-end" style={{ color: styles.mutedColor }}>Costo Unit.</th>
-                      <th className="small text-uppercase fw-bold" style={{ color: styles.mutedColor }}>Lote/Vencimiento</th>
+                      <th className="small text-uppercase fw-bold" style={{ color: styles.mutedColor }}>Vencimiento</th>
                       <th className="small text-uppercase fw-bold text-center" style={{ color: styles.mutedColor }}>Acción</th>
                     </tr>
                   </thead>
@@ -478,16 +456,22 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                           <td className="text-center">{item.cantidad} un.</td>
                           <td className="text-end">$ {Number(item.costoUnitario).toLocaleString()}</td>
                           <td>
-                            {item.numero_lote || item.fecha_vencimiento ? (
-                              <span className="small">
-                                {item.numero_lote || 'Sin lote'}
-                                {item.fecha_vencimiento ? ` • ${item.fecha_vencimiento}` : ''}
-                              </span>
+                            {item.fecha_vencimiento ? (
+                              <span className="small">{item.fecha_vencimiento}</span>
                             ) : (
                               <span className="small text-muted">Sin vencimiento</span>
                             )}
                           </td>
                           <td className="text-center">
+                            <button
+                              type="button"
+                              className="btn btn-sm p-0 border-0 me-2"
+                              style={{ color: 'var(--amber-action)' }}
+                              onClick={() => handleEditItem(index)}
+                              title="Editar item"
+                            >
+                              <Pencil size={16} />
+                            </button>
                             <button
                               type="button"
                               className="btn btn-sm p-0 text-danger border-0"

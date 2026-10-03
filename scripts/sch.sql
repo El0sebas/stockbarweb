@@ -1,93 +1,85 @@
 -- ============================================================
--- STOCKBAR - BASE DE DATOS COMPLETA
--- Port a MySQL 8.0+ / MariaDB 10.5+ del script original en PostgreSQL
--- (stockbar_schema.sql), para alinear con la Arquitectura de Software
--- y de Hardware ya aprobadas (ambas especifican MySQL como motor).
+-- STOCKBAR - BASE DE DATOS (MySQL 8.0.16+ / MariaDB 10.5+)
+-- Versión 4 (V3 + producto.precio_venta_actual) - Normalizada según las observaciones de la profesora.
 --
--- Requisitos del servidor:
---   * MySQL 8.0.16+ (soporte real de CHECK constraints) o MariaDB 10.5+.
---   * Las funciones (fn_stock_lote, fn_total_venta, fn_total_pagado) se
---     crean como DETERMINISTIC para poder crearse sin privilegio SUPER
---     con binlog en modo STATEMENT. Alternativa: ejecutar antes
---     `SET GLOBAL log_bin_trust_function_creators = 1;` y quitar la
---     palabra DETERMINISTIC de las tres funciones.
+-- Requisitos: MySQL 8.0.16+ (CHECK reales) o MariaDB 10.5+.
+-- Las funciones se crean DETERMINISTIC para poder crearse sin SUPER con
+-- binlog STATEMENT (alternativa: SET GLOBAL log_bin_trust_function_creators=1).
 --
--- Ver el historial de cambios respecto al físico original de PostgreSQL en
--- versiones anteriores de este script (control de versiones / docs/DATABASE.md).
--- Cambios de esta revisión (segunda pasada del dueño del proyecto sobre el
--- prototipo publicado):
+-- ============================================================
+-- QUÉ CAMBIÓ EN LA V3 Y POR QUÉ
+-- ============================================================
 --
--- 1) QUITADO rol.descripcion y permiso.descripcion: no se usan en ningún
---    formulario (el rol se identifica por nombre, el permiso se asigna
---    desde la matriz de la sección 9, ninguno se gestiona como entidad con
---    ficha propia). La matriz de historias de usuario menciona una
---    descripción opcional para rol, pero se decidió no incluirla.
+-- 1) RECUPERACIÓN DE CONTRASEÑA (comentarios 7 y 16): se ELIMINA la tabla
+--    recuperacion_contrasena. La ficha solo pide "recuperar contraseña" en
+--    el Subproceso de Acceso; no pide historial ni auditoría. El enlace
+--    seguro con vencimiento (HU_77) necesita guardar UN token vigente por
+--    usuario: son dos columnas de usuario (token_recuperacion_hash y
+--    token_recuperacion_expira). NULL = no hay recuperación en curso.
 --
--- 2) QUITADO categoria.estado: la Ficha de Proyecto aprobada no lista
---    "cambio de estado" en el alcance del subproceso de categorías (a
---    diferencia de producto, proveedor, compra, cliente, venta, usuario y
---    rol, que sí lo listan). La matriz de historias de usuario sí la
---    menciona, pero se sigue el criterio de la ficha aprobada.
+-- 2) PRODUCTO POR PROVEEDOR (comentario 9): se ELIMINA producto_proveedor.
+--    Qué proveedor entregó qué producto ya está en la compra
+--    (compra.id_proveedor + detalle_compra -> lote -> producto). Además
+--    desaparece el problema del prototipo (comentario 0): al no existir un
+--    vínculo producto-proveedor, el proveedor es dato del encabezado de la
+--    compra y cambiarlo no invalida las líneas del detalle.
 --
--- 3) AGREGADO usuario.es_admin_principal + trg_proteger_admin_principal:
---    marca al primer usuario ADMINISTRADOR que existió en el sistema.
---    Restricción única (columna GENERATED, mismo truco que jornada y
---    contacto_proveedor) garantiza que nunca haya más de uno. Un trigger
---    bloquea desactivarlo y bloquea cambiar la marca una vez puesta. La
---    app lo crea una sola vez en el arranque inicial, nunca editable desde
---    el UI. "Solo un admin puede desactivar a otro" y "nadie puede
---    desactivarse a sí mismo" son reglas de la capa de aplicación (dependen
---    de quién hizo la petición autenticada, algo que un trigger no puede
---    ver), no columnas ni triggers nuevos.
+-- 3) LOTES Y PRECIO (comentarios 12 y 15): para StockBar un lote ES la
+--    fecha de vencimiento de un producto. Por eso:
+--      lote            = (producto, fecha de vencimiento). Único.
+--                        Ya NO guarda precio, cantidad, compra ni número de
+--                        lote del proveedor.
+--      compra          = encabezado (proveedor, usuario, forma de pago,
+--                        factura, fecha).
+--      detalle_compra  = qué lote entró en esa compra, con su cantidad y su
+--                        precio unitario (el precio vive UNA sola vez, en la
+--                        compra). PK compuesta (compra, lote).
+--    Producto, proveedor, precio y total se obtienen por JOIN.
+--    El stock de un lote = entradas de compras REGISTRADAS - ventas
+--    (PENDIENTE/COMPLETADA) - bajas.
 --
--- 4) AGREGADO trg_proteger_rol_administrador: el rol ADMINISTRADOR no se
---    puede desactivar (UPDATE rol SET estado=FALSE sobre ese rol se
---    rechaza). El rol EMPLEADO (o cualquier rol nuevo) sí se puede
---    activar/desactivar libremente.
+-- 4) LLAVES PRIMARIAS (comentario 17): ninguna tabla usa AUTO_INCREMENT.
+--    Las llaves las define el analista y las asigna la aplicación:
+--      - Identificadores que ya existen en el negocio: id_producto = código
+--        (SKU), id_proveedor = NIT, id_rol = identificación del rol (HU_04),
+--        id_permiso = código del permiso, catálogos = código de 3 letras.
+--      - Entidades que el sistema numera (número de compra, de venta, etc.):
+--        prefijo + consecutivo con formato fijo, validado con CHECK:
+--        CAT-001, USR-0001, CLI-00001, JOR-000001, CMP-000001,
+--        LOT-000001, BAJ-000001, VTA-000001.
+--      - Detalles: llave compuesta con su maestro, sin código propio:
+--        detalle_compra(compra, lote), detalle_venta(venta, lote),
+--        contacto_proveedor(proveedor, nro_contacto).
+--    Las columnas llave usan ascii_bin (sensibles a mayúsculas, el formato
+--    se valida con REGEXP).
 --
--- 5) CAMBIO sp_validar_lote: el mínimo para fecha_vencimiento pasa de "no
---    anterior a fecha_compra" a "al menos 15 días posterior a
---    fecha_compra". Evita registrar mercancía que llega ya vencida o a
---    punto de vencer. Se compara contra fecha_compra (no CURDATE()) a
---    propósito, para poder seguir registrando compras históricas/atrasadas
---    sin que la fecha del sistema rompa la regla.
+-- 5) FORMA DE PAGO: UNA sola por compra y UNA sola por venta, porque las HU
+--    la piden en singular (HU_39 "forma de pago", HU_58 "método de pago") y
+--    la ficha solo dice que se paga por Nequi, Bancolombia o en efectivo.
+--    No existe tabla de pagos: se eliminó venta_pago (pago dividido en varios
+--    métodos, que la ficha no pide). Quedan compra.id_metodo_pago y
+--    venta.id_metodo_pago, ambos NOT NULL contra metodo_pago.
+--    El valor total de la compra NO se guarda: se calcula
+--    (vw_totales_compra). Igual con los totales de la jornada
+--    (vw_totales_jornada), que pide la ficha en el historial de jornadas.
 --
--- 6) AGREGADO sp_dar_baja_lotes_vencidos(p_id_usuario): da de baja sola
---    (motivo 'Vencimiento') todos los lotes de compras RECIBIDA con
---    fecha_vencimiento < CURDATE() y stock disponible > 0. La BD no puede
---    "despertarse sola" cada día: el backend debe llamarlo una vez al día
---    (cron de aplicación, ej. node-cron a las 00:05) con el id de un
---    usuario "sistema" o del administrador que corre el proceso. No se usó
---    el EVENT SCHEDULER de MySQL porque muchos hostings administrados lo
---    traen desactivado.
+-- 6) usuario.fecha_nacimiento ELIMINADA (decisión de negocio del equipo,
+--    no del profesor): no tiene ningún uso real en la aplicación — la
+--    verificación de edad para productos restringidos usa cliente.fecha_nacimiento,
+--    nunca la del usuario que atiende la venta. Se mantiene únicamente en
+--    cliente.
 --
--- 7) NOTA (no es cambio de esquema): el cliente "Consumidor Final"
---    (numero_documento='0000000000', sin fecha_nacimiento a propósito) no
---    se siembra aquí para no chocar con los IDs fijos de los scripts de
---    datos de prueba — la aplicación lo crea una sola vez en el arranque
---    inicial, igual que el primer admin_principal.
+-- Decisiones heredadas que se mantienen (ver documentación del proyecto):
+--   * rol sin descripción y categoria sin estado (pedido del negocio/ficha).
+--   * venta.id_cliente NULLABLE (venta de mostrador) y verificación de edad.
+--   * venta PENDIENTE -> COMPLETADA (MySQL no tiene triggers diferibles) y
+--     stock reservado desde PENDIENTE.
+--   * UNIQUE (proveedor, factura), ruta_factura, IVA por categoría congelado
+--     por línea de venta, un solo administrador principal, una jornada
+--     abierta, un contacto principal activo por proveedor.
 --
--- 8) CAMBIO compra.estado: pasa de ('REGISTRADA','ANULADA') a
---    ('PENDIENTE','RECIBIDA','ANULADA'), default 'PENDIENTE'. Una compra
---    nace PENDIENTE (pedido hecho al proveedor, aún no llega la mercancía);
---    sus lotes YA se insertan en ese momento (con id_compra, cantidad,
---    fecha_vencimiento, etc. — no hace falta una tabla nueva de detalle),
---    pero mientras la compra sea PENDIENTE esos lotes no cuentan como stock
---    real: vw_stock_producto solo suma lotes de compras RECIBIDA. Al
---    marcar la compra RECIBIDA (mercancía ya llegó), los mismos lotes
---    empiezan a contar de inmediato. Solo se puede editar una compra
---    mientras esté PENDIENTE; RECIBIDA y ANULADA son estados terminales:
---    ninguna de las dos puede editarse ni cambiar de estado nunca más (ni
---    anularse una RECIBIDA, ni reactivarse una ANULADA) — ver
---    trg_validar_anulacion_compra.
---
--- Cambios heredados de revisiones previas (ver docs/DATABASE.md para el
--- detalle completo): venta.id_cliente nullable, UNIQUE
--- (id_proveedor, numero_factura_proveedor) en compra, compra.ruta_factura,
--- flujo de venta PENDIENTE/COMPLETADA/ANULADA con reserva de stock desde
--- la primera línea, bloqueo simétrico de detalle_venta y venta_pago sobre
--- ventas COMPLETADA, categoria.porcentaje_iva + requiere_verificacion_edad,
--- detalle_venta.porcentaje_impuesto_aplicado congelado por trigger.
+-- IMPORTANTE: stockbar_datos_prueba*.sql y los casos de prueba anteriores
+-- quedan obsoletos (cambiaron llaves y tablas). Usar stockbar_pruebas_v3.sql.
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS stockbar
@@ -102,14 +94,15 @@ DROP TABLE IF EXISTS venta_pago;
 DROP TABLE IF EXISTS detalle_venta;
 DROP TABLE IF EXISTS venta;
 DROP TABLE IF EXISTS baja_inventario;
+DROP TABLE IF EXISTS detalle_compra;
 DROP TABLE IF EXISTS lote;
 DROP TABLE IF EXISTS compra;
 DROP TABLE IF EXISTS jornada;
-DROP TABLE IF EXISTS producto_proveedor;
+DROP TABLE IF EXISTS producto_proveedor;      -- retirada en v2
 DROP TABLE IF EXISTS contacto_proveedor;
 DROP TABLE IF EXISTS proveedor;
 DROP TABLE IF EXISTS cliente;
-DROP TABLE IF EXISTS recuperacion_contrasena;
+DROP TABLE IF EXISTS recuperacion_contrasena; -- retirada en v2
 DROP TABLE IF EXISTS usuario;
 DROP TABLE IF EXISTS rol_permiso;
 DROP TABLE IF EXISTS permiso;
@@ -125,63 +118,57 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- CATÁLOGOS
 -- -------------------------
 CREATE TABLE rol (
-    id_rol SMALLINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    id_rol VARCHAR(10) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
     nombre VARCHAR(40) NOT NULL UNIQUE,
-    -- QUITADO: se decidió que el rol NO lleva descripción (pedido explícito
-    -- del negocio), aunque la matriz de historias de usuario la menciona
-    -- como campo opcional. El nombre del rol es suficiente.
-    estado BOOLEAN NOT NULL DEFAULT TRUE
+    estado BOOLEAN NOT NULL DEFAULT TRUE,
+    CONSTRAINT ck_rol_id CHECK (id_rol REGEXP '^[A-Z0-9_-]{2,10}$')
 ) ENGINE=InnoDB;
 
 CREATE TABLE permiso (
-    id_permiso SMALLINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    nombre VARCHAR(60) NOT NULL UNIQUE,
-    -- QUITADO: descripcion por permiso no se usa en ningún formulario (el
-    -- permiso solo se asigna a un rol, no se gestiona como entidad propia
-    -- con ficha detallada); nombre + modulo ya son autoexplicativos.
-    modulo VARCHAR(40) NOT NULL
+    id_permiso VARCHAR(30) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+    modulo VARCHAR(40) NOT NULL,
+    CONSTRAINT ck_permiso_id CHECK (id_permiso REGEXP '^[A-Z_]{3,30}$')
 ) ENGINE=InnoDB;
 
 CREATE TABLE rol_permiso (
-    id_rol SMALLINT UNSIGNED NOT NULL,
-    id_permiso SMALLINT UNSIGNED NOT NULL,
+    id_rol VARCHAR(10) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    id_permiso VARCHAR(30) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     PRIMARY KEY (id_rol, id_permiso),
-    FOREIGN KEY (id_rol) REFERENCES rol(id_rol),
+    -- La HU_04 permite editar la identificación del rol: se propaga.
+    FOREIGN KEY (id_rol) REFERENCES rol(id_rol) ON UPDATE CASCADE,
     FOREIGN KEY (id_permiso) REFERENCES permiso(id_permiso)
 ) ENGINE=InnoDB;
 
 CREATE TABLE metodo_pago (
-    id_metodo_pago SMALLINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    nombre VARCHAR(30) NOT NULL UNIQUE
+    id_metodo_pago CHAR(3) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+    nombre VARCHAR(30) NOT NULL UNIQUE,
+    estado BOOLEAN NOT NULL DEFAULT TRUE,
+    CONSTRAINT ck_metodo_pago_id CHECK (id_metodo_pago REGEXP '^[A-Z]{3}$')
 ) ENGINE=InnoDB;
 
 CREATE TABLE unidad_medida (
-    id_unidad_medida SMALLINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    nombre VARCHAR(30) NOT NULL UNIQUE
+    id_unidad_medida CHAR(3) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+    nombre VARCHAR(30) NOT NULL UNIQUE,
+    CONSTRAINT ck_unidad_medida_id CHECK (id_unidad_medida REGEXP '^[A-Z]{3}$')
 ) ENGINE=InnoDB;
 
 CREATE TABLE motivo_baja (
-    id_motivo_baja SMALLINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    nombre VARCHAR(40) NOT NULL UNIQUE
+    id_motivo_baja CHAR(3) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+    nombre VARCHAR(40) NOT NULL UNIQUE,
+    CONSTRAINT ck_motivo_baja_id CHECK (id_motivo_baja REGEXP '^[A-Z]{3}$')
 ) ENGINE=InnoDB;
 
 CREATE TABLE categoria (
-    id_categoria INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    id_categoria CHAR(7) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
     nombre VARCHAR(50) NOT NULL UNIQUE,
     descripcion VARCHAR(200),
     margen_defecto_porcentaje DECIMAL(5,2) NOT NULL,
-    -- AGREGADO: IVA de la categoría (19.00 general, 5.00 para Licores por la
-    -- tarifa diferencial de licores/vinos/aperitivos >15° en Colombia). Se
-    -- congela por línea en detalle_venta.porcentaje_impuesto_aplicado para
-    -- que un cambio futuro de tarifa no altere ventas ya registradas.
+    -- IVA de la categoría (19.00 general, 5.00 Licores). Se congela por
+    -- línea en detalle_venta.porcentaje_impuesto_aplicado.
     porcentaje_iva DECIMAL(5,2) NOT NULL DEFAULT 19.00,
     requiere_verificacion_edad BOOLEAN NOT NULL DEFAULT FALSE,
-    -- QUITADO: la ficha aprobada NO lista "cambio de estado" en el alcance
-    -- del subproceso de categorías (sí lo lista para producto, proveedor,
-    -- compra, cliente, venta, usuario y rol) — a diferencia de la matriz de
-    -- historias de usuario, que sí la menciona. Se sigue el criterio de la
-    -- ficha aprobada por ser el documento de alcance vigente; si el negocio
-    -- confirma que sí la necesita, es un ALTER TABLE de una sola columna.
+    -- Sin "estado": la ficha no lista cambio de estado para categorías.
+    CONSTRAINT ck_categoria_id CHECK (id_categoria REGEXP '^CAT-[0-9]{3}$'),
     CONSTRAINT ck_categoria_margen CHECK (margen_defecto_porcentaje >= 0),
     CONSTRAINT ck_categoria_iva CHECK (porcentaje_iva >= 0 AND porcentaje_iva <= 100)
 ) ENGINE=InnoDB;
@@ -190,50 +177,44 @@ CREATE TABLE categoria (
 -- SEGURIDAD / USUARIOS
 -- -------------------------
 CREATE TABLE usuario (
-    id_usuario INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    id_usuario CHAR(8) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
     tipo_documento VARCHAR(5) NOT NULL,
     numero_documento VARCHAR(20) NOT NULL,
     nombres VARCHAR(60) NOT NULL,
     apellidos VARCHAR(60) NOT NULL,
     correo VARCHAR(100) NOT NULL UNIQUE,
     telefono VARCHAR(20),
-    id_rol SMALLINT UNSIGNED NOT NULL,
+    id_rol VARCHAR(10) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     contrasena_hash VARCHAR(255) NOT NULL,
+    -- Recuperación de contraseña (Subproceso de Acceso): hash del token
+    -- enviado por correo y su vencimiento. Ambos NULL = sin recuperación.
+    token_recuperacion_hash VARCHAR(255) NULL,
+    token_recuperacion_expira TIMESTAMP NULL,
     fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     estado BOOLEAN NOT NULL DEFAULT TRUE,
-    -- AGREGADO: marca al primer usuario ADMINISTRADOR que existió en el
-    -- sistema (el que crea el flujo de instalación inicial). Nunca se
-    -- expone editable en el UI; la app la fija en TRUE una sola vez, al
-    -- crear ese primer admin. Protege contra el bloqueo total del sistema
-    -- (nadie puede desactivar a ese usuario, ni siquiera él mismo).
+    -- Primer ADMINISTRADOR del sistema: nadie puede desactivarlo.
     es_admin_principal BOOLEAN NOT NULL DEFAULT FALSE,
-    -- CAMBIO: mismo truco de columna GENERATED que ya usan jornada y
-    -- contacto_proveedor para simular un índice único parcial en MySQL:
-    -- garantiza que a lo sumo un usuario en todo el sistema tenga esta marca.
-    id_usuario_admin_principal INT UNSIGNED
+    -- Columna generada = índice único parcial (a lo sumo un admin principal).
+    admin_principal_unico TINYINT
         GENERATED ALWAYS AS (CASE WHEN es_admin_principal = TRUE THEN 1 END) STORED,
-    UNIQUE KEY uq_admin_principal_unico (id_usuario_admin_principal),
+    UNIQUE KEY uq_admin_principal_unico (admin_principal_unico),
+    UNIQUE KEY uq_usuario_token_recuperacion (token_recuperacion_hash),
+    CONSTRAINT ck_usuario_id CHECK (id_usuario REGEXP '^USR-[0-9]{4}$'),
     CONSTRAINT ck_usuario_tipo_documento CHECK (tipo_documento IN ('CC','CE','TI','PAS','NIT')),
+    CONSTRAINT ck_usuario_token_coherente CHECK (
+        (token_recuperacion_hash IS NULL AND token_recuperacion_expira IS NULL)
+        OR
+        (token_recuperacion_hash IS NOT NULL AND token_recuperacion_expira IS NOT NULL)
+    ),
     CONSTRAINT uq_usuario_documento UNIQUE (tipo_documento, numero_documento),
-    FOREIGN KEY (id_rol) REFERENCES rol(id_rol)
-) ENGINE=InnoDB;
-
-CREATE TABLE recuperacion_contrasena (
-    id_token INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    id_usuario INT UNSIGNED NOT NULL,
-    token VARCHAR(255) NOT NULL UNIQUE,
-    fecha_generacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    fecha_expiracion TIMESTAMP NOT NULL,
-    usado BOOLEAN NOT NULL DEFAULT FALSE,
-    CONSTRAINT ck_recuperacion_fechas CHECK (fecha_expiracion > fecha_generacion),
-    FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
+    FOREIGN KEY (id_rol) REFERENCES rol(id_rol) ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
 -- -------------------------
 -- TERCEROS
 -- -------------------------
 CREATE TABLE cliente (
-    id_cliente INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    id_cliente CHAR(9) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
     tipo_documento VARCHAR(5) NOT NULL,
     numero_documento VARCHAR(20) NOT NULL,
     nombres VARCHAR(60) NOT NULL,
@@ -246,16 +227,14 @@ CREATE TABLE cliente (
     correo VARCHAR(100),
     fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     estado BOOLEAN NOT NULL DEFAULT TRUE,
+    CONSTRAINT ck_cliente_id CHECK (id_cliente REGEXP '^CLI-[0-9]{5}$'),
     CONSTRAINT ck_cliente_tipo_documento CHECK (tipo_documento IN ('CC','CE','TI','PAS','NIT')),
     CONSTRAINT uq_cliente_documento UNIQUE (tipo_documento, numero_documento)
-    -- CAMBIO: la validación "fecha_nacimiento no puede ser futura" se movió a
-    -- un trigger (trg_validar_cliente_ins/upd) porque MySQL prohíbe funciones
-    -- no deterministas (CURRENT_DATE) dentro de un CHECK constraint.
+    -- fecha_nacimiento no futura: trigger (CURDATE no es válido en CHECK).
 ) ENGINE=InnoDB;
 
 CREATE TABLE proveedor (
-    id_proveedor INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    nit VARCHAR(20) NOT NULL UNIQUE,
+    id_proveedor VARCHAR(20) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,           -- NIT del proveedor
     razon_social VARCHAR(120) NOT NULL,
     nombre_comercial VARCHAR(120),
     ciudad VARCHAR(60),
@@ -263,12 +242,13 @@ CREATE TABLE proveedor (
     telefono_principal VARCHAR(20),
     correo_principal VARCHAR(100),
     fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    estado BOOLEAN NOT NULL DEFAULT TRUE
+    estado BOOLEAN NOT NULL DEFAULT TRUE,
+    CONSTRAINT ck_proveedor_nit CHECK (id_proveedor REGEXP '^[0-9]{5,15}(-[0-9])?$')
 ) ENGINE=InnoDB;
 
 CREATE TABLE contacto_proveedor (
-    id_contacto INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    id_proveedor INT UNSIGNED NOT NULL,
+    id_proveedor VARCHAR(20) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    nro_contacto SMALLINT UNSIGNED NOT NULL,
     nombres VARCHAR(60) NOT NULL,
     apellidos VARCHAR(60) NOT NULL,
     cargo VARCHAR(60),
@@ -276,14 +256,12 @@ CREATE TABLE contacto_proveedor (
     correo VARCHAR(100),
     es_principal BOOLEAN NOT NULL DEFAULT FALSE,
     estado BOOLEAN NOT NULL DEFAULT TRUE,
-    -- CAMBIO: MySQL no soporta CREATE UNIQUE INDEX ... WHERE (índice parcial
-    -- de Postgres). Se simula con una columna generada que solo tiene valor
-    -- cuando la fila es "contacto principal activo"; varias filas con NULL
-    -- coexisten sin problema, así que el UNIQUE KEY solo choca cuando dos
-    -- contactos del mismo proveedor son principal+activo a la vez.
-    id_proveedor_principal_activo INT UNSIGNED
+    -- Índice único parcial simulado: un solo contacto principal activo.
+    id_proveedor_principal_activo VARCHAR(20) CHARACTER SET ascii COLLATE ascii_bin
         GENERATED ALWAYS AS (CASE WHEN es_principal = TRUE AND estado = TRUE THEN id_proveedor END) STORED,
+    PRIMARY KEY (id_proveedor, nro_contacto),
     UNIQUE KEY uq_contacto_principal_activo (id_proveedor_principal_activo),
+    CONSTRAINT ck_contacto_nro CHECK (nro_contacto > 0),
     FOREIGN KEY (id_proveedor) REFERENCES proveedor(id_proveedor)
 ) ENGINE=InnoDB;
 
@@ -291,49 +269,41 @@ CREATE TABLE contacto_proveedor (
 -- PRODUCTOS
 -- -------------------------
 CREATE TABLE producto (
-    id_producto INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    codigo_sku VARCHAR(30) NOT NULL UNIQUE,
+    id_producto VARCHAR(30) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,            -- código (SKU) del producto
     nombre VARCHAR(120) NOT NULL,
     descripcion VARCHAR(255),
-    id_categoria INT UNSIGNED NOT NULL,
-    id_unidad_medida SMALLINT UNSIGNED NOT NULL,
+    id_categoria CHAR(7) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    id_unidad_medida CHAR(3) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     margen_personalizado_porcentaje DECIMAL(5,2),
+    precio_venta_actual DECIMAL(12,2) NOT NULL,                 -- V4: precio final con IVA; el margen solo sugiere. Histórico: detalle_venta
     maneja_vencimiento BOOLEAN NOT NULL DEFAULT TRUE,
     stock_minimo DECIMAL(10,2) NOT NULL DEFAULT 0,
     estado BOOLEAN NOT NULL DEFAULT TRUE,
     fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT ck_producto_codigo CHECK (id_producto REGEXP '^[A-Z0-9-]{3,30}$'),
     CONSTRAINT ck_producto_margen CHECK (margen_personalizado_porcentaje IS NULL OR margen_personalizado_porcentaje >= 0),
     CONSTRAINT ck_producto_stock_minimo CHECK (stock_minimo >= 0),
+    CONSTRAINT ck_producto_precio_venta CHECK (precio_venta_actual >= 0),
     FOREIGN KEY (id_categoria) REFERENCES categoria(id_categoria),
     FOREIGN KEY (id_unidad_medida) REFERENCES unidad_medida(id_unidad_medida)
-) ENGINE=InnoDB;
-
-CREATE TABLE producto_proveedor (
-    id_producto INT UNSIGNED NOT NULL,
-    id_proveedor INT UNSIGNED NOT NULL,
-    precio_referencia DECIMAL(12,2),
-    estado BOOLEAN NOT NULL DEFAULT TRUE,
-    PRIMARY KEY (id_producto, id_proveedor),
-    CONSTRAINT ck_producto_proveedor_precio CHECK (precio_referencia IS NULL OR precio_referencia >= 0),
-    FOREIGN KEY (id_producto) REFERENCES producto(id_producto),
-    FOREIGN KEY (id_proveedor) REFERENCES proveedor(id_proveedor)
 ) ENGINE=InnoDB;
 
 -- -------------------------
 -- JORNADAS
 -- -------------------------
 CREATE TABLE jornada (
-    id_jornada INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    id_usuario_apertura INT UNSIGNED NOT NULL,
+    id_jornada CHAR(10) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+    id_usuario_apertura CHAR(8) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     fecha_hora_apertura TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    id_usuario_cierre INT UNSIGNED,
+    id_usuario_cierre CHAR(8) CHARACTER SET ascii COLLATE ascii_bin,
     fecha_hora_cierre TIMESTAMP NULL,
     estado VARCHAR(10) NOT NULL DEFAULT 'ABIERTA',
     observaciones VARCHAR(255),
-    -- CAMBIO: reemplaza CREATE UNIQUE INDEX ... WHERE estado='ABIERTA' de Postgres.
+    -- Índice único parcial simulado: una sola jornada ABIERTA.
     estado_abierta_unico VARCHAR(10)
         GENERATED ALWAYS AS (CASE WHEN estado = 'ABIERTA' THEN 'ABIERTA' END) STORED,
     UNIQUE KEY uq_una_jornada_abierta (estado_abierta_unico),
+    CONSTRAINT ck_jornada_id CHECK (id_jornada REGEXP '^JOR-[0-9]{6}$'),
     CONSTRAINT ck_jornada_estado CHECK (estado IN ('ABIERTA','CERRADA')),
     CONSTRAINT ck_jornada_cierre_coherente CHECK (
         (estado = 'ABIERTA' AND fecha_hora_cierre IS NULL AND id_usuario_cierre IS NULL)
@@ -349,46 +319,63 @@ CREATE TABLE jornada (
 -- COMPRAS / LOTES
 -- -------------------------
 CREATE TABLE compra (
-    id_compra INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    id_proveedor INT UNSIGNED NOT NULL,
-    id_usuario INT UNSIGNED NOT NULL,
+    id_compra CHAR(10) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,              -- número de compra
+    id_proveedor VARCHAR(20) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    id_usuario CHAR(8) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    id_metodo_pago CHAR(3) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,            -- forma de pago (HU_39)
     numero_factura_proveedor VARCHAR(40),
     ruta_factura VARCHAR(255),
     fecha_compra DATE NOT NULL,
     fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    estado VARCHAR(12) NOT NULL DEFAULT 'PENDIENTE',
+    estado VARCHAR(12) NOT NULL DEFAULT 'REGISTRADA',
     observaciones VARCHAR(255),
-    CONSTRAINT ck_compra_estado CHECK (estado IN ('PENDIENTE','RECIBIDA','ANULADA')),
+    CONSTRAINT ck_compra_id CHECK (id_compra REGEXP '^CMP-[0-9]{6}$'),
+    CONSTRAINT ck_compra_estado CHECK (estado IN ('REGISTRADA','ANULADA')),
     CONSTRAINT uq_factura_proveedor UNIQUE (id_proveedor, numero_factura_proveedor),
     FOREIGN KEY (id_proveedor) REFERENCES proveedor(id_proveedor),
-    FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
+    FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario),
+    FOREIGN KEY (id_metodo_pago) REFERENCES metodo_pago(id_metodo_pago)
 ) ENGINE=InnoDB;
 
+-- Un lote ES la fecha de vencimiento de un producto (comentario 12).
+-- No guarda precio ni cantidad: eso pertenece a la compra (detalle_compra).
 CREATE TABLE lote (
-    id_lote INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    id_compra INT UNSIGNED NOT NULL,
-    id_producto INT UNSIGNED NOT NULL,
+    id_lote CHAR(10) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+    id_producto VARCHAR(30) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    fecha_vencimiento DATE NULL,              -- NULL = producto sin vencimiento
+    -- Hace único (producto, vencimiento) también cuando no hay fecha.
+    fecha_vencimiento_clave DATE
+        GENERATED ALWAYS AS (IFNULL(fecha_vencimiento, '9999-12-31')) STORED,
+    CONSTRAINT ck_lote_id CHECK (id_lote REGEXP '^LOT-[0-9]{6}$'),
+    CONSTRAINT uq_lote_producto_vencimiento UNIQUE (id_producto, fecha_vencimiento_clave),
+    FOREIGN KEY (id_producto) REFERENCES producto(id_producto)
+) ENGINE=InnoDB;
+
+-- Detalle de la compra (maestro-detalle): qué lote entró, cuánto y a qué precio.
+CREATE TABLE detalle_compra (
+    id_compra CHAR(10) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    id_lote CHAR(10) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     cantidad DECIMAL(10,2) NOT NULL,
     precio_unitario_compra DECIMAL(12,2) NOT NULL,
-    fecha_vencimiento DATE,
-    numero_lote_proveedor VARCHAR(40),
-    CONSTRAINT ck_lote_cantidad CHECK (cantidad > 0),
-    CONSTRAINT ck_lote_precio CHECK (precio_unitario_compra >= 0),
+    PRIMARY KEY (id_compra, id_lote),
+    CONSTRAINT ck_detalle_compra_cantidad CHECK (cantidad > 0),
+    CONSTRAINT ck_detalle_compra_precio CHECK (precio_unitario_compra >= 0),
     FOREIGN KEY (id_compra) REFERENCES compra(id_compra),
-    FOREIGN KEY (id_producto) REFERENCES producto(id_producto)
+    FOREIGN KEY (id_lote) REFERENCES lote(id_lote)
 ) ENGINE=InnoDB;
 
 -- -------------------------
 -- BAJAS
 -- -------------------------
 CREATE TABLE baja_inventario (
-    id_baja INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    id_lote INT UNSIGNED NOT NULL,
-    id_motivo_baja SMALLINT UNSIGNED NOT NULL,
+    id_baja CHAR(10) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+    id_lote CHAR(10) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    id_motivo_baja CHAR(3) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     cantidad DECIMAL(10,2) NOT NULL,
     fecha_hora TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    id_usuario INT UNSIGNED NOT NULL,
+    id_usuario CHAR(8) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     observaciones VARCHAR(255),
+    CONSTRAINT ck_baja_id CHECK (id_baja REGEXP '^BAJ-[0-9]{6}$'),
     CONSTRAINT ck_baja_cantidad CHECK (cantidad > 0),
     FOREIGN KEY (id_lote) REFERENCES lote(id_lote),
     FOREIGN KEY (id_motivo_baja) REFERENCES motivo_baja(id_motivo_baja),
@@ -399,26 +386,32 @@ CREATE TABLE baja_inventario (
 -- VENTAS
 -- -------------------------
 CREATE TABLE venta (
-    id_venta INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    id_cliente INT UNSIGNED NULL,
-    id_jornada INT UNSIGNED NOT NULL,
-    id_usuario INT UNSIGNED NOT NULL,
+    id_venta CHAR(10) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,               -- número de venta / factura
+    id_cliente CHAR(9) CHARACTER SET ascii COLLATE ascii_bin NULL,                    -- NULL = venta de mostrador
+    id_jornada CHAR(10) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    id_usuario CHAR(8) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    id_metodo_pago CHAR(3) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,            -- método de pago (HU_58)
     fecha_hora_venta TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     estado VARCHAR(12) NOT NULL DEFAULT 'PENDIENTE',
     observaciones VARCHAR(255),
+    CONSTRAINT ck_venta_id CHECK (id_venta REGEXP '^VTA-[0-9]{6}$'),
     CONSTRAINT ck_venta_estado CHECK (estado IN ('PENDIENTE','COMPLETADA','ANULADA')),
     FOREIGN KEY (id_cliente) REFERENCES cliente(id_cliente),
     FOREIGN KEY (id_jornada) REFERENCES jornada(id_jornada),
-    FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
+    FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario),
+    FOREIGN KEY (id_metodo_pago) REFERENCES metodo_pago(id_metodo_pago)
 ) ENGINE=InnoDB;
 
 CREATE TABLE detalle_venta (
-    id_detalle_venta INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    id_venta INT UNSIGNED NOT NULL,
-    id_lote INT UNSIGNED NOT NULL,
+    id_venta CHAR(10) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    id_lote CHAR(10) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     cantidad DECIMAL(10,2) NOT NULL,
+    -- Precio FINAL que paga el cliente (incluye IVA). Se conserva porque el
+    -- precio cambia en el tiempo y no se reescribe el histórico.
     precio_unitario_venta DECIMAL(12,2) NOT NULL,
+    -- IVA congelado por línea; lo rellena el trigger desde la categoría.
     porcentaje_impuesto_aplicado DECIMAL(5,2) NOT NULL DEFAULT 0,
+    PRIMARY KEY (id_venta, id_lote),
     CONSTRAINT ck_detalle_venta_cantidad CHECK (cantidad > 0),
     CONSTRAINT ck_detalle_venta_precio CHECK (precio_unitario_venta >= 0),
     CONSTRAINT ck_detalle_venta_iva CHECK (porcentaje_impuesto_aplicado >= 0 AND porcentaje_impuesto_aplicado <= 100),
@@ -426,33 +419,28 @@ CREATE TABLE detalle_venta (
     FOREIGN KEY (id_lote) REFERENCES lote(id_lote)
 ) ENGINE=InnoDB;
 
-CREATE TABLE venta_pago (
-    id_venta_pago INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    id_venta INT UNSIGNED NOT NULL,
-    id_metodo_pago SMALLINT UNSIGNED NOT NULL,
-    monto DECIMAL(12,2) NOT NULL,
-    referencia_transaccion VARCHAR(60),
-    CONSTRAINT ck_venta_pago_monto CHECK (monto > 0),
-    FOREIGN KEY (id_venta) REFERENCES venta(id_venta),
-    FOREIGN KEY (id_metodo_pago) REFERENCES metodo_pago(id_metodo_pago)
-) ENGINE=InnoDB;
-
 -- ============================================================
 -- FUNCIONES AUXILIARES
 -- ============================================================
 
+-- Stock de un lote = entradas (compras REGISTRADAS) - ventas PENDIENTE o
+-- COMPLETADA - bajas. Las PENDIENTE descuentan para reservar el stock.
 DROP FUNCTION IF EXISTS fn_stock_lote;
 DELIMITER $$
-CREATE FUNCTION fn_stock_lote(p_id_lote INT UNSIGNED)
+CREATE FUNCTION fn_stock_lote(p_id_lote CHAR(10) CHARACTER SET ascii COLLATE ascii_bin)
 RETURNS DECIMAL(10,2)
 DETERMINISTIC
 READS SQL DATA
 BEGIN
-    DECLARE v_cantidad DECIMAL(10,2);
+    DECLARE v_ingresado DECIMAL(10,2);
     DECLARE v_vendido DECIMAL(10,2);
     DECLARE v_dado_baja DECIMAL(10,2);
 
-    SELECT cantidad INTO v_cantidad FROM lote WHERE id_lote = p_id_lote;
+    SELECT COALESCE(SUM(dc.cantidad), 0) INTO v_ingresado
+    FROM detalle_compra dc
+    JOIN compra c ON c.id_compra = dc.id_compra
+    WHERE dc.id_lote = p_id_lote
+      AND c.estado = 'REGISTRADA';
 
     SELECT COALESCE(SUM(dv.cantidad), 0) INTO v_vendido
     FROM detalle_venta dv
@@ -464,13 +452,13 @@ BEGIN
     FROM baja_inventario bi
     WHERE bi.id_lote = p_id_lote;
 
-    RETURN v_cantidad - v_vendido - v_dado_baja;
+    RETURN v_ingresado - v_vendido - v_dado_baja;
 END$$
 DELIMITER ;
 
 DROP FUNCTION IF EXISTS fn_total_venta;
 DELIMITER $$
-CREATE FUNCTION fn_total_venta(p_id_venta INT UNSIGNED)
+CREATE FUNCTION fn_total_venta(p_id_venta CHAR(10) CHARACTER SET ascii COLLATE ascii_bin)
 RETURNS DECIMAL(14,2)
 DETERMINISTIC
 READS SQL DATA
@@ -483,9 +471,11 @@ BEGIN
 END$$
 DELIMITER ;
 
+-- Desglose de IVA: el precio de venta ya incluye IVA; la base gravable se
+-- obtiene descontándolo con la tasa congelada en cada línea.
 DROP FUNCTION IF EXISTS fn_base_gravable_venta;
 DELIMITER $$
-CREATE FUNCTION fn_base_gravable_venta(p_id_venta INT UNSIGNED)
+CREATE FUNCTION fn_base_gravable_venta(p_id_venta CHAR(10) CHARACTER SET ascii COLLATE ascii_bin)
 RETURNS DECIMAL(14,2)
 DETERMINISTIC
 READS SQL DATA
@@ -501,7 +491,7 @@ DELIMITER ;
 
 DROP FUNCTION IF EXISTS fn_iva_venta;
 DELIMITER $$
-CREATE FUNCTION fn_iva_venta(p_id_venta INT UNSIGNED)
+CREATE FUNCTION fn_iva_venta(p_id_venta CHAR(10) CHARACTER SET ascii COLLATE ascii_bin)
 RETURNS DECIMAL(14,2)
 DETERMINISTIC
 READS SQL DATA
@@ -510,20 +500,7 @@ BEGIN
 END$$
 DELIMITER ;
 
-DROP FUNCTION IF EXISTS fn_total_pagado;
-DELIMITER $$
-CREATE FUNCTION fn_total_pagado(p_id_venta INT UNSIGNED)
-RETURNS DECIMAL(14,2)
-DETERMINISTIC
-READS SQL DATA
-BEGIN
-    DECLARE v_total DECIMAL(14,2);
-    SELECT COALESCE(SUM(monto), 0) INTO v_total
-    FROM venta_pago
-    WHERE id_venta = p_id_venta;
-    RETURN v_total;
-END$$
-DELIMITER ;
+DROP FUNCTION IF EXISTS fn_total_pagado;      -- retirada en v3.1
 
 -- ============================================================
 -- VALIDACIÓN DE CLIENTE (fecha de nacimiento no futura)
@@ -556,13 +533,8 @@ END$$
 DELIMITER ;
 
 -- ============================================================
--- PROTECCIÓN DE ROL ADMINISTRADOR Y ADMIN PRINCIPAL
--- AGREGADO: pedido explícito del negocio — el rol ADMINISTRADOR nunca se
--- puede desactivar, y el primer usuario administrador del sistema tampoco
--- (ni él mismo). "Solo un administrador puede desactivar a otro" y "nadie
--- puede desactivarse a sí mismo" quedan como reglas de la capa de
--- aplicación (dependen de quién hizo la petición autenticada); aquí solo
--- se protege el dato en sí.
+-- PROTECCIÓN DEL ROL ADMINISTRADOR Y DEL ADMIN PRINCIPAL
+-- (que nadie se desactive a sí mismo es regla de la capa de aplicación)
 -- ============================================================
 
 DROP TRIGGER IF EXISTS trg_proteger_rol_administrador;
@@ -591,44 +563,8 @@ END$$
 DELIMITER ;
 
 -- ============================================================
--- VALIDACIÓN DE LOTES
+-- LOTES (producto + fecha de vencimiento)
 -- ============================================================
-
-DROP PROCEDURE IF EXISTS sp_validar_lote;
-DELIMITER $$
-CREATE PROCEDURE sp_validar_lote(
-    IN p_id_producto INT UNSIGNED,
-    IN p_fecha_vencimiento DATE,
-    IN p_id_compra INT UNSIGNED
-)
-BEGIN
-    DECLARE v_maneja_vencimiento BOOLEAN;
-    DECLARE v_fecha_compra DATE;
-
-    SELECT maneja_vencimiento INTO v_maneja_vencimiento
-    FROM producto WHERE id_producto = p_id_producto;
-
-    SELECT fecha_compra INTO v_fecha_compra
-    FROM compra WHERE id_compra = p_id_compra;
-
-    IF v_maneja_vencimiento = TRUE AND p_fecha_vencimiento IS NULL THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El producto requiere fecha de vencimiento.';
-    END IF;
-
-    -- CAMBIO: se endurece de "no anterior a la fecha de compra" a "al menos
-    -- 15 días después de la fecha de compra" — no se pueden registrar
-    -- productos ya vencidos o próximos a vencer. Se compara contra
-    -- fecha_compra y no CURDATE() para no romper el registro de compras
-    -- históricas/atrasadas.
-    -- MESSAGE_TEXT de SIGNAL está limitado a 128 caracteres en MySQL; un
-    -- mensaje más largo aquí falla con error 1648 "Data too long for
-    -- condition item 'MESSAGE_TEXT'" en vez de mostrar la regla de negocio.
-    IF p_fecha_vencimiento IS NOT NULL AND p_fecha_vencimiento < DATE_ADD(v_fecha_compra, INTERVAL 15 DAY) THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'La fecha de vencimiento debe ser al menos 15 días posterior a la fecha de compra (sin mercancía vencida o próxima a vencer).';
-    END IF;
-END$$
-DELIMITER ;
 
 DROP TRIGGER IF EXISTS trg_validar_lote_ins;
 DROP TRIGGER IF EXISTS trg_validar_lote_upd;
@@ -636,13 +572,137 @@ DELIMITER $$
 CREATE TRIGGER trg_validar_lote_ins BEFORE INSERT ON lote
 FOR EACH ROW
 BEGIN
-    CALL sp_validar_lote(NEW.id_producto, NEW.fecha_vencimiento, NEW.id_compra);
+    DECLARE v_maneja_vencimiento BOOLEAN;
+    SELECT maneja_vencimiento INTO v_maneja_vencimiento
+    FROM producto WHERE id_producto = NEW.id_producto;
+
+    IF v_maneja_vencimiento = TRUE AND NEW.fecha_vencimiento IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El producto requiere fecha de vencimiento.';
+    END IF;
 END$$
 
+-- La identidad del lote (producto + vencimiento) no se edita: si la compra
+-- cambia de vencimiento, la línea pasa a apuntar a otro lote.
 CREATE TRIGGER trg_validar_lote_upd BEFORE UPDATE ON lote
 FOR EACH ROW
 BEGIN
-    CALL sp_validar_lote(NEW.id_producto, NEW.fecha_vencimiento, NEW.id_compra);
+    IF NEW.id_producto <> OLD.id_producto OR NOT (NEW.fecha_vencimiento <=> OLD.fecha_vencimiento) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El producto y la fecha de vencimiento de un lote no se pueden modificar.';
+    END IF;
+END$$
+DELIMITER ;
+
+-- ============================================================
+-- DETALLE DE COMPRA
+-- ============================================================
+
+-- Vencimiento al menos 15 días posterior a la fecha de compra (pedido del
+-- negocio). Se compara con fecha_compra y no con CURDATE() para poder
+-- registrar compras históricas.
+DROP PROCEDURE IF EXISTS sp_validar_vencimiento_compra;
+DELIMITER $$
+CREATE PROCEDURE sp_validar_vencimiento_compra(
+    IN p_id_compra CHAR(10) CHARACTER SET ascii COLLATE ascii_bin,
+    IN p_fecha_vencimiento DATE
+)
+BEGIN
+    DECLARE v_fecha_compra DATE;
+    DECLARE v_estado VARCHAR(12);
+
+    SELECT fecha_compra, estado INTO v_fecha_compra, v_estado
+    FROM compra WHERE id_compra = p_id_compra;
+
+    IF v_estado IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La compra no existe.';
+    END IF;
+
+    IF v_estado = 'ANULADA' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No se pueden modificar los detalles de una compra ANULADA.';
+    END IF;
+
+    IF p_fecha_vencimiento IS NOT NULL
+       AND p_fecha_vencimiento < DATE_ADD(v_fecha_compra, INTERVAL 15 DAY) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El vencimiento debe ser al menos 15 días posterior a la fecha de compra.';
+    END IF;
+END$$
+DELIMITER ;
+
+DROP TRIGGER IF EXISTS trg_validar_detalle_compra_ins;
+DROP TRIGGER IF EXISTS trg_validar_detalle_compra_upd;
+DROP TRIGGER IF EXISTS trg_validar_detalle_compra_del;
+DELIMITER $$
+CREATE TRIGGER trg_validar_detalle_compra_ins BEFORE INSERT ON detalle_compra
+FOR EACH ROW
+BEGIN
+    DECLARE v_vencimiento DATE;
+    SELECT fecha_vencimiento INTO v_vencimiento FROM lote WHERE id_lote = NEW.id_lote;
+    CALL sp_validar_vencimiento_compra(NEW.id_compra, v_vencimiento);
+END$$
+
+-- Editar una compra no puede dejar un lote con stock negativo (por ejemplo
+-- reducir una cantidad que ya se vendió).
+CREATE TRIGGER trg_validar_detalle_compra_upd BEFORE UPDATE ON detalle_compra
+FOR EACH ROW
+BEGIN
+    DECLARE v_vencimiento DATE;
+    DECLARE v_stock_resultante DECIMAL(10,2);
+
+    SELECT fecha_vencimiento INTO v_vencimiento FROM lote WHERE id_lote = NEW.id_lote;
+    CALL sp_validar_vencimiento_compra(NEW.id_compra, v_vencimiento);
+
+    SET v_stock_resultante = fn_stock_lote(OLD.id_lote) - OLD.cantidad
+        + IF(NEW.id_lote = OLD.id_lote AND NEW.id_compra = OLD.id_compra, NEW.cantidad, 0);
+    IF v_stock_resultante < 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No se puede reducir esta entrada: el lote ya tiene ventas o bajas que la requieren.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_validar_detalle_compra_del BEFORE DELETE ON detalle_compra
+FOR EACH ROW
+BEGIN
+    DECLARE v_estado VARCHAR(12);
+    SELECT estado INTO v_estado FROM compra WHERE id_compra = OLD.id_compra;
+    IF v_estado = 'REGISTRADA' AND fn_stock_lote(OLD.id_lote) - OLD.cantidad < 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No se puede eliminar esta entrada: el lote ya tiene ventas o bajas que la requieren.';
+    END IF;
+END$$
+DELIMITER ;
+
+-- Conveniencia para la aplicación: busca el lote (producto + vencimiento) y
+-- si no existe lo crea con el código que asignó la aplicación; luego agrega
+-- la línea a la compra. Llamar dentro de la transacción de la compra.
+DROP PROCEDURE IF EXISTS sp_agregar_detalle_compra;
+DELIMITER $$
+CREATE PROCEDURE sp_agregar_detalle_compra(
+    IN p_id_compra CHAR(10) CHARACTER SET ascii COLLATE ascii_bin,
+    IN p_id_producto VARCHAR(30) CHARACTER SET ascii COLLATE ascii_bin,
+    IN p_fecha_vencimiento DATE,
+    IN p_cantidad DECIMAL(10,2),
+    IN p_precio_unitario_compra DECIMAL(12,2),
+    IN p_id_lote_nuevo CHAR(10) CHARACTER SET ascii COLLATE ascii_bin          -- solo se usa si el lote aún no existe
+)
+BEGIN
+    DECLARE v_id_lote CHAR(10) CHARACTER SET ascii COLLATE ascii_bin;
+
+    CALL sp_validar_vencimiento_compra(p_id_compra, p_fecha_vencimiento);
+
+    SELECT id_lote INTO v_id_lote
+    FROM lote
+    WHERE id_producto = p_id_producto
+      AND fecha_vencimiento_clave = IFNULL(p_fecha_vencimiento, '9999-12-31');
+
+    IF v_id_lote IS NULL THEN
+        INSERT INTO lote (id_lote, id_producto, fecha_vencimiento)
+        VALUES (p_id_lote_nuevo, p_id_producto, p_fecha_vencimiento);
+        SET v_id_lote = p_id_lote_nuevo;
+    END IF;
+
+    INSERT INTO detalle_compra (id_compra, id_lote, cantidad, precio_unitario_compra)
+    VALUES (p_id_compra, v_id_lote, p_cantidad, p_precio_unitario_compra);
 END$$
 DELIMITER ;
 
@@ -656,9 +716,7 @@ DELIMITER $$
 CREATE TRIGGER trg_validar_baja_ins BEFORE INSERT ON baja_inventario
 FOR EACH ROW
 BEGIN
-    DECLARE v_disponible DECIMAL(10,2);
-    SET v_disponible = fn_stock_lote(NEW.id_lote);
-    IF NEW.cantidad > v_disponible THEN
+    IF NEW.cantidad > fn_stock_lote(NEW.id_lote) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La baja supera la cantidad disponible del lote.';
     END IF;
 END$$
@@ -666,34 +724,40 @@ END$$
 CREATE TRIGGER trg_validar_baja_upd BEFORE UPDATE ON baja_inventario
 FOR EACH ROW
 BEGIN
-    DECLARE v_disponible DECIMAL(10,2);
-    SET v_disponible = fn_stock_lote(NEW.id_lote) + OLD.cantidad;
-    IF NEW.cantidad > v_disponible THEN
+    IF NEW.cantidad > fn_stock_lote(NEW.id_lote) + IF(NEW.id_lote = OLD.id_lote, OLD.cantidad, 0) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La baja supera la cantidad disponible del lote.';
     END IF;
 END$$
 DELIMITER ;
 
--- AGREGADO: baja automática de lotes ya vencidos (pedido explícito del
--- negocio). El backend debe llamarlo una vez al día (cron de aplicación)
--- con el id de un usuario "sistema" o del administrador que corre el
--- proceso. No se usa el EVENT SCHEDULER de MySQL porque muchos hostings
--- administrados lo traen desactivado.
+-- Baja automática de lotes vencidos (HU_50). El backend la invoca una vez al
+-- día con el id del usuario "sistema". Como los códigos de baja los asigna
+-- la aplicación con formato BAJ-######, el procedimiento continúa la
+-- numeración existente; GET_LOCK evita que dos ejecuciones simultáneas
+-- generen el mismo código.
 DROP PROCEDURE IF EXISTS sp_dar_baja_lotes_vencidos;
 DELIMITER $$
-CREATE PROCEDURE sp_dar_baja_lotes_vencidos(IN p_id_usuario INT UNSIGNED)
+CREATE PROCEDURE sp_dar_baja_lotes_vencidos(IN p_id_usuario CHAR(8) CHARACTER SET ascii COLLATE ascii_bin)
 BEGIN
-    DECLARE v_id_motivo SMALLINT UNSIGNED;
-    SELECT id_motivo_baja INTO v_id_motivo FROM motivo_baja WHERE nombre = 'Vencimiento';
+    DECLARE v_ultimo INT;
 
-    INSERT INTO baja_inventario (id_lote, id_motivo_baja, cantidad, id_usuario, observaciones)
-    SELECT l.id_lote, v_id_motivo, fn_stock_lote(l.id_lote), p_id_usuario, 'Baja automática por vencimiento'
-    FROM lote l
-    JOIN compra c ON c.id_compra = l.id_compra
-    WHERE l.fecha_vencimiento IS NOT NULL
-      AND l.fecha_vencimiento < CURDATE()
-      AND c.estado = 'RECIBIDA'
-      AND fn_stock_lote(l.id_lote) > 0;
+    IF GET_LOCK('stockbar_codigo_baja', 10) = 1 THEN
+        SELECT COALESCE(MAX(CAST(SUBSTRING(id_baja, 5) AS UNSIGNED)), 0) INTO v_ultimo
+        FROM baja_inventario;
+
+        INSERT INTO baja_inventario (id_baja, id_lote, id_motivo_baja, cantidad, id_usuario, observaciones)
+        SELECT CONCAT('BAJ-', LPAD(v_ultimo + ROW_NUMBER() OVER (ORDER BY l.id_lote), 6, '0')),
+               l.id_lote, 'VEN', fn_stock_lote(l.id_lote), p_id_usuario,
+               'Baja automática por vencimiento'
+        FROM lote l
+        WHERE l.fecha_vencimiento IS NOT NULL
+          AND l.fecha_vencimiento < CURDATE()
+          AND fn_stock_lote(l.id_lote) > 0;
+
+        DO RELEASE_LOCK('stockbar_codigo_baja');
+    ELSE
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No se pudo obtener el bloqueo para numerar las bajas automáticas.';
+    END IF;
 END$$
 DELIMITER ;
 
@@ -704,8 +768,8 @@ DELIMITER ;
 DROP PROCEDURE IF EXISTS sp_validar_detalle_venta;
 DELIMITER $$
 CREATE PROCEDURE sp_validar_detalle_venta(
-    IN p_id_venta INT UNSIGNED,
-    IN p_id_lote INT UNSIGNED,
+    IN p_id_venta CHAR(10) CHARACTER SET ascii COLLATE ascii_bin,
+    IN p_id_lote CHAR(10) CHARACTER SET ascii COLLATE ascii_bin,
     IN p_cantidad DECIMAL(10,2),
     IN p_cantidad_anterior DECIMAL(10,2),
     OUT p_porcentaje_iva DECIMAL(5,2)
@@ -714,10 +778,9 @@ BEGIN
     DECLARE v_disponible DECIMAL(10,2);
     DECLARE v_vencimiento DATE;
     DECLARE v_maneja_vencimiento BOOLEAN;
-    DECLARE v_estado_compra VARCHAR(12);
     DECLARE v_estado_venta VARCHAR(12);
-    DECLARE v_id_jornada INT UNSIGNED;
-    DECLARE v_cliente INT UNSIGNED;
+    DECLARE v_id_jornada CHAR(10) CHARACTER SET ascii COLLATE ascii_bin;
+    DECLARE v_cliente CHAR(9) CHARACTER SET ascii COLLATE ascii_bin;
     DECLARE v_requiere_edad BOOLEAN;
     DECLARE v_fecha_nacimiento DATE;
     DECLARE v_edad INT;
@@ -748,26 +811,16 @@ BEGIN
             SET MESSAGE_TEXT = 'La venta no puede registrarse porque su jornada no está ABIERTA.';
     END IF;
 
-    SELECT l.fecha_vencimiento, p.maneja_vencimiento, c.requiere_verificacion_edad, c.porcentaje_iva, co.estado
-      INTO v_vencimiento, v_maneja_vencimiento, v_requiere_edad, p_porcentaje_iva, v_estado_compra
+    -- El producto del lote sale directamente de lote.
+    SELECT l.fecha_vencimiento, p.maneja_vencimiento, c.requiere_verificacion_edad, c.porcentaje_iva
+      INTO v_vencimiento, v_maneja_vencimiento, v_requiere_edad, p_porcentaje_iva
     FROM lote l
     JOIN producto p ON p.id_producto = l.id_producto
     JOIN categoria c ON c.id_categoria = p.id_categoria
-    JOIN compra co ON co.id_compra = l.id_compra
     WHERE l.id_lote = p_id_lote;
 
     IF v_maneja_vencimiento IS NULL THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El lote no existe.';
-    END IF;
-
-    -- AGREGADO: un lote solo es vendible si su compra ya fue RECIBIDA.
-    -- Antes de este chequeo, fn_stock_lote() no distinguía el estado de la
-    -- compra: se podía vender mercancía de una compra PENDIENTE (aún no
-    -- llega físicamente) o ANULADA, aunque vw_stock_producto ya la mostrara
-    -- en 0 — una inconsistencia real entre el punto de venta y el reporte
-    -- de inventario, detectada ejecutando los casos de prueba.
-    IF v_estado_compra <> 'RECIBIDA' THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No se puede vender un lote cuya compra no está RECIBIDA.';
     END IF;
 
     SET v_disponible = fn_stock_lote(p_id_lote) + p_cantidad_anterior;
@@ -781,6 +834,7 @@ BEGIN
     END IF;
 
     IF v_requiere_edad = TRUE THEN
+        -- v_cliente NULL (mostrador): no hay fila, queda NULL y se rechaza abajo.
         SELECT fecha_nacimiento INTO v_fecha_nacimiento
         FROM cliente WHERE id_cliente = v_cliente;
 
@@ -806,6 +860,7 @@ FOR EACH ROW
 BEGIN
     DECLARE v_iva DECIMAL(5,2);
     CALL sp_validar_detalle_venta(NEW.id_venta, NEW.id_lote, NEW.cantidad, 0, v_iva);
+    -- La tasa de IVA nunca la manda la app: se toma de la categoría.
     SET NEW.porcentaje_impuesto_aplicado = v_iva;
 END$$
 
@@ -813,7 +868,10 @@ CREATE TRIGGER trg_validar_detalle_venta_upd BEFORE UPDATE ON detalle_venta
 FOR EACH ROW
 BEGIN
     DECLARE v_iva DECIMAL(5,2);
-    CALL sp_validar_detalle_venta(NEW.id_venta, NEW.id_lote, NEW.cantidad, OLD.cantidad, v_iva);
+    -- La cantidad anterior solo se devuelve al disponible si la línea sigue
+    -- en el mismo lote y la misma venta.
+    CALL sp_validar_detalle_venta(NEW.id_venta, NEW.id_lote, NEW.cantidad,
+        IF(NEW.id_lote = OLD.id_lote AND NEW.id_venta = OLD.id_venta, OLD.cantidad, 0), v_iva);
     SET NEW.porcentaje_impuesto_aplicado = v_iva;
 END$$
 DELIMITER ;
@@ -826,9 +884,9 @@ DROP PROCEDURE IF EXISTS sp_validar_venta;
 DELIMITER $$
 CREATE PROCEDURE sp_validar_venta(
     IN p_estado VARCHAR(12),
-    IN p_id_jornada INT UNSIGNED,
-    IN p_id_cliente INT UNSIGNED,
-    IN p_id_usuario INT UNSIGNED
+    IN p_id_jornada CHAR(10) CHARACTER SET ascii COLLATE ascii_bin,
+    IN p_id_cliente CHAR(9) CHARACTER SET ascii COLLATE ascii_bin,
+    IN p_id_usuario CHAR(8) CHARACTER SET ascii COLLATE ascii_bin
 )
 BEGIN
     DECLARE v_existe INT DEFAULT 0;
@@ -871,15 +929,14 @@ END$$
 DELIMITER ;
 
 -- ============================================================
--- CIERRE / COMPLETADO DE VENTA
+-- CIERRE / COMPLETADO DE VENTA (reemplaza el CONSTRAINT TRIGGER DEFERRABLE)
 -- ============================================================
 
 DROP PROCEDURE IF EXISTS sp_validar_cierre_venta;
 DELIMITER $$
-CREATE PROCEDURE sp_validar_cierre_venta(IN p_id_venta INT UNSIGNED)
+CREATE PROCEDURE sp_validar_cierre_venta(IN p_id_venta CHAR(10) CHARACTER SET ascii COLLATE ascii_bin)
 BEGIN
     DECLARE v_total DECIMAL(14,2);
-    DECLARE v_pagado DECIMAL(14,2);
     DECLARE v_detalles INT;
 
     SELECT COUNT(*) INTO v_detalles FROM detalle_venta WHERE id_venta = p_id_venta;
@@ -889,15 +946,11 @@ BEGIN
     END IF;
 
     SET v_total = fn_total_venta(p_id_venta);
-    SET v_pagado = fn_total_pagado(p_id_venta);
 
     IF v_total <= 0 THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El total de la venta debe ser mayor que cero.';
     END IF;
 
-    IF v_total <> v_pagado THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El total de la venta no coincide con el total pagado.';
-    END IF;
 END$$
 DELIMITER ;
 
@@ -923,49 +976,9 @@ DELIMITER ;
 
 DROP PROCEDURE IF EXISTS sp_completar_venta;
 DELIMITER $$
-CREATE PROCEDURE sp_completar_venta(IN p_id_venta INT UNSIGNED)
+CREATE PROCEDURE sp_completar_venta(IN p_id_venta CHAR(10) CHARACTER SET ascii COLLATE ascii_bin)
 BEGIN
     UPDATE venta SET estado = 'COMPLETADA' WHERE id_venta = p_id_venta;
-END$$
-DELIMITER ;
-
--- ============================================================
--- REGLAS PARA PAGOS DE VENTAS COMPLETADAS
--- ============================================================
-
-DROP PROCEDURE IF EXISTS sp_bloquear_pago_venta_cerrada;
-DELIMITER $$
-CREATE PROCEDURE sp_bloquear_pago_venta_cerrada(IN p_id_venta INT UNSIGNED)
-BEGIN
-    DECLARE v_estado VARCHAR(12);
-    SELECT estado INTO v_estado FROM venta WHERE id_venta = p_id_venta;
-    IF v_estado = 'COMPLETADA' THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'No se pueden modificar pagos de una venta COMPLETADA. Anule la venta mediante el proceso correspondiente.';
-    END IF;
-END$$
-DELIMITER ;
-
-DROP TRIGGER IF EXISTS trg_bloquear_pago_ins;
-DROP TRIGGER IF EXISTS trg_bloquear_pago_upd;
-DROP TRIGGER IF EXISTS trg_bloquear_pago_del;
-DELIMITER $$
-CREATE TRIGGER trg_bloquear_pago_ins BEFORE INSERT ON venta_pago
-FOR EACH ROW
-BEGIN
-    CALL sp_bloquear_pago_venta_cerrada(NEW.id_venta);
-END$$
-
-CREATE TRIGGER trg_bloquear_pago_upd BEFORE UPDATE ON venta_pago
-FOR EACH ROW
-BEGIN
-    CALL sp_bloquear_pago_venta_cerrada(NEW.id_venta);
-END$$
-
-CREATE TRIGGER trg_bloquear_pago_del BEFORE DELETE ON venta_pago
-FOR EACH ROW
-BEGIN
-    CALL sp_bloquear_pago_venta_cerrada(OLD.id_venta);
 END$$
 DELIMITER ;
 
@@ -978,38 +991,60 @@ DELIMITER $$
 CREATE TRIGGER trg_validar_anulacion_venta BEFORE UPDATE ON venta
 FOR EACH ROW
 BEGIN
+    IF OLD.estado = 'ANULADA' AND NEW.estado <> 'ANULADA' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Una venta ANULADA no puede reactivarse. Debe registrarse una nueva venta.';
+    END IF;
+    -- Anular una venta PENDIENTE o COMPLETADA libera el stock: fn_stock_lote
+    -- solo descuenta ventas PENDIENTE/COMPLETADA.
+END$$
+DELIMITER ;
+
+-- ============================================================
+-- ANULACIÓN DE COMPRA
+-- Regla conservadora: no se anula si algún lote de la compra ya tiene
+-- ventas (incluidas las PENDIENTE) o bajas.
+-- ============================================================
+
+DROP TRIGGER IF EXISTS trg_validar_anulacion_compra;
+DELIMITER $$
+CREATE TRIGGER trg_validar_anulacion_compra BEFORE UPDATE ON compra
+FOR EACH ROW
+BEGIN
+    DECLARE v_movimientos INT DEFAULT 0;
+
     IF OLD.estado <> NEW.estado THEN
-        IF OLD.estado = 'ANULADA' AND NEW.estado = 'COMPLETADA' THEN
-            SIGNAL SQLSTATE '45000'
-                SET MESSAGE_TEXT = 'Una venta ANULADA no puede reactivarse. Debe registrarse una nueva venta.';
+        IF OLD.estado = 'REGISTRADA' AND NEW.estado = 'ANULADA' THEN
+            SELECT COUNT(*) INTO v_movimientos
+            FROM detalle_compra dc
+            WHERE dc.id_compra = NEW.id_compra
+              AND (
+                EXISTS (
+                    SELECT 1 FROM detalle_venta dv
+                    JOIN venta v ON v.id_venta = dv.id_venta
+                    WHERE dv.id_lote = dc.id_lote
+                      AND v.estado IN ('PENDIENTE', 'COMPLETADA')
+                )
+                OR EXISTS (
+                    SELECT 1 FROM baja_inventario bi WHERE bi.id_lote = dc.id_lote
+                )
+              );
+
+            IF v_movimientos > 0 THEN
+                SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'No se puede anular la compra porque sus lotes ya tienen movimientos de inventario.';
+            END IF;
+        END IF;
+
+        IF OLD.estado = 'ANULADA' AND NEW.estado = 'REGISTRADA' THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Una compra ANULADA no puede reactivarse.';
         END IF;
     END IF;
 END$$
 DELIMITER ;
 
 -- ============================================================
--- TRANSICIONES DE ESTADO DE COMPRA (PENDIENTE -> RECIBIDA | ANULADA)
--- ============================================================
--- Únicas transiciones válidas: PENDIENTE->RECIBIDA y PENDIENTE->ANULADA.
--- RECIBIDA y ANULADA son estados terminales: ninguna de las dos puede
--- cambiar de estado nunca más (ni anularse una RECIBIDA, ni reactivarse
--- una ANULADA). No hace falta chequear movimientos de inventario: una
--- compra solo puede anularse mientras es PENDIENTE, y una PENDIENTE nunca
--- tuvo lotes contando como stock, así que jamás pudo generar ventas/bajas.
-DROP TRIGGER IF EXISTS trg_validar_anulacion_compra;
-DELIMITER $$
-CREATE TRIGGER trg_validar_anulacion_compra BEFORE UPDATE ON compra
-FOR EACH ROW
-BEGIN
-    IF OLD.estado <> NEW.estado AND OLD.estado <> 'PENDIENTE' THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Una compra RECIBIDA o ANULADA no puede cambiar de estado.';
-    END IF;
-END$$
-DELIMITER ;
-
--- ============================================================
--- PROTECCIÓN DE INTEGRIDAD DE JORNADAS
+-- INTEGRIDAD DE JORNADAS
 -- ============================================================
 
 DROP PROCEDURE IF EXISTS sp_validar_jornada;
@@ -1017,7 +1052,7 @@ DELIMITER $$
 CREATE PROCEDURE sp_validar_jornada(
     IN p_estado VARCHAR(10),
     IN p_fecha_cierre TIMESTAMP,
-    IN p_id_usuario_cierre INT UNSIGNED
+    IN p_id_usuario_cierre CHAR(8) CHARACTER SET ascii COLLATE ascii_bin
 )
 BEGIN
     IF p_estado = 'CERRADA' AND (p_fecha_cierre IS NULL OR p_id_usuario_cierre IS NULL) THEN
@@ -1047,31 +1082,27 @@ END$$
 DELIMITER ;
 
 -- ============================================================
--- VISTAS DE CONSULTA
+-- VISTAS DE CONSULTA (todo lo derivado se calcula, no se guarda)
 -- ============================================================
 
 CREATE OR REPLACE VIEW vw_stock_lotes AS
 SELECT
     l.id_lote,
     l.id_producto,
-    p.codigo_sku,
     p.nombre AS producto,
-    l.id_compra,
-    l.cantidad AS cantidad_inicial,
-    fn_stock_lote(l.id_lote) AS cantidad_disponible,
-    l.precio_unitario_compra,
     l.fecha_vencimiento,
     p.maneja_vencimiento,
-    c.fecha_compra,
-    c.estado AS estado_compra
+    (SELECT COALESCE(SUM(dc.cantidad), 0)
+       FROM detalle_compra dc
+       JOIN compra c ON c.id_compra = dc.id_compra
+      WHERE dc.id_lote = l.id_lote AND c.estado = 'REGISTRADA') AS cantidad_ingresada,
+    fn_stock_lote(l.id_lote) AS cantidad_disponible
 FROM lote l
-JOIN producto p ON p.id_producto = l.id_producto
-JOIN compra c ON c.id_compra = l.id_compra;
+JOIN producto p ON p.id_producto = l.id_producto;
 
 CREATE OR REPLACE VIEW vw_stock_producto AS
 SELECT
     p.id_producto,
-    p.codigo_sku,
     p.nombre,
     p.stock_minimo,
     COALESCE(SUM(s.cantidad_disponible), 0) AS stock_actual,
@@ -1080,10 +1111,34 @@ SELECT
         THEN TRUE ELSE FALSE
     END AS bajo_stock
 FROM producto p
-LEFT JOIN vw_stock_lotes s
-    ON s.id_producto = p.id_producto
-   AND s.estado_compra = 'RECIBIDA'
-GROUP BY p.id_producto, p.codigo_sku, p.nombre, p.stock_minimo;
+LEFT JOIN vw_stock_lotes s ON s.id_producto = p.id_producto
+GROUP BY p.id_producto, p.nombre, p.stock_minimo;
+
+-- Detalle de compra con producto, vencimiento y subtotal (por JOIN).
+CREATE OR REPLACE VIEW vw_detalle_compra AS
+SELECT
+    dc.id_compra,
+    l.id_producto,
+    p.nombre AS producto,
+    l.id_lote,
+    l.fecha_vencimiento,
+    dc.cantidad,
+    dc.precio_unitario_compra,
+    dc.cantidad * dc.precio_unitario_compra AS subtotal
+FROM detalle_compra dc
+JOIN lote l ON l.id_lote = dc.id_lote
+JOIN producto p ON p.id_producto = l.id_producto;
+
+CREATE OR REPLACE VIEW vw_totales_compra AS
+SELECT
+    c.id_compra,
+    c.id_proveedor,
+    c.fecha_compra,
+    c.estado,
+    COALESCE(SUM(dc.cantidad * dc.precio_unitario_compra), 0) AS total_compra
+FROM compra c
+LEFT JOIN detalle_compra dc ON dc.id_compra = c.id_compra
+GROUP BY c.id_compra, c.id_proveedor, c.fecha_compra, c.estado;
 
 CREATE OR REPLACE VIEW vw_totales_venta AS
 SELECT
@@ -1092,19 +1147,34 @@ SELECT
     fn_base_gravable_venta(v.id_venta) AS base_gravable,
     fn_iva_venta(v.id_venta) AS iva,
     fn_total_venta(v.id_venta) AS total_venta,
-    fn_total_pagado(v.id_venta) AS total_pagado,
-    (fn_total_venta(v.id_venta) - fn_total_pagado(v.id_venta)) AS diferencia_pago
+    v.id_metodo_pago
 FROM venta v;
+
+-- Historial de jornadas con su total de ventas (ficha: Subproceso de jornada).
+CREATE OR REPLACE VIEW vw_totales_jornada AS
+SELECT
+    j.id_jornada,
+    j.estado,
+    j.fecha_hora_apertura,
+    j.id_usuario_apertura,
+    j.fecha_hora_cierre,
+    j.id_usuario_cierre,
+    COUNT(v.id_venta) AS ventas_completadas,
+    COALESCE(SUM(fn_total_venta(v.id_venta)), 0) AS total_ventas
+FROM jornada j
+LEFT JOIN venta v ON v.id_jornada = j.id_jornada AND v.estado = 'COMPLETADA'
+GROUP BY j.id_jornada, j.estado, j.fecha_hora_apertura, j.id_usuario_apertura,
+         j.fecha_hora_cierre, j.id_usuario_cierre;
 
 -- ============================================================
 -- DATOS BASE
 -- ============================================================
 
-INSERT INTO rol (nombre) VALUES
-('ADMINISTRADOR'),
-('EMPLEADO');
+INSERT INTO rol (id_rol, nombre) VALUES
+('ADM', 'ADMINISTRADOR'),
+('EMP', 'EMPLEADO');
 
-INSERT INTO permiso (nombre, modulo) VALUES
+INSERT INTO permiso (id_permiso, modulo) VALUES
 ('GESTIONAR_ROLES', 'SEGURIDAD'),
 ('GESTIONAR_USUARIOS', 'SEGURIDAD'),
 ('GESTIONAR_CATEGORIAS', 'COMPRAS'),
@@ -1114,92 +1184,88 @@ INSERT INTO permiso (nombre, modulo) VALUES
 ('GESTIONAR_BAJAS', 'COMPRAS'),
 ('GESTIONAR_CLIENTES', 'VENTAS'),
 ('GESTIONAR_VENTAS', 'VENTAS'),
-('GESTIONAR_JORNADA', 'VENTAS'),
+('GESTIONAR_JORNADAS', 'VENTAS'),
 ('VER_REPORTES', 'DASHBOARD');
 
-INSERT INTO metodo_pago (nombre) VALUES
-('Efectivo'),
-('Nequi'),
-('Bancolombia');
+INSERT INTO metodo_pago (id_metodo_pago, nombre) VALUES
+('EFE', 'Efectivo'),
+('NEQ', 'Nequi'),
+('BAN', 'Bancolombia');
 
-INSERT INTO unidad_medida (nombre) VALUES
-('Unidad'),
-('Botella'),
-('Six-pack'),
-('Cajetilla'),
-('Paquete');
+INSERT INTO unidad_medida (id_unidad_medida, nombre) VALUES
+('UND', 'Unidad'),
+('BOT', 'Botella'),
+('SIX', 'Six-pack'),
+('CAJ', 'Cajetilla'),
+('PAQ', 'Paquete');
 
-INSERT INTO motivo_baja (nombre) VALUES
-('Vencimiento'),
-('Daño/Rotura'),
-('Ajuste de inventario'),
-('Pérdida/Robo');
+INSERT INTO motivo_baja (id_motivo_baja, nombre) VALUES
+('VEN', 'Vencimiento'),
+('DAN', 'Daño/Rotura'),
+('AJU', 'Ajuste de inventario'),
+('PER', 'Pérdida/Robo');
 
--- Tasas de IVA (Colombia, vigentes 2026): 19.00 general; 5.00 para
--- licores/vinos/aperitivos >15° (tarifa diferencial). Cerveza, cigarrillos
--- y snacks NO tienen tarifa reducida: pagan el IVA general del 19%.
+-- IVA (Colombia): 19.00 general; 5.00 licores/vinos/aperitivos >15°.
+-- Las tarifas deben confirmarse con el contador antes de producción.
 INSERT INTO categoria
-(nombre, descripcion, margen_defecto_porcentaje, porcentaje_iva, requiere_verificacion_edad)
+(id_categoria, nombre, descripcion, margen_defecto_porcentaje, porcentaje_iva, requiere_verificacion_edad)
 VALUES
-('Licores', 'Aguardientes, rones, tequilas y whiskys', 35.00, 5.00, TRUE),
-('Cerveza', 'Cervezas y presentaciones relacionadas', 20.00, 19.00, TRUE),
-('Cigarrillos', 'Productos de tabaco', 12.00, 19.00, TRUE),
-('Snacks', 'Dulces, confitería y productos secos', 40.00, 19.00, FALSE);
+('CAT-001', 'Licores', 'Aguardientes, rones, tequilas y whiskys', 35.00, 5.00, TRUE),
+('CAT-002', 'Cerveza', 'Cervezas y presentaciones relacionadas', 20.00, 19.00, TRUE),
+('CAT-003', 'Cigarrillos', 'Productos de tabaco', 12.00, 19.00, TRUE),
+('CAT-004', 'Snacks', 'Dulces, confitería y productos secos', 40.00, 19.00, FALSE);
 
--- NOTA: el cliente genérico "Consumidor Final" para ventas de mostrador NO
--- se siembra aquí (rompería los id_cliente fijos que usan los scripts de
--- datos de prueba). Igual que el primer usuario administrador, lo crea la
--- aplicación una sola vez en el arranque inicial (INSERT ... si no existe
--- ya un cliente con numero_documento='0000000000').
+-- El primer administrador y el cliente genérico "Consumidor Final" los crea
+-- la aplicación en el arranque inicial.
 
--- Permisos del administrador
+-- Administrador: todos los permisos. Empleado: los de su operación diaria
+-- (clientes, ventas, jornada y bajas, según los actores de la matriz).
 INSERT INTO rol_permiso (id_rol, id_permiso)
-SELECT r.id_rol, p.id_permiso
-FROM rol r CROSS JOIN permiso p
-WHERE r.nombre = 'ADMINISTRADOR';
+SELECT r.id_rol, p.id_permiso FROM rol r CROSS JOIN permiso p
+WHERE r.id_rol = 'ADM';
 
--- Permisos básicos del empleado
 INSERT INTO rol_permiso (id_rol, id_permiso)
-SELECT r.id_rol, p.id_permiso
-FROM rol r
-JOIN permiso p ON p.nombre IN (
-    'GESTIONAR_CLIENTES',
-    'GESTIONAR_VENTAS',
-    'GESTIONAR_JORNADA',
-    'GESTIONAR_BAJAS'
-)
-WHERE r.nombre = 'EMPLEADO';
+SELECT r.id_rol, p.id_permiso FROM rol r
+JOIN permiso p ON p.id_permiso IN ('GESTIONAR_CLIENTES','GESTIONAR_VENTAS','GESTIONAR_JORNADAS','GESTIONAR_BAJAS')
+WHERE r.id_rol = 'EMP';
 
 -- ============================================================
 -- NOTAS DE IMPLEMENTACIÓN
 -- ============================================================
--- 1. El hash de contraseña debe generarse en la aplicación con un algoritmo
---    seguro (Argon2id o bcrypt). Nunca guardar contraseñas en texto plano.
+-- 1. Hash de contraseña (y del token de recuperación) generado en la app
+--    (Argon2id/bcrypt para contraseñas; el token se guarda hasheado).
 --
--- 2. Flujo obligatorio de una venta:
+-- 2. Códigos: la app asigna el siguiente consecutivo de cada prefijo dentro
+--    de la misma transacción (SELECT MAX(...) ... FOR UPDATE). El CHECK de
+--    cada tabla rechaza cualquier formato distinto.
+--
+-- 3. Flujo de compra:
 --       BEGIN
---       INSERT venta (queda en PENDIENTE por defecto)
---       INSERT detalle_venta (...)
---       INSERT venta_pago (...)
---       CALL sp_completar_venta(id_venta);   -- o UPDATE venta SET estado='COMPLETADA'
---       COMMIT;
+--       INSERT compra (CMP-######, proveedor, usuario, forma de pago, ...)
+--       CALL sp_agregar_detalle_compra(compra, producto, vencimiento,
+--                                      cantidad, precio, 'LOT-######')
+--       ... una llamada por línea ...
+--       COMMIT
+--    Valor total = vw_totales_compra.
 --
--- 3. La edad mínima está fijada en 18 en el trigger porque la ficha del
---    proyecto solo exige verificación de edad, sin una edad configurable.
+-- 4. Flujo de venta:
+--       BEGIN
+--       INSERT venta (VTA-######, método de pago, queda PENDIENTE)
+--       INSERT detalle_venta (...)   -- reserva el stock del lote
+--       CALL sp_completar_venta(id_venta);   -- valida que tenga detalle y total > 0
+--       COMMIT
 --
--- 4. La anulación de una venta (PENDIENTE o COMPLETADA) libera el stock
---    porque fn_stock_lote solo descuenta ventas PENDIENTE/COMPLETADA.
+-- 5. Recuperación de contraseña: la app guarda en usuario el hash del token
+--    y su vencimiento (ej. 24 h, HU_77); al restablecer o vencer pone ambas
+--    columnas en NULL.
 --
--- 5. Las operaciones concurrentes sobre el mismo lote deben ejecutarse
---    dentro de transacciones y, para máxima robustez, bloquear el lote
---    con SELECT ... FOR UPDATE en la capa de servicio antes de calcular
---    y consumir stock.
+-- 6. FEFO: al vender, la app propone primero el lote con vencimiento más
+--    cercano (vw_stock_lotes ordenada por fecha_vencimiento).
 --
--- 6. El backend debe llamar sp_dar_baja_lotes_vencidos(p_id_usuario) una
---    vez al día (cron de aplicación) con el id de un usuario "sistema".
+-- 7. Operaciones concurrentes sobre un lote: transacciones y
+--    SELECT ... FOR UPDATE sobre el lote en la capa de servicio.
 --
--- 7. En el arranque inicial de la aplicación (una sola vez, cuando todavía
---    no existen esas filas): crear el primer usuario ADMINISTRADOR con
---    es_admin_principal=TRUE, y el cliente "Consumidor Final"
---    (numero_documento='0000000000', sin fecha_nacimiento). Ningún endpoint
---    posterior debe poder tocar es_admin_principal.
+-- 8. Edad mínima 18 fijada en el trigger (la ficha no la parametriza).
+--
+-- 9. usuario.fecha_nacimiento no existe (ver comentario 6 del encabezado):
+--    la verificación de edad usa siempre cliente.fecha_nacimiento.

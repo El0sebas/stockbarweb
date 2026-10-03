@@ -1,4 +1,4 @@
-import { generateNextId } from './identifiers';
+import { generateNextIdentifier } from './identifiers';
 
 // Espejo de trg_validar_baja_ins: la BD rechaza sola una baja con cantidad
 // <= 0 o mayor al disponible del lote. Solo mostramos el mensaje, no lo
@@ -18,7 +18,7 @@ export const validarCantidadBaja = (cantidad, disponible) => {
 // historial. Reutilizado por BajasPage y por el acceso rápido desde
 // ProductoDetailModal para no duplicar la regla en dos sitios.
 export const aplicarBaja = ({ lotes, bajas, baja }) => {
-  const idBaja = generateNextId(bajas, 'id_baja');
+  const idBaja = generateNextIdentifier({ items: bajas, key: 'id_baja', prefix: 'BAJ', pad: 6, separator: '-' });
   const nuevaBaja = { id_baja: idBaja, fecha_hora: new Date().toISOString(), ...baja };
 
   const nuevosLotes = lotes.map((l) =>
@@ -33,13 +33,12 @@ export const aplicarBaja = ({ lotes, bajas, baja }) => {
 // Mirror de sp_dar_baja_lotes_vencidos: en la BD real esto lo dispara un cron
 // diario (no existe aquí, ver ComprasFormModal/instrucciones), así que en
 // este mock se ejecuta una vez por login como sustituto pragmático. Da de
-// baja automáticamente (motivo "Vencimiento") todo lote de una compra
-// RECIBIDA cuya fecha_vencimiento ya pasó y que aún tiene stock (uno
-// PENDIENTE nunca contó como stock real, así que tampoco puede vencerse).
+// baja automáticamente (motivo "Vencimiento") todo lote cuya fecha_vencimiento
+// ya pasó y que aún tiene stock disponible.
 export const generarBajasPorVencimiento = ({ lotes, bajas, idUsuario, usuario }) => {
   const hoy = new Date().toISOString().split('T')[0];
   const lotesVencidos = lotes.filter(
-    (l) => l.estado_compra === 'RECIBIDA' && l.fecha_vencimiento && l.fecha_vencimiento < hoy && Number(l.cantidad_disponible) > 0
+    (l) => l.fecha_vencimiento && l.fecha_vencimiento < hoy && Number(l.cantidad_disponible) > 0
   );
 
   let nuevosLotes = lotes;

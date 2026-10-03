@@ -45,7 +45,7 @@ export const CategoriasPage = () => {
       setCategorias(categorias.map(c => c.codigo === categoriaData.codigo ? categoriaData : c));
       showToast('success', 'Categoría actualizada exitosamente');
     } else {
-      const nuevoCodigo = generateNextIdentifier({ items: categorias, key: 'codigo', prefix: 'CAT', pad: 2, separator: '-' });
+      const nuevoCodigo = generateNextIdentifier({ items: categorias, key: 'codigo', prefix: 'CAT', pad: 3, separator: '-' });
       setCategorias([...categorias, { ...categoriaData, codigo: nuevoCodigo }]);
       showToast('success', `Categoría ${nuevoCodigo} creada exitosamente`);
     }

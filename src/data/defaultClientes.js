@@ -12,7 +12,7 @@
 // confía en la verificación visual del cajero, igual que un mostrador real
 // (ver utils/edad.js validarEdadCliente).
 export const defaultConsumidorFinal = {
-  id_cliente: 0,
+  id_cliente: 'CLI-00000',
   tipo_documento: 'CC',
   numero_documento: '0000000000',
   nombre_completo: 'Consumidor Final',
@@ -24,7 +24,7 @@ export const defaultConsumidorFinal = {
 
 export const defaultClientes = [
   defaultConsumidorFinal,
-  { id_cliente: 1, tipo_documento: 'CC', numero_documento: '1017223344', nombre_completo: 'Andrés Pérez', telefono: '300 123 4567', correo: 'aperez@gmail.com', fecha_nacimiento: '1990-05-12', estado: 'Activo' },
-  { id_cliente: 2, tipo_documento: 'CC', numero_documento: '1020445566', nombre_completo: 'Laura Gómez', telefono: '311 987 6543', correo: 'lgomez@gmail.com', fecha_nacimiento: '2008-11-03', estado: 'Activo' },
-  { id_cliente: 3, tipo_documento: 'CC', numero_documento: '1033778899', nombre_completo: 'Santiago Ríos', telefono: '320 456 7890', correo: 'srios@gmail.com', fecha_nacimiento: '1985-02-20', estado: 'Inactivo' },
+  { id_cliente: 'CLI-00001', tipo_documento: 'CC', numero_documento: '1017223344', nombre_completo: 'Andrés Pérez', telefono: '300 123 4567', correo: 'aperez@gmail.com', fecha_nacimiento: '1990-05-12', estado: 'Activo' },
+  { id_cliente: 'CLI-00002', tipo_documento: 'CC', numero_documento: '1020445566', nombre_completo: 'Laura Gómez', telefono: '311 987 6543', correo: 'lgomez@gmail.com', fecha_nacimiento: '2008-11-03', estado: 'Activo' },
+  { id_cliente: 'CLI-00003', tipo_documento: 'CC', numero_documento: '1033778899', nombre_completo: 'Santiago Ríos', telefono: '320 456 7890', correo: 'srios@gmail.com', fecha_nacimiento: '1985-02-20', estado: 'Inactivo' },
 ];

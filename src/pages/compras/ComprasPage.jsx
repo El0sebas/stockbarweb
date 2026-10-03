@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { PlusLg, Search, BagCheck, XCircle, CheckCircle } from 'react-bootstrap-icons';
+import { PlusLg, Search, BagCheck, XCircle } from 'react-bootstrap-icons';
 import { CompraFormModal } from './ComprasFormModal';
 import { CompraDetailModal } from './CompraDetailModal';
 import { RowActions } from '../../components/common/RowActions';
@@ -10,6 +10,8 @@ import { showToast, showAlert } from '../../utils/alerts';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultCompras } from '../../data/defaultCompras';
 import { defaultLotes } from '../../data/defaultLotes';
+import { defaultDetalleCompra } from '../../data/defaultDetalleCompra';
+import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 import { useAuth } from '../../context/AuthContext';
 
 export const ComprasPage = () => {
@@ -21,9 +23,13 @@ export const ComprasPage = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedCompra, setSelectedCompra] = useState(null);
   const [compras, setCompras] = usePersistentState('stockbar_compras', defaultCompras);
-  // Cada línea de una compra crea un lote real (nunca un lote suelto ni un
-  // stock editable en Productos): ver utils/stock.js y docs/DATABASE.md.
-  const [, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
+  // Un lote ES (producto, fecha_vencimiento) — v3. Varias compras del mismo
+  // producto con el mismo vencimiento suman al MISMO lote (cantidad_disponible),
+  // nunca crean lotes duplicados. detalle_compra es el historial inmutable
+  // de qué trajo cada compra y a qué precio (ver docs/DATABASE.md).
+  const [lotes, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
+  const [detalleCompra, setDetalleCompra] = usePersistentState('stockbar_detalle_compra', defaultDetalleCompra);
+  const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
 
   const styles = {
     cardBg: 'var(--bg-card)',
@@ -47,73 +53,92 @@ export const ComprasPage = () => {
     separator: '-'
   });
 
-  // Reemplaza los lotes que pertenecían a esta compra (si la estaban
-  // editando) por los que vienen en sus líneas actuales — cada línea de
-  // compra es, siempre, un lote real (ver docs/DATABASE.md). Los lotes se
-  // insertan ya, pero estado_compra (PENDIENTE) hace que utils/stock.js los
-  // excluya de "stock disponible" hasta que la compra se marque RECIBIDA.
-  const sincronizarLotes = (idCompra, items, estadoCompra) => {
-    setLotes((prev) => {
-      const sinEstaCompra = prev.filter((l) => l.id_compra !== idCompra);
-      let siguienteId = sinEstaCompra.reduce((max, l) => Math.max(max, l.id_lote), 0) + 1;
-      const nuevosLotes = (items || []).map((item) => ({
-        id_lote: siguienteId++,
+  const resolverNombreMetodoPago = (idMetodoPago) =>
+    metodosPago.find((m) => m.id_metodo_pago === idMetodoPago)?.nombre || 'N/A';
+
+  // v3: un lote ES (producto, fecha_vencimiento). Busca un lote existente
+  // con esa identidad y le suma la cantidad (nunca crea uno duplicado);
+  // si no existe, lo crea. Cada línea también queda registrada en
+  // detalle_compra (historial inmutable de qué trajo esta compra y a qué
+  // precio) — mirror de sp_agregar_detalle_compra.
+  const registrarEntradasCompra = (idCompra, items) => {
+    let siguienteNumero = lotes.reduce((max, l) => Math.max(max, Number(l.id_lote.split('-')[1]) || 0), 0);
+    const lotesActualizados = lotes.map((l) => ({ ...l }));
+    const nuevasEntradas = [];
+
+    (items || []).forEach((item) => {
+      let lote = lotesActualizados.find(
+        (l) => l.id_producto === item.producto_codigo && (l.fecha_vencimiento || null) === (item.fecha_vencimiento || null)
+      );
+      if (!lote) {
+        siguienteNumero += 1;
+        lote = {
+          id_lote: `LOT-${String(siguienteNumero).padStart(6, '0')}`,
+          id_producto: item.producto_codigo,
+          fecha_vencimiento: item.fecha_vencimiento || null,
+          cantidad_disponible: 0
+        };
+        lotesActualizados.push(lote);
+      }
+      lote.cantidad_disponible = Number(lote.cantidad_disponible) + Number(item.cantidad);
+      nuevasEntradas.push({
         id_compra: idCompra,
-        producto_codigo: item.producto_codigo,
-        cantidad: item.cantidad,
-        cantidad_disponible: item.cantidad,
-        precio_unitario_compra: item.costoUnitario,
-        fecha_vencimiento: item.fecha_vencimiento || null,
-        numero_lote_proveedor: item.numero_lote || null,
-        estado_compra: estadoCompra
-      }));
-      return [...sinEstaCompra, ...nuevosLotes];
+        id_lote: lote.id_lote,
+        cantidad: Number(item.cantidad),
+        precio_unitario_compra: Number(item.costoUnitario)
+      });
     });
+
+    setLotes(lotesActualizados);
+    setDetalleCompra((prevDetalle) => [...prevDetalle, ...nuevasEntradas]);
   };
 
   const handleSaveCompra = (compra) => {
-    if (selectedCompra) {
-      setCompras(prev => prev.map(item => item.id === selectedCompra.id ? { ...item, ...compra } : item));
-      sincronizarLotes(selectedCompra.id, compra.items, selectedCompra.estado);
-      showToast('success', 'Compra actualizada correctamente');
-    } else {
-      const facturaGenerada = (compra.numero_factura_proveedor || nextFactura).trim();
-      const idCompra = Date.now();
-      setCompras(prev => [{
-        ...compra,
-        id: idCompra,
-        numero_factura_proveedor: facturaGenerada,
-        estado: 'PENDIENTE',
-        id_usuario: currentUser?.id_usuario || null,
-        usuario: currentUser?.nombre || 'N/A',
-        fecha_registro: new Date().toISOString()
-      }, ...prev]);
-      sincronizarLotes(idCompra, compra.items, 'PENDIENTE');
-      showToast('success', `Compra ${facturaGenerada} registrada como PENDIENTE`);
-    }
+    // v3: compra.estado solo admite REGISTRADA/ANULADA — editar una compra ya
+    // ANULADA no tiene sentido (trg_validar_anulacion_compra la bloquearía).
+    // No hay edición de una compra ya registrada en esta vista — ver RowActions.
+    const facturaGenerada = (compra.numero_factura_proveedor || nextFactura).trim();
+    const idCompra = generateNextIdentifier({ items: compras, key: 'id_compra', prefix: 'CMP', pad: 6, separator: '-' });
+    setCompras(prev => [{
+      ...compra,
+      id_compra: idCompra,
+      numero_factura_proveedor: facturaGenerada,
+      estado: 'REGISTRADA',
+      id_usuario: currentUser?.id_usuario || null,
+      usuario: currentUser?.nombre || 'N/A',
+      fecha_registro: new Date().toISOString()
+    }, ...prev]);
+    // v3: una compra REGISTRADA cuenta como stock y es vendible de inmediato
+    // — ya no existe el paso intermedio "marcar como recibida".
+    registrarEntradasCompra(idCompra, compra.items);
+    showToast('success', `Compra ${facturaGenerada} registrada`);
     setShowFormModal(false);
     setSelectedCompra(null);
   };
 
-  // PENDIENTE -> RECIBIDA: la mercancía ya llegó. Los lotes ya existían
-  // (creados al registrar la compra); solo pasan a contar como stock real
-  // (ver utils/stock.js, que solo suma estado_compra === 'RECIBIDA').
-  const handleMarcarRecibida = async (compra) => {
-    const confirmado = await showAlert.confirm('¿Marcar esta compra como recibida?', 'Sus lotes empezarán a contar como stock disponible de inmediato.');
-    if (!confirmado) return;
-    setCompras(prev => prev.map(item => item.id === compra.id ? { ...item, estado: 'RECIBIDA' } : item));
-    setLotes(prev => prev.map(l => l.id_compra === compra.id ? { ...l, estado_compra: 'RECIBIDA' } : l));
-    showToast('success', `Compra ${compra.numero_factura_proveedor} marcada como RECIBIDA`);
-  };
-
-  // Espejo de trg_validar_anulacion_compra: solo una compra PENDIENTE puede
-  // anularse. RECIBIDA y ANULADA son estados terminales — ninguna de las
-  // dos puede cambiar de estado nunca más.
+  // Espejo de trg_validar_anulacion_compra: solo se puede anular si ninguno
+  // de sus lotes ya tiene ventas/bajas que dependan de lo que esta compra
+  // aportó. REGISTRADA -> ANULADA es la única transición válida y es terminal.
   const handleAnularCompra = async (compra) => {
-    const confirmado = await showAlert.confirm('¿Anular esta compra?', 'Esta acción no se puede revertir.');
+    const confirmado = await showAlert.confirm('¿Anular esta compra?', 'Se revertirá el stock que aportó. Esta acción no se puede deshacer.');
     if (!confirmado) return;
-    setCompras(prev => prev.map(item => item.id === compra.id ? { ...item, estado: 'ANULADA' } : item));
-    setLotes(prev => prev.map(l => l.id_compra === compra.id ? { ...l, estado_compra: 'ANULADA' } : l));
+
+    const entradas = detalleCompra.filter((dc) => dc.id_compra === compra.id_compra);
+
+    const stockInsuficiente = entradas.some((dc) => {
+      const lote = lotes.find((l) => l.id_lote === dc.id_lote);
+      return !lote || Number(lote.cantidad_disponible) < dc.cantidad;
+    });
+    if (stockInsuficiente) {
+      showAlert.error('No se puede anular', 'Uno o más lotes de esta compra ya tienen ventas o bajas que dependen de ese stock.');
+      return;
+    }
+
+    setLotes((prev) => prev.map((l) => {
+      const entrada = entradas.find((dc) => dc.id_lote === l.id_lote);
+      return entrada ? { ...l, cantidad_disponible: Number(l.cantidad_disponible) - entrada.cantidad } : l;
+    }));
+    setCompras(prev => prev.map(item => item.id_compra === compra.id_compra ? { ...item, estado: 'ANULADA' } : item));
     showToast('success', `Compra ${compra.numero_factura_proveedor} anulada`);
   };
 
@@ -166,64 +191,35 @@ export const ComprasPage = () => {
           </thead>
           <tbody>
             {filteredCompras.map((c) => {
-              const pendiente = c.estado === 'PENDIENTE';
-              // RECIBIDA y ANULADA son estados terminales: no se editan ni
-              // cambian de estado nunca más. Solo PENDIENTE es editable y
-              // puede pasar a RECIBIDA o ANULADA.
-              const razonBloqueo = !pendiente
-                ? `Una compra ${c.estado} no puede modificarse`
-                : undefined;
+              // v3: REGISTRADA -> ANULADA es la única transición, y es terminal.
+              // Ya no existe edición de una compra registrada (sus lotes ya
+              // pueden tener ventas/bajas encima) ni el paso "recibida".
+              const registrada = c.estado === 'REGISTRADA';
               const estadoColores = {
-                PENDIENTE: { bg: 'var(--amber-soft-bg)', color: 'var(--amber-action)' },
-                RECIBIDA: { bg: 'var(--success-soft-bg)', color: 'var(--brand-success)' },
+                REGISTRADA: { bg: 'var(--success-soft-bg)', color: 'var(--brand-success)' },
                 ANULADA: { bg: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' }
               }[c.estado];
               return (
-              <tr key={c.id} style={{ borderBottom: `1px solid ${styles.borderCol}` }}>
+              <tr key={c.id_compra} style={{ borderBottom: `1px solid ${styles.borderCol}` }}>
                 <td className="py-3 fw-bold" style={{ color: 'var(--amber-action)' }}>{c.numero_factura_proveedor}</td>
                 <td className="py-3 fw-semibold">
                   <BagCheck className="me-2" color="var(--brand-blue)" />
                   {c.proveedor}
                 </td>
-                <td className="py-3 small" style={{ color: styles.mutedColor }}>{c.metodoPago || 'Efectivo'}</td>
+                <td className="py-3 small" style={{ color: styles.mutedColor }}>{resolverNombreMetodoPago(c.id_metodo_pago)}</td>
                 <td className="py-3" style={{ color: styles.mutedColor }}>{c.fecha_compra}</td>
                 <td className="py-3 fw-bold">$ {Number(c.total).toLocaleString()}</td>
                 <td className="py-3">
-                  {pendiente ? (
-                    <div className="dropdown">
-                      <button
-                        type="button"
-                        className="badge px-3 py-2 border-0 dropdown-toggle"
-                        data-bs-toggle="dropdown"
-                        aria-expanded="false"
-                        style={{ backgroundColor: estadoColores.bg, color: estadoColores.color, cursor: 'pointer' }}
-                        title="Cambiar estado de la compra"
-                      >
-                        {c.estado}
-                      </button>
-                      <ul className="dropdown-menu shadow-sm border-0 py-2" style={{ minWidth: '210px' }}>
-                        <li>
-                          <button
-                            type="button"
-                            className="dropdown-item d-flex align-items-center gap-2"
-                            style={{ color: 'var(--brand-success)' }}
-                            onClick={() => handleMarcarRecibida(c)}
-                          >
-                            <CheckCircle size={16} /> Marcar como recibida
-                          </button>
-                        </li>
-                        <li>
-                          <button
-                            type="button"
-                            className="dropdown-item d-flex align-items-center gap-2"
-                            style={{ color: 'var(--brand-danger)' }}
-                            onClick={() => handleAnularCompra(c)}
-                          >
-                            <XCircle size={16} /> Anular compra
-                          </button>
-                        </li>
-                      </ul>
-                    </div>
+                  {registrada ? (
+                    <button
+                      type="button"
+                      className="badge px-3 py-2 border-0 d-flex align-items-center gap-1"
+                      style={{ backgroundColor: estadoColores.bg, color: estadoColores.color, cursor: 'pointer' }}
+                      title="Anular compra"
+                      onClick={() => handleAnularCompra(c)}
+                    >
+                      {c.estado} <XCircle size={12} />
+                    </button>
                   ) : (
                     <span className="badge px-3 py-2" style={{ backgroundColor: estadoColores.bg, color: estadoColores.color }}>
                       {c.estado}
@@ -233,9 +229,8 @@ export const ComprasPage = () => {
                 <td className="py-3 text-center">
                   <RowActions
                     onView={() => { setSelectedCompra(c); setShowDetailModal(true); }}
-                    onEdit={() => { setSelectedCompra(c); setShowFormModal(true); }}
+                    hideEdit
                     hideDelete
-                    disabledReason={razonBloqueo}
                   />
                 </td>
               </tr>
@@ -258,7 +253,6 @@ export const ComprasPage = () => {
         onClose={() => { setShowDetailModal(false); setSelectedCompra(null); }}
         compra={selectedCompra}
         onAnular={handleAnularCompra}
-        onMarcarRecibida={handleMarcarRecibida}
       />
     </div>
   );

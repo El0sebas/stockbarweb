@@ -7,7 +7,7 @@ import { EstadoFilter } from '../../components/common/EstadoFilter';
 import { UsuarioDetailModal } from './UsuarioDetailModal';
 import { UsuarioFormModal } from './UsuarioFormModal';
 import { showToast, showAlert } from '../../utils/alerts';
-import { generateNextId } from '../../utils/identifiers';
+import { generateNextIdentifier } from '../../utils/identifiers';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { useAuth } from '../../context/AuthContext';
 import { defaultUsers } from '../../data/defaultUsers';
@@ -79,7 +79,7 @@ export const UsuariosPage = () => {
         : u));
       showToast('success', 'Usuario actualizado exitosamente');
     } else {
-      const nuevoId = generateNextId(usuarios, 'id_usuario');
+      const nuevoId = generateNextIdentifier({ items: usuarios, key: 'id_usuario', prefix: 'USR', pad: 4, separator: '-' });
       const fechaActual = new Date().toISOString().split('T')[0];
       setUsuarios([...usuarios, { ...formData, id_usuario: nuevoId, estado: 'Activo', fechaRegistro: fechaActual }]);
       showToast('success', `Usuario ${formData.nombre} creado exitosamente`);

@@ -13,6 +13,7 @@ import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultProductos } from '../../data/defaultProductos';
 import { defaultLotes } from '../../data/defaultLotes';
 import { defaultVentas } from '../../data/defaultVentas';
+import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 import { getStockDisponible } from '../../utils/stock';
 import { calcularTotalesVenta } from '../../utils/impuestos';
 
@@ -45,6 +46,7 @@ export const DashboardPage = () => {
   const [productos] = usePersistentState('stockbar_productos', defaultProductos);
   const [lotes] = usePersistentState('stockbar_lotes', defaultLotes);
   const [ventas] = usePersistentState('stockbar_ventas', defaultVentas);
+  const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
 
   const tick = cssVar('--text-muted');
 
@@ -91,10 +93,12 @@ export const DashboardPage = () => {
     .sort((a, b) => b.total - a.total);
   const categoriaLider = categoriasLista[0] || { nombre: 'Sin ventas todavía', total: 0, porcentaje: 0 };
 
+  // v3: venta.id_metodo_pago es único (ya no hay venta_pago/pago dividido).
   const porMetodo = {};
-  ventasCompletadas.flatMap((v) => v.pagos || []).forEach((pago) => {
-    if (!porMetodo[pago.metodoPago]) porMetodo[pago.metodoPago] = { nombre: pago.metodoPago, total: 0 };
-    porMetodo[pago.metodoPago].total += Number(pago.monto);
+  ventasCompletadas.forEach((v) => {
+    const nombre = metodosPago.find((m) => m.id_metodo_pago === v.id_metodo_pago)?.nombre || 'N/A';
+    if (!porMetodo[nombre]) porMetodo[nombre] = { nombre, total: 0 };
+    porMetodo[nombre].total += Number(v.total);
   });
   const metodosPagoLista = Object.values(porMetodo)
     .map((m) => ({ ...m, porcentaje: ventasTotales.total > 0 ? Number(((m.total / ventasTotales.total) * 100).toFixed(2)) : 0 }))

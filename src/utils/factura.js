@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { calcularTotalesVenta } from './impuestos';
 import { empresaEmisora } from '../data/defaultEmpresa';
+import { defaultMetodosPago } from '../data/defaultMetodosPago';
 
 const money = (n) => `$ ${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 
@@ -15,6 +16,13 @@ export const generarFacturaPDF = (venta, clientes = []) => {
   const clienteInfo = venta.id_cliente
     ? clientes.find((c) => c.id_cliente === venta.id_cliente)
     : null;
+  // v3: venta.id_metodo_pago es único (ya no hay venta_pago/pago dividido).
+  let metodosPago = defaultMetodosPago;
+  try {
+    const guardados = JSON.parse(localStorage.getItem('stockbar_metodos_pago'));
+    if (Array.isArray(guardados)) metodosPago = guardados;
+  } catch { /* usa el catálogo por defecto */ }
+  const nombreMetodoPago = metodosPago.find((m) => m.id_metodo_pago === venta.id_metodo_pago)?.nombre || 'N/A';
 
   // Encabezado — emisor
   doc.setFont('helvetica', 'bold');
@@ -32,7 +40,7 @@ export const generarFacturaPDF = (venta, clientes = []) => {
   doc.setFontSize(13);
   doc.text('FACTURA DE VENTA', 196, 18, { align: 'right' });
   doc.setFontSize(11);
-  doc.text(`No. ${venta.idVenta}`, 196, 24, { align: 'right' });
+  doc.text(`No. ${venta.id_venta}`, 196, 24, { align: 'right' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   doc.text(empresaEmisora.resolucionDian, 196, 29, { align: 'right', maxWidth: 90 });
@@ -102,19 +110,7 @@ export const generarFacturaPDF = (venta, clientes = []) => {
   y += 8;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text('Forma de pago:', 14, y);
-  (venta.pagos || []).forEach((p) => {
-    y += 5;
-    doc.text(
-      `- ${p.metodoPago}${p.referencia_transaccion ? ` (${p.referencia_transaccion})` : ''}: ${money(p.monto)}`,
-      18,
-      y
-    );
-  });
-  if (!venta.pagos || venta.pagos.length === 0) {
-    y += 5;
-    doc.text('- Sin pagos registrados', 18, y);
-  }
+  doc.text(`Forma de pago: ${nombreMetodoPago}`, 14, y);
 
   // Pie legal
   y += 12;
@@ -133,5 +129,5 @@ export const generarFacturaPDF = (venta, clientes = []) => {
     { maxWidth: 182 }
   );
 
-  doc.save(`factura-${venta.idVenta}.pdf`);
+  doc.save(`factura-${venta.id_venta}.pdf`);
 };

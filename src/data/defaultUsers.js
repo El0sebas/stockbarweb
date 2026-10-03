@@ -5,7 +5,7 @@
 // la misma clave de localStorage ('stockbar_users') a través de usePersistentState.
 export const defaultUsers = [
   {
-    id_usuario: 1,
+    id_usuario: 'USR-0001',
     documento: '1098765432',
     nombre: 'Carlos Andrés Gómez',
     correo: 'administrador@stockbar.com',

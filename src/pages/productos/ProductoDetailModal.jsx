@@ -1,17 +1,13 @@
 import React from 'react';
-import { BoxSeam, Tag, CurrencyDollar, Layers, ShieldExclamation, ExclamationTriangle, Truck } from 'react-bootstrap-icons';
+import { BoxSeam, Tag, CurrencyDollar, Layers, ShieldExclamation, ExclamationTriangle } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultCategorias } from '../../data/defaultCategorias';
 import { defaultLotes } from '../../data/defaultLotes';
-import { defaultProveedores } from '../../data/defaultProveedores';
-import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
 import { getLotesProducto, getStockDisponible, getEstadoVencimiento } from '../../utils/stock';
 
 export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) => {
   const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
   const [lotes] = usePersistentState('stockbar_lotes', defaultLotes);
-  const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
-  const [productoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
 
   if (!show || !producto) return null;
 
@@ -22,13 +18,6 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
     : { valor: margenCategoria, origen: 'de la categoría' };
   const lotesProducto = getLotesProducto(lotes, producto.codigo);
   const stockActual = getStockDisponible(lotes, producto.codigo);
-  const proveedoresProducto = productoProveedor
-    .filter((pp) => pp.id_producto === producto.codigo && pp.estado === 'Activo')
-    .map((pp) => {
-      const prov = proveedores.find((p) => p.codigo === pp.id_proveedor);
-      return prov ? { ...prov, precio_referencia: pp.precio_referencia } : null;
-    })
-    .filter(Boolean);
 
   const styles = {
     modalBg: 'var(--bg-card)',
@@ -170,31 +159,6 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
               <div className="col-12">
                 <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
                   <div className="d-flex align-items-center gap-2 mb-2" style={{ color: styles.mutedColor }}>
-                    <Truck size={16} />
-                    <span className="small fw-semibold">Proveedores (de dónde se consigue)</span>
-                  </div>
-                  {proveedoresProducto.length === 0 ? (
-                    <div className="small" style={{ color: styles.mutedColor }}>Sin proveedores asociados.</div>
-                  ) : (
-                    <div className="d-flex flex-wrap gap-2">
-                      {proveedoresProducto.map((prov) => (
-                        <span
-                          key={prov.codigo}
-                          className="badge px-2 py-1 fw-medium"
-                          style={{ backgroundColor: 'var(--blue-soft-bg)', color: 'var(--brand-blue)' }}
-                        >
-                          {prov.razon_social}
-                          {prov.precio_referencia ? ` — $ ${Number(prov.precio_referencia).toLocaleString()}` : ''}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="col-12">
-                <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
-                  <div className="d-flex align-items-center gap-2 mb-2" style={{ color: styles.mutedColor }}>
                     <Layers size={16} />
                     <span className="small fw-semibold">Lotes (solo lectura — se crean desde Compras)</span>
                   </div>
@@ -204,7 +168,7 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
                     <table className="table table-sm align-middle m-0" style={{ color: styles.textColor }}>
                       <thead>
                         <tr>
-                          <th className="small text-uppercase" style={{ color: styles.mutedColor }}>Lote proveedor</th>
+                          <th className="small text-uppercase" style={{ color: styles.mutedColor }}>Lote</th>
                           <th className="small text-uppercase text-center" style={{ color: styles.mutedColor }}>Disponible</th>
                           <th className="small text-uppercase" style={{ color: styles.mutedColor }}>Vence</th>
                           <th className="small text-uppercase text-center" style={{ color: styles.mutedColor }}></th>
@@ -215,7 +179,7 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
                           const estado = getEstadoVencimiento(lote.fecha_vencimiento);
                           return (
                             <tr key={lote.id_lote}>
-                              <td className="small">{lote.numero_lote_proveedor || `Lote #${lote.id_lote}`}</td>
+                              <td className="small">{lote.id_lote}</td>
                               <td className="small text-center">{lote.cantidad_disponible} un.</td>
                               <td className="small">
                                 <span style={{ color: styles.mutedColor }}>{lote.fecha_vencimiento || 'Sin vencimiento'}</span>

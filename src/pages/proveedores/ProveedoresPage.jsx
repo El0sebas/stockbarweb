@@ -6,18 +6,19 @@ import { StatusToggle } from '../../components/common/StatusToggle';
 import { EstadoFilter } from '../../components/common/EstadoFilter';
 import { ProveedorDetailModal } from './ProveedorDetailModal.jsx';
 import { ProveedorFormModal } from './ProveedorFormModal.jsx';
-import { showToast } from '../../utils/alerts';
-import { generateNextIdentifier } from '../../utils/identifiers';
+import { showToast, showAlert } from '../../utils/alerts';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultProveedores } from '../../data/defaultProveedores';
 import { defaultContactosProveedor } from '../../data/defaultContactosProveedor';
+
+const NIT_REGEX = /^[0-9]{5,15}(-[0-9])?$/;
 
 export const ProveedoresPage = () => {
   const [proveedores, setProveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
   const [contactos] = usePersistentState('stockbar_contactos_proveedor', defaultContactosProveedor);
 
-  const getContactoPrincipal = (codigoProveedor) =>
-    contactos.find((c) => c.id_proveedor === codigoProveedor && c.es_principal && c.estado === 'Activo');
+  const getContactoPrincipal = (nitProveedor) =>
+    contactos.find((c) => c.id_proveedor === nitProveedor && c.es_principal && c.estado === 'Activo');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
@@ -50,18 +51,28 @@ export const ProveedoresPage = () => {
 
   const handleToggleEstado = (prov) => {
     const nuevoEstado = prov.estado === 'Activo' ? 'Inactivo' : 'Activo';
-    setProveedores(proveedores.map(p => p.codigo === prov.codigo ? { ...p, estado: nuevoEstado } : p));
+    setProveedores(proveedores.map(p => p.nit === prov.nit ? { ...p, estado: nuevoEstado } : p));
     showToast('success', `Estado actualizado a ${nuevoEstado}`);
   };
 
+  // v3: id_proveedor ES el NIT — lo escribe el usuario, la app no lo inventa.
   const handleSaveProveedor = (formData) => {
+    const nit = (formData.nit || '').trim();
+    if (!NIT_REGEX.test(nit)) {
+      showAlert.error('NIT inválido', 'El NIT debe tener entre 5 y 15 dígitos, con dígito de verificación opcional (ej: 900123456-1).');
+      return;
+    }
     if (selectedProveedor) {
-      setProveedores(proveedores.map(p => p.codigo === formData.codigo ? formData : p));
+      setProveedores(proveedores.map(p => p.nit === selectedProveedor.nit ? { ...formData, nit } : p));
       showToast('success', 'Proveedor actualizado exitosamente');
     } else {
-      const nuevoCodigo = generateNextIdentifier({ items: proveedores, key: 'codigo', prefix: 'PROV', pad: 2, separator: '-' });
-      setProveedores([...proveedores, { ...formData, codigo: nuevoCodigo, fecha_registro: new Date().toISOString() }]);
-      showToast('success', `Proveedor ${nuevoCodigo} creado exitosamente`);
+      const yaExiste = proveedores.some((p) => p.nit === nit);
+      if (yaExiste) {
+        showAlert.error('NIT duplicado', 'Ya existe un proveedor registrado con ese NIT.');
+        return;
+      }
+      setProveedores([...proveedores, { ...formData, nit, fecha_registro: new Date().toISOString() }]);
+      showToast('success', `Proveedor ${nit} creado exitosamente`);
     }
     setShowFormModal(false);
     setSelectedProveedor(null);
@@ -69,7 +80,7 @@ export const ProveedoresPage = () => {
 
   const handleConfirmDelete = () => {
     if (selectedProveedor) {
-      setProveedores(proveedores.filter(p => p.codigo !== selectedProveedor.codigo));
+      setProveedores(proveedores.filter(p => p.nit !== selectedProveedor.nit));
       showToast('success', 'Proveedor eliminado exitosamente');
     }
     setShowDeleteModal(false);
@@ -78,7 +89,6 @@ export const ProveedoresPage = () => {
 
   const filteredProveedores = proveedores.filter(p =>
     (p.razon_social.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (p.nit || '').toLowerCase().includes(searchTerm.toLowerCase())) &&
     (!filtroEstado || p.estado === filtroEstado)
   );
@@ -144,7 +154,7 @@ export const ProveedoresPage = () => {
           <table className="table table-hover align-middle m-0" style={{ color: styles.textColor }}>
             <thead>
               <tr style={{ borderColor: styles.borderCol }}>
-                <th className="py-3 px-4 small text-uppercase fw-bold" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>CÓDIGO</th>
+                <th className="py-3 px-4 small text-uppercase fw-bold" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>NIT</th>
                 <th className="py-3 px-4 small text-uppercase fw-bold" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>PROVEEDOR</th>
                 <th className="py-3 px-4 small text-uppercase fw-bold" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>CONTACTO</th>
                 <th className="py-3 px-4 small text-uppercase fw-bold" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>TELÉFONO</th>
@@ -161,16 +171,16 @@ export const ProveedoresPage = () => {
                 </tr>
               ) : (
                 filteredProveedores.map((prov) => (
-                  <tr key={prov.codigo} style={{ borderColor: styles.borderCol }}>
+                  <tr key={prov.nit} style={{ borderColor: styles.borderCol }}>
                     <td className="py-3 px-4 fw-bold" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>
-                      {prov.codigo}
+                      {prov.nit}
                     </td>
                     <td className="py-3 px-4 fw-semibold" style={{ backgroundColor: 'transparent', color: styles.textColor }}>
                       {prov.razon_social}
                     </td>
                     <td className="py-3 px-4 small" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>
                       {(() => {
-                        const principal = getContactoPrincipal(prov.codigo);
+                        const principal = getContactoPrincipal(prov.nit);
                         return principal ? `${principal.nombres} ${principal.apellidos}` : 'Sin contacto';
                       })()}
                     </td>

@@ -2,14 +2,18 @@ import React from 'react';
 import { CartCheck, Person, CreditCard, Calendar3, XCircle, Printer } from 'react-bootstrap-icons';
 import { calcularTotalesVenta } from '../../utils/impuestos';
 import { generarFacturaPDF } from '../../utils/factura';
+import { usePersistentState } from '../../hooks/usePersistentState';
+import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 
 export const VentaDetailModal = ({ show, onClose, venta, clientes = [], onAnular }) => {
+  const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
+
   if (!show || !venta) return null;
 
   // Espejo de vw_totales_venta: base gravable + IVA a partir de la tasa
   // que quedó congelada por línea al momento de la venta.
   const totales = calcularTotalesVenta(venta.productos || []);
-  const totalPagado = (venta.pagos || []).reduce((acc, p) => acc + Number(p.monto), 0);
+  const nombreMetodoPago = metodosPago.find((m) => m.id_metodo_pago === venta.id_metodo_pago)?.nombre || 'N/A';
 
   const styles = {
     modalBg: 'var(--bg-card)',
@@ -48,7 +52,7 @@ export const VentaDetailModal = ({ show, onClose, venta, clientes = [], onAnular
             <div className="d-flex justify-content-between align-items-center pb-2 border-bottom" style={{ borderColor: styles.borderCol }}>
               <div>
                 <span className="badge px-2 py-1 mb-1 fw-bold" style={{ backgroundColor: 'var(--amber-action)', color: '#FFFFFF' }}>
-                  {venta.idVenta}
+                  {venta.id_venta}
                 </span>
                 <h4 className="fw-bold m-0">{venta.cliente}</h4>
               </div>
@@ -104,20 +108,11 @@ export const VentaDetailModal = ({ show, onClose, venta, clientes = [], onAnular
             </div>
 
             <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
-              <div className="d-flex align-items-center gap-2 mb-2" style={{ color: styles.mutedColor }}>
+              <div className="d-flex align-items-center gap-2 mb-1" style={{ color: styles.mutedColor }}>
                 <CreditCard size={16} />
-                <span className="small fw-semibold">Pagos</span>
+                <span className="small">Método de pago</span>
               </div>
-              {(venta.pagos || []).length === 0 ? (
-                <div className="small" style={{ color: styles.mutedColor }}>Sin pagos registrados.</div>
-              ) : (
-                venta.pagos.map((p, idx) => (
-                  <div key={idx} className="d-flex justify-content-between small py-1">
-                    <span>{p.metodoPago}{p.referencia_transaccion ? ` • ${p.referencia_transaccion}` : ''}</span>
-                    <span className="fw-semibold">$ {Number(p.monto).toLocaleString()}</span>
-                  </div>
-                ))
-              )}
+              <span className="fw-semibold">{nombreMetodoPago}</span>
             </div>
 
             {venta.observaciones && (
@@ -140,12 +135,6 @@ export const VentaDetailModal = ({ show, onClose, venta, clientes = [], onAnular
                 <span className="fw-bold fs-6">Total:</span>
                 <span className="fw-bold fs-5" style={{ color: 'var(--amber-action)' }}>$ {Number(venta.total).toLocaleString()}</span>
               </div>
-              {venta.estado === 'COMPLETADA' && (
-                <div className="d-flex justify-content-between gap-3 small" style={{ color: styles.mutedColor, minWidth: '220px' }}>
-                  <span>Pagado</span>
-                  <span>$ {Number(totalPagado).toLocaleString()}</span>
-                </div>
-              )}
             </div>
           </div>
 

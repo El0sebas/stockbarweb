@@ -1,20 +1,20 @@
 // El stock de un producto nunca es un número guardado: siempre se calcula
 // sumando lo disponible en sus lotes (mismo criterio que vw_stock_producto /
 // vw_stock_lotes en la base de datos). Ver docs/DATABASE.md sección 3.
-// getLotesProducto no filtra por estado_compra (igual que vw_stock_lotes,
-// que muestra el lote sin importar el estado de su compra) — se usa para
-// listar. getStockDisponible / getLotesVendibles sí filtran (igual que
-// vw_stock_producto, que solo suma estado_compra = 'RECIBIDA'): un lote de
-// una compra PENDIENTE (todavía no llega) o ANULADA no cuenta como stock ni
-// puede venderse o darse de baja.
-export const getLotesProducto = (lotes, codigoProducto) =>
-  (lotes || []).filter((lote) => lote.producto_codigo === codigoProducto);
+// v3: un lote ya no carga estado_compra — solo las entradas REGISTRADA de
+// detalle_compra suman a cantidad_disponible (ComprasPage.registrarEntradasCompra
+// y handleAnularCompra se encargan de eso), así que todo lote con cantidad
+// visible aquí ya es, por construcción, vendible.
+export const getLotesProducto = (lotes, idProducto) =>
+  (lotes || []).filter((lote) => lote.id_producto === idProducto);
 
-export const getLotesVendibles = (lotes, codigoProducto) =>
-  getLotesProducto(lotes, codigoProducto).filter((lote) => lote.estado_compra === 'RECIBIDA');
+// v3: ya no hay estado_compra que filtrar aquí — queda como alias para no
+// romper a quienes ya la llaman (VentasPage filtra cantidad_disponible > 0
+// explícitamente al armar el FEFO).
+export const getLotesVendibles = getLotesProducto;
 
-export const getStockDisponible = (lotes, codigoProducto) =>
-  getLotesVendibles(lotes, codigoProducto).reduce(
+export const getStockDisponible = (lotes, idProducto) =>
+  getLotesProducto(lotes, idProducto).reduce(
     (total, lote) => total + Number(lote.cantidad_disponible || 0),
     0
   );

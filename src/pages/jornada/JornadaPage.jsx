@@ -8,7 +8,7 @@ import { defaultJornadas } from '../../data/defaultJornadas';
 import { defaultVentas } from '../../data/defaultVentas';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 import { getJornadaAbierta } from '../../utils/jornada';
-import { generateNextId } from '../../utils/identifiers';
+import { generateNextIdentifier } from '../../utils/identifiers';
 import { showToast, showAlert } from '../../utils/alerts';
 import { JornadaDetailModal } from './JornadaDetailModal';
 import Swal from 'sweetalert2';
@@ -34,7 +34,7 @@ export const JornadaPage = () => {
       return;
     }
     const nuevaJornada = {
-      id_jornada: generateNextId(jornadas, 'id_jornada'),
+      id_jornada: generateNextIdentifier({ items: jornadas, key: 'id_jornada', prefix: 'JOR', pad: 6, separator: '-' }),
       id_usuario_apertura: currentUser?.id_usuario || null,
       usuario_apertura: currentUser?.nombre || 'N/A',
       fecha_hora_apertura: new Date().toISOString(),

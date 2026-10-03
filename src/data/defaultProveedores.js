@@ -6,7 +6,6 @@
 // (data/defaultContactosProveedor.js).
 export const defaultProveedores = [
   {
-    codigo: 'PROV-01',
     nit: '900123456-1',
     razon_social: 'Distribuidora de Licores de Antioquia',
     nombre_comercial: 'Distrilicores Antioquia',
@@ -17,7 +16,6 @@ export const defaultProveedores = [
     estado: 'Activo'
   },
   {
-    codigo: 'PROV-02',
     nit: '900654321-2',
     razon_social: 'Importaciones Andinas S.A.S.',
     nombre_comercial: null,
@@ -28,7 +26,6 @@ export const defaultProveedores = [
     estado: 'Activo'
   },
   {
-    codigo: 'PROV-03',
     nit: '890900123-4',
     razon_social: 'Cervecería Nacional',
     nombre_comercial: null,

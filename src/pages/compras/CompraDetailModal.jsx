@@ -1,24 +1,19 @@
 import React from 'react';
-import { BagCheck, Truck, Calendar3, CreditCard, FileEarmarkText, Hash, XCircle, CheckCircle, Person } from 'react-bootstrap-icons';
+import { BagCheck, Truck, Calendar3, CreditCard, FileEarmarkText, Hash, XCircle, Person } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 
 const ESTADO_COLORES = {
-  PENDIENTE: { bg: 'var(--amber-soft-bg)', color: 'var(--amber-action)' },
-  RECIBIDA: { bg: 'var(--success-soft-bg)', color: 'var(--brand-success)' },
+  REGISTRADA: { bg: 'var(--success-soft-bg)', color: 'var(--brand-success)' },
   ANULADA: { bg: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' }
 };
 
-export const CompraDetailModal = ({ show, onClose, compra, onAnular, onMarcarRecibida }) => {
-  // Resuelve el método de pago tanto si viene como nombre (semilla antigua)
-  // como si viene por id_metodo_pago (compras creadas desde el formulario).
+export const CompraDetailModal = ({ show, onClose, compra, onAnular }) => {
   const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
 
   if (!show || !compra) return null;
 
-  const nombreMetodoPago = compra.metodoPago
-    || metodosPago.find((m) => m.id_metodo_pago === compra.id_metodo_pago)?.nombre
-    || 'N/A';
+  const nombreMetodoPago = metodosPago.find((m) => m.id_metodo_pago === compra.id_metodo_pago)?.nombre || 'N/A';
 
   const styles = {
     modalBg: 'var(--bg-card)',
@@ -142,7 +137,7 @@ export const CompraDetailModal = ({ show, onClose, compra, onAnular, onMarcarRec
                       <th className="small text-uppercase" style={{ color: styles.mutedColor }}>Producto</th>
                       <th className="small text-uppercase text-center" style={{ color: styles.mutedColor }}>Cant.</th>
                       <th className="small text-uppercase text-end" style={{ color: styles.mutedColor }}>Costo Unit.</th>
-                      <th className="small text-uppercase" style={{ color: styles.mutedColor }}>Lote/Vencimiento</th>
+                      <th className="small text-uppercase" style={{ color: styles.mutedColor }}>Vencimiento</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -152,7 +147,7 @@ export const CompraDetailModal = ({ show, onClose, compra, onAnular, onMarcarRec
                         <td className="text-center">{item.cantidad} un.</td>
                         <td className="text-end">$ {Number(item.costoUnitario).toLocaleString()}</td>
                         <td className="small" style={{ color: styles.mutedColor }}>
-                          {item.numero_lote ? `${item.numero_lote} • ${item.fecha_vencimiento}` : 'Sin vencimiento'}
+                          {item.fecha_vencimiento || 'Sin vencimiento'}
                         </td>
                       </tr>
                     ))}
@@ -187,17 +182,7 @@ export const CompraDetailModal = ({ show, onClose, compra, onAnular, onMarcarRec
             >
               Cerrar
             </button>
-            {compra.estado === 'PENDIENTE' && onMarcarRecibida && (
-              <button
-                type="button"
-                className="btn btn-sm px-4 fw-bold text-white d-flex align-items-center gap-2 border-0"
-                style={{ backgroundColor: 'var(--brand-success)' }}
-                onClick={() => onMarcarRecibida(compra)}
-              >
-                <CheckCircle size={16} /> Marcar como recibida
-              </button>
-            )}
-            {compra.estado === 'PENDIENTE' && onAnular && (
+            {compra.estado === 'REGISTRADA' && onAnular && (
               <button
                 type="button"
                 className="btn btn-sm px-4 fw-bold text-white d-flex align-items-center gap-2 border-0"

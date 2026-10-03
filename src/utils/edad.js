@@ -19,12 +19,12 @@ const EDAD_MINIMA = 18;
 // mensaje genérico de "error del servidor".
 //
 // Una venta de mostrador (sin cliente específico) o al cliente genérico
-// "Consumidor Final" (id_cliente 0) no exige documento de identidad: se
-// confía en la verificación visual del cajero, igual que en un mostrador
-// real. El bloqueo por edad solo aplica cuando se elige un cliente
-// registrado específico (con nombre y documento propios).
+// "Consumidor Final" (id_cliente 'CLI-00000') no exige documento de
+// identidad: se confía en la verificación visual del cajero, igual que en
+// un mostrador real. El bloqueo por edad solo aplica cuando se elige un
+// cliente registrado específico (con nombre y documento propios).
 export const validarEdadCliente = (cliente) => {
-  if (!cliente || cliente.id_cliente === 0) {
+  if (!cliente || cliente.id_cliente === 'CLI-00000') {
     return null;
   }
   if (!cliente.fecha_nacimiento) {

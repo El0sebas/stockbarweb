@@ -13,14 +13,14 @@
 // (vencimiento, daño, pérdida) sin depender del administrador.
 export const defaultRoles = [
   {
-    codigo: 'ROL-01',
+    codigo: 'ADM',
     nombre: 'ADMINISTRADOR',
     permisos: ['GESTIONAR_ROLES', 'GESTIONAR_USUARIOS', 'GESTIONAR_CATEGORIAS', 'GESTIONAR_PRODUCTOS', 'GESTIONAR_PROVEEDORES', 'GESTIONAR_COMPRAS', 'GESTIONAR_BAJAS', 'GESTIONAR_CLIENTES', 'GESTIONAR_VENTAS', 'GESTIONAR_JORNADA', 'VER_REPORTES'],
     estado: 'Activo',
     isSystem: true
   },
   {
-    codigo: 'ROL-02',
+    codigo: 'EMP',
     nombre: 'EMPLEADO',
     permisos: ['GESTIONAR_CLIENTES', 'GESTIONAR_VENTAS', 'GESTIONAR_JORNADA', 'GESTIONAR_BAJAS'],
     estado: 'Activo',

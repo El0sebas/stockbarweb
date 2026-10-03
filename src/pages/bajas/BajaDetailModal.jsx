@@ -73,7 +73,7 @@ export const BajaDetailModal = ({ show, onClose, baja, lote, producto, motivoNom
                     <BoxSeam size={16} />
                     <span className="small">Lote afectado</span>
                   </div>
-                  <span className="fw-semibold">{lote?.numero_lote_proveedor || `#${baja.id_lote}`}</span>
+                  <span className="fw-semibold">{baja.id_lote}</span>
                   {lote?.fecha_vencimiento && (
                     <div className="small" style={{ color: styles.mutedColor }}>Vence: {lote.fecha_vencimiento}</div>
                   )}

@@ -28,17 +28,15 @@ export const BajaFormModal = ({ show, onClose, onSave, lotes, productos, motivos
 
   const getProducto = (codigo) => productos.find((p) => p.codigo === codigo);
 
-  // Solo un lote de una compra RECIBIDA cuenta como stock real (ver
-  // utils/stock.js): uno PENDIENTE (aún no llega) o ANULADA no puede darse
-  // de baja porque nunca contó como inventario real.
-  const lotesConDisponible = lotes.filter((l) => Number(l.cantidad_disponible) > 0 && l.estado_compra === 'RECIBIDA');
+  // Solo un lote con stock disponible puede darse de baja.
+  const lotesConDisponible = lotes.filter((l) => Number(l.cantidad_disponible) > 0);
   const resultadosBusqueda = busqueda
     ? lotesConDisponible.filter((l) => {
-        const prod = getProducto(l.producto_codigo);
+        const prod = getProducto(l.id_producto);
         return (
           prod?.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
           prod?.codigo.toLowerCase().includes(busqueda.toLowerCase()) ||
-          (l.numero_lote_proveedor || '').toLowerCase().includes(busqueda.toLowerCase())
+          l.id_lote.toLowerCase().includes(busqueda.toLowerCase())
         );
       })
     : [];
@@ -65,7 +63,7 @@ export const BajaFormModal = ({ show, onClose, onSave, lotes, productos, motivos
     });
   };
 
-  const productoSeleccionado = loteSeleccionado ? getProducto(loteSeleccionado.producto_codigo) : null;
+  const productoSeleccionado = loteSeleccionado ? getProducto(loteSeleccionado.id_producto) : null;
   const estadoVencimiento = loteSeleccionado ? getEstadoVencimiento(loteSeleccionado.fecha_vencimiento) : null;
 
   const styles = {
@@ -99,9 +97,9 @@ export const BajaFormModal = ({ show, onClose, onSave, lotes, productos, motivos
                 {loteSeleccionado ? (
                   <div className="p-3 rounded-3 d-flex justify-content-between align-items-center" style={{ backgroundColor: styles.tableBg, border: `1px solid ${styles.borderCol}` }}>
                     <div>
-                      <div className="fw-semibold">{productoSeleccionado?.nombre || loteSeleccionado.producto_codigo}</div>
+                      <div className="fw-semibold">{productoSeleccionado?.nombre || loteSeleccionado.id_producto}</div>
                       <div className="small" style={{ color: styles.mutedColor }}>
-                        Lote {loteSeleccionado.numero_lote_proveedor || `#${loteSeleccionado.id_lote}`}
+                        Lote {loteSeleccionado.id_lote}
                         {loteSeleccionado.fecha_vencimiento ? ` • Vence ${loteSeleccionado.fecha_vencimiento}` : ' • Sin vencimiento'}
                         {' • '}Disponible: {loteSeleccionado.cantidad_disponible} un.
                         {estadoVencimiento === 'vencido' && <span className="badge ms-2" style={{ backgroundColor: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' }}>Vencido</span>}
@@ -129,7 +127,7 @@ export const BajaFormModal = ({ show, onClose, onSave, lotes, productos, motivos
                           <div className="small text-center py-3" style={{ color: styles.mutedColor }}>Sin lotes disponibles que coincidan.</div>
                         ) : (
                           resultadosBusqueda.map((l) => {
-                            const prod = getProducto(l.producto_codigo);
+                            const prod = getProducto(l.id_producto);
                             const estado = getEstadoVencimiento(l.fecha_vencimiento);
                             return (
                               <button
@@ -140,9 +138,9 @@ export const BajaFormModal = ({ show, onClose, onSave, lotes, productos, motivos
                                 onClick={() => setLoteSeleccionado(l)}
                               >
                                 <span>
-                                  <span className="fw-semibold">{prod?.nombre || l.producto_codigo}</span>{' '}
+                                  <span className="fw-semibold">{prod?.nombre || l.id_producto}</span>{' '}
                                   <span className="small" style={{ color: styles.mutedColor }}>
-                                    Lote {l.numero_lote_proveedor || `#${l.id_lote}`} • Disp. {l.cantidad_disponible} un.
+                                    Lote {l.id_lote} • Disp. {l.cantidad_disponible} un.
                                   </span>
                                 </span>
                                 {estado === 'vencido' && <span className="badge" style={{ backgroundColor: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' }}>Vencido</span>}

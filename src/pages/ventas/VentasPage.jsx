@@ -10,13 +10,12 @@ import { defaultClientes } from '../../data/defaultClientes';
 import { defaultProductos } from '../../data/defaultProductos';
 import { defaultLotes } from '../../data/defaultLotes';
 import { defaultJornadas } from '../../data/defaultJornadas';
-import { generateNextIdentifier, generateNextId } from '../../utils/identifiers';
+import { generateNextIdentifier } from '../../utils/identifiers';
 import { calcularTotalesVenta, getPorcentajeIva } from '../../utils/impuestos';
 import { validarEdadCliente } from '../../utils/edad';
 import { getLotesVendibles, getStockDisponible, getEstadoVencimiento } from '../../utils/stock';
 import { getJornadaAbierta } from '../../utils/jornada';
 import { QuantityStepper } from '../../components/common/QuantityStepper';
-import { MoneyInput } from '../../components/common/MoneyInput';
 import { VentaDetailModal } from './VentaDetailModal';
 import { FechaRangoFilter } from '../../components/common/FechaRangoFilter';
 import { estaEnRangoFecha } from '../../utils/fechas';
@@ -43,9 +42,7 @@ export const VentasPage = () => {
   const [productoSearch, setProductoSearch] = useState('');
   const [cantidadesBusqueda, setCantidadesBusqueda] = useState({});
   const [idCliente, setIdCliente] = useState('');
-  const [metodoPagoNuevo, setMetodoPagoNuevo] = useState(metodosPagoActivos[0]?.id_metodo_pago || 1);
-  const [montoNuevoPago, setMontoNuevoPago] = useState('');
-  const [referenciaNuevoPago, setReferenciaNuevoPago] = useState('');
+  const [metodoPagoVenta, setMetodoPagoVenta] = useState(metodosPagoActivos[0]?.id_metodo_pago || 1);
 
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedVenta, setSelectedVenta] = useState(null);
@@ -53,7 +50,7 @@ export const VentasPage = () => {
   const ventaActiva = ventaActivaId ? ventas.find((v) => v.id_venta === ventaActivaId) : null;
   const productosActivos = productos.filter((p) => p.estado === 'Activo');
   const clientesActivos = clientes.filter((c) => c.estado === 'Activo');
-  const clienteSeleccionado = idCliente ? clientes.find((c) => c.id_cliente === Number(idCliente)) : null;
+  const clienteSeleccionado = idCliente ? clientes.find((c) => c.id_cliente === idCliente) : null;
 
   const getRequiereEdad = (nombreCategoria) =>
     Boolean(categorias.find((c) => c.nombre === nombreCategoria)?.requiere_verificacion_edad);
@@ -92,14 +89,12 @@ export const VentasPage = () => {
     // explícitamente a un cliente real si el producto la exige.
     setIdCliente(
       ventaExistente
-        ? (ventaExistente.id_cliente != null ? String(ventaExistente.id_cliente) : '0')
-        : '0'
+        ? (ventaExistente.id_cliente != null ? ventaExistente.id_cliente : 'CLI-00000')
+        : 'CLI-00000'
     );
     setProductoSearch('');
     setCantidadesBusqueda({});
-    setMetodoPagoNuevo(metodosPagoActivos[0]?.id_metodo_pago || 1);
-    setMontoNuevoPago('');
-    setReferenciaNuevoPago('');
+    setMetodoPagoVenta(ventaExistente?.id_metodo_pago || metodosPagoActivos[0]?.id_metodo_pago || 1);
     setShowModal(true);
   };
 
@@ -114,20 +109,19 @@ export const VentasPage = () => {
   // momento del primer producto agregado — el carrito nunca es solo un
   // estado local del navegador.
   const crearVentaPendiente = () => {
-    const idVenta = generateNextId(ventas, 'id_venta');
+    const idVenta = generateNextIdentifier({ items: ventas, key: 'id_venta', prefix: 'VTA', pad: 6, separator: '-' });
     const nuevaVenta = {
       id_venta: idVenta,
-      idVenta: generateNextIdentifier({ items: ventas, key: 'idVenta', prefix: 'VNT', pad: 3, separator: '-' }),
-      id_cliente: idCliente ? Number(idCliente) : null,
+      id_cliente: idCliente || null,
       cliente: clienteSeleccionado ? clienteSeleccionado.nombre_completo : 'Cliente de mostrador',
       id_jornada: jornadaAbierta.id_jornada,
       id_usuario: currentUser?.id_usuario || null,
       usuario: currentUser?.nombre || 'N/A',
+      id_metodo_pago: metodoPagoVenta,
       fecha_hora_venta: new Date().toISOString(),
       estado: 'PENDIENTE',
       observaciones: null,
       productos: [],
-      pagos: [],
       total: 0
     };
     setVentas((prev) => [nuevaVenta, ...prev]);
@@ -203,7 +197,7 @@ export const VentasPage = () => {
             categoria: prod.categoria,
             cantidad: take,
             precio: prod.precioVenta,
-            lote: lote.numero_lote_proveedor || `#${lote.id_lote}`,
+            lote: lote.id_lote,
             porcentajeIva
           });
         }
@@ -248,28 +242,13 @@ export const VentasPage = () => {
     });
   };
 
-  const totalPagado = ventaActiva ? ventaActiva.pagos.reduce((acc, p) => acc + Number(p.monto), 0) : 0;
-  const diferenciaPago = ventaActiva ? ventaActiva.total - totalPagado : 0;
-
-  const handleAgregarPago = () => {
-    if (!ventaActiva) return;
-    const monto = Number(montoNuevoPago);
-    if (!monto || monto <= 0) {
-      showAlert.error('Monto inválido', 'El monto del pago debe ser mayor que cero.');
-      return;
+  // v3: venta.id_metodo_pago es único (ya no hay venta_pago ni pago
+  // dividido) — cambiarlo actualiza la venta activa directamente.
+  const handleCambiarMetodoPago = (value) => {
+    setMetodoPagoVenta(Number(value));
+    if (ventaActivaId) {
+      actualizarVenta(ventaActivaId, (v) => ({ ...v, id_metodo_pago: Number(value) }));
     }
-    const metodo = metodosPago.find((m) => m.id_metodo_pago === Number(metodoPagoNuevo));
-    actualizarVenta(ventaActiva.id_venta, (venta) => ({
-      ...venta,
-      pagos: [...venta.pagos, { id_metodo_pago: Number(metodoPagoNuevo), metodoPago: metodo?.nombre || 'N/A', monto, referencia_transaccion: referenciaNuevoPago.trim() || null }]
-    }));
-    setMontoNuevoPago('');
-    setReferenciaNuevoPago('');
-  };
-
-  const handleQuitarPago = (index) => {
-    if (!ventaActiva) return;
-    actualizarVenta(ventaActiva.id_venta, (venta) => ({ ...venta, pagos: venta.pagos.filter((_, i) => i !== index) }));
   };
 
   // Libera el stock reservado por todas las líneas de una venta (cancelar
@@ -309,15 +288,11 @@ export const VentasPage = () => {
       showAlert.error('Venta rechazada', 'El total de la venta debe ser mayor que cero.');
       return;
     }
-    if (ventaActiva.total !== totalPagado) {
-      showAlert.error('Venta rechazada', 'El total de la venta no coincide con el total pagado.');
-      return;
-    }
 
     actualizarVenta(ventaActiva.id_venta, (venta) => ({ ...venta, estado: 'COMPLETADA' }));
     setShowModal(false);
     setVentaActivaId(null);
-    showToast('success', `Venta ${ventaActiva.idVenta} completada`);
+    showToast('success', `Venta ${ventaActiva.id_venta} completada`);
     // Factura automática al confirmar (ver utils/factura.js): se genera con
     // el estado ya en COMPLETADA aunque el state todavía no haya re-renderizado.
     generarFacturaPDF({ ...ventaActiva, estado: 'COMPLETADA' }, clientes);
@@ -346,7 +321,7 @@ export const VentasPage = () => {
     if (!confirmado) return;
     liberarStockVenta(venta);
     actualizarVenta(venta.id_venta, (v) => ({ ...v, estado: 'ANULADA' }));
-    showToast('success', `Venta ${venta.idVenta} cancelada`);
+    showToast('success', `Venta ${venta.id_venta} cancelada`);
   };
 
   const handleAnularCompletada = async (venta) => {
@@ -355,12 +330,12 @@ export const VentasPage = () => {
     liberarStockVenta(venta);
     actualizarVenta(venta.id_venta, (v) => ({ ...v, estado: 'ANULADA' }));
     setShowDetailModal(false);
-    showToast('success', `Venta ${venta.idVenta} anulada`);
+    showToast('success', `Venta ${venta.id_venta} anulada`);
   };
 
   const filteredVentas = ventas.filter((v) =>
     (v.cliente.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.idVenta.toLowerCase().includes(searchTerm.toLowerCase())) &&
+      v.id_venta.toLowerCase().includes(searchTerm.toLowerCase())) &&
     estaEnRangoFecha(v.fecha_hora_venta, filtroDesde, filtroHasta)
   );
 
@@ -443,7 +418,7 @@ export const VentasPage = () => {
               ) : (
                 filteredVentas.map((v) => (
                   <tr key={v.id_venta} style={{ borderColor: styles.borderCol }}>
-                    <td className="py-3 px-4 fw-bold" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>{v.idVenta}</td>
+                    <td className="py-3 px-4 fw-bold" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>{v.id_venta}</td>
                     <td className="py-3 px-4 fw-semibold" style={{ backgroundColor: 'transparent', color: styles.textColor }}>{v.cliente}</td>
                     <td className="py-3 px-4 small" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>{new Date(v.fecha_hora_venta).toLocaleString('es-CO')}</td>
                     <td className="py-3 px-4 small" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>
@@ -500,7 +475,7 @@ export const VentasPage = () => {
                <div className="d-flex align-items-center gap-2">
                  <CartCheck size={20} color="var(--amber-action)" />
                  <h5 className="modal-title fw-bold m-0">
-                   {ventaActiva ? `Venta ${ventaActiva.idVenta} (PENDIENTE)` : 'Registrar venta web'}
+                   {ventaActiva ? `Venta ${ventaActiva.id_venta} (PENDIENTE)` : 'Registrar venta web'}
                  </h5>
                </div>
                <button type="button" className="btn-close shadow-none btn-close-themed" onClick={cerrarModalDescartando}></button>
@@ -658,57 +633,19 @@ export const VentasPage = () => {
 
                <div className="rounded-3 p-3" style={{ backgroundColor: 'var(--bg-main)', border: `1px solid ${styles.borderCol}` }}>
                  <h6 className="fw-bold small mb-3 d-flex align-items-center gap-2" style={{ color: 'var(--amber-action)' }}>
-                   <CashCoin size={16} /> Pagos
+                   <CashCoin size={16} /> Método de pago
                  </h6>
-                 <div className="row g-2 align-items-end mb-3">
-                   <div className="col-md-4">
-                     <label className="form-label small text-muted">Método</label>
-                     <select className="form-select form-select-sm" value={metodoPagoNuevo} onChange={(e) => setMetodoPagoNuevo(e.target.value)} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}>
-                       {metodosPagoActivos.map((m) => (
-                         <option key={m.id_metodo_pago} value={m.id_metodo_pago}>{m.nombre}</option>
-                       ))}
-                     </select>
-                   </div>
-                   <div className="col-md-3">
-                     <label className="form-label small text-muted">Monto</label>
-                     <MoneyInput className="form-control form-control-sm" value={montoNuevoPago} onChange={setMontoNuevoPago} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} />
-                   </div>
-                   <div className="col-md-3">
-                     <label className="form-label small text-muted">Referencia (opcional)</label>
-                     <input type="text" className="form-control form-control-sm" value={referenciaNuevoPago} onChange={(e) => setReferenciaNuevoPago(e.target.value)} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} />
-                   </div>
-                   <div className="col-md-2 d-grid">
-                     <button type="button" className="btn btn-sm text-white" style={{ backgroundColor: 'var(--amber-action)', border: 'none' }} onClick={handleAgregarPago} disabled={!ventaActiva}>
-                       Agregar pago
-                     </button>
-                   </div>
-                 </div>
-
-                 {ventaActiva && ventaActiva.pagos.length > 0 && (
-                   <div className="mb-3">
-                     {ventaActiva.pagos.map((p, idx) => (
-                       <div key={idx} className="d-flex justify-content-between align-items-center small py-1 border-bottom" style={{ borderColor: styles.borderCol }}>
-                         <span>{p.metodoPago}{p.referencia_transaccion ? ` • ${p.referencia_transaccion}` : ''}</span>
-                         <div className="d-flex align-items-center gap-2">
-                           <span className="fw-semibold">${new Intl.NumberFormat('es-CO').format(p.monto)}</span>
-                           <button type="button" className="btn btn-sm p-0 text-danger border-0" onClick={() => handleQuitarPago(idx)}><Trash size={13} /></button>
-                         </div>
-                       </div>
-                     ))}
-                   </div>
-                 )}
-
-                 <div className="d-flex justify-content-between align-items-center">
-                   <span className="small fw-semibold">
-                     {diferenciaPago === 0 && ventaActiva ? (
-                       <span style={{ color: 'var(--brand-success)' }}>Cuadrado ✓</span>
-                     ) : diferenciaPago > 0 ? (
-                       <span style={{ color: 'var(--brand-danger)' }}>Falta: ${new Intl.NumberFormat('es-CO').format(diferenciaPago)}</span>
-                     ) : (
-                       <span style={{ color: 'var(--brand-danger)' }}>Sobra: ${new Intl.NumberFormat('es-CO').format(Math.abs(diferenciaPago))}</span>
-                     )}
-                   </span>
-                 </div>
+                 <select
+                   className="form-select form-select-sm"
+                   value={ventaActiva?.id_metodo_pago ?? metodoPagoVenta}
+                   onChange={(e) => handleCambiarMetodoPago(e.target.value)}
+                   disabled={!ventaActiva}
+                   style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                 >
+                   {metodosPagoActivos.map((m) => (
+                     <option key={m.id_metodo_pago} value={m.id_metodo_pago}>{m.nombre}</option>
+                   ))}
+                 </select>
                </div>
 
                <div className="mt-3">
@@ -734,7 +671,7 @@ export const VentasPage = () => {
                  className="btn text-white"
                  style={{ backgroundColor: 'var(--amber-action)', border: 'none' }}
                  onClick={handleConfirmarVenta}
-                 disabled={!ventaActiva || ventaActiva.productos.length === 0 || diferenciaPago !== 0}
+                 disabled={!ventaActiva || ventaActiva.productos.length === 0}
                >
                  Confirmar venta
                </button>

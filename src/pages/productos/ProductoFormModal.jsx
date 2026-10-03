@@ -1,24 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { BoxSeam, Search, ChevronLeft, ChevronRight } from 'react-bootstrap-icons';
+import { BoxSeam } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultCategorias } from '../../data/defaultCategorias';
 import { defaultUnidadesMedida } from '../../data/defaultUnidadesMedida';
-import { defaultProveedores } from '../../data/defaultProveedores';
-import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
+import { defaultLotes } from '../../data/defaultLotes';
+import { defaultCompras } from '../../data/defaultCompras';
+import { defaultDetalleCompra } from '../../data/defaultDetalleCompra';
 import { MoneyInput } from '../../components/common/MoneyInput';
 import { showAlert } from '../../utils/alerts';
 
-const PROVEEDORES_POR_PAGINA = 7;
+const CODIGO_REGEX = /^[A-Z0-9-]{3,30}$/;
 
-export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
+export const ProductoFormModal = ({ show, onClose, onSave, producto, productos = [] }) => {
   // Mismo catálogo que CategoriasPage: crear una categoría nueva la hace
   // aparecer aquí de inmediato, en vez de mantener una lista fija aparte.
   const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
   const [unidadesMedida] = usePersistentState('stockbar_unidades_medida', defaultUnidadesMedida);
-  const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
-  const [productoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
 
-  const proveedoresActivos = proveedores.filter((p) => p.estado === 'Activo');
+  const [lotes] = usePersistentState('stockbar_lotes', defaultLotes);
+  const [compras] = usePersistentState('stockbar_compras', defaultCompras);
+  const [detalleCompra] = usePersistentState('stockbar_detalle_compra', defaultDetalleCompra);
 
   const initialState = {
     codigo: '',
@@ -34,64 +35,51 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
   };
 
   const [formData, setFormData] = useState(initialState);
-  const [proveedoresSeleccionados, setProveedoresSeleccionados] = useState([]);
-  const [preciosReferencia, setPreciosReferencia] = useState({});
-  const [proveedorSearch, setProveedorSearch] = useState('');
-  const [proveedorPagina, setProveedorPagina] = useState(0);
 
   useEffect(() => {
-    if (producto) {
-      setFormData(producto);
-      const ppActivos = productoProveedor.filter((pp) => pp.id_producto === producto.codigo && pp.estado === 'Activo');
-      setProveedoresSeleccionados(ppActivos.map((pp) => pp.id_proveedor));
-      setPreciosReferencia(
-        Object.fromEntries(ppActivos.map((pp) => [pp.id_proveedor, pp.precio_referencia ?? '']))
-      );
-    } else {
-      setFormData({ ...initialState, estado: 'Activo' });
-      setProveedoresSeleccionados([]);
-      setPreciosReferencia({});
-    }
-    setProveedorSearch('');
-    setProveedorPagina(0);
+    setFormData(producto ? producto : { ...initialState, estado: 'Activo' });
   }, [producto, show]);
-
-  const toggleProveedor = (codigoProveedor) => {
-    setProveedoresSeleccionados((prev) =>
-      prev.includes(codigoProveedor)
-        ? prev.filter((c) => c !== codigoProveedor)
-        : [...prev, codigoProveedor]
-    );
-  };
-
-  const handlePrecioReferencia = (codigoProveedor, valor) => {
-    setPreciosReferencia((prev) => ({ ...prev, [codigoProveedor]: valor }));
-  };
-
-  // Búsqueda + paginación (7 por página): listar los N proveedores activos
-  // sin filtro se vuelve inmanejable en cuanto el catálogo crece.
-  const proveedoresFiltrados = proveedoresActivos.filter((p) =>
-    p.razon_social.toLowerCase().includes(proveedorSearch.toLowerCase())
-  );
-  const totalPaginas = Math.max(1, Math.ceil(proveedoresFiltrados.length / PROVEEDORES_POR_PAGINA));
-  const paginaActual = Math.min(proveedorPagina, totalPaginas - 1);
-  const proveedoresPagina = proveedoresFiltrados.slice(
-    paginaActual * PROVEEDORES_POR_PAGINA,
-    paginaActual * PROVEEDORES_POR_PAGINA + PROVEEDORES_POR_PAGINA
-  );
 
   if (!show) return null;
 
+  // Precio sugerido = costo de referencia (última compra REGISTRADA del
+  // producto) + margen (personalizado o de la categoría) + IVA de la categoría,
+  // porque precio_venta_actual es el precio final al cliente. Solo sugiere.
+  const cat = categorias.find((c) => c.nombre === formData.categoria);
+  const margen = formData.margenPersonalizado !== '' && formData.margenPersonalizado != null
+    ? Number(formData.margenPersonalizado)
+    : cat?.margen_defecto_porcentaje;
+  const lotesProd = new Set(lotes.filter((l) => l.id_producto === producto?.codigo).map((l) => l.id_lote));
+  const registradas = new Set(compras.filter((c) => c.estado === 'REGISTRADA').map((c) => c.id_compra));
+  const ultimaCompra = detalleCompra
+    .filter((d) => lotesProd.has(d.id_lote) && registradas.has(d.id_compra))
+    .map((d) => ({ ...d, fecha: compras.find((c) => c.id_compra === d.id_compra)?.fecha_compra || '' }))
+    .sort((a, b) => b.fecha.localeCompare(a.fecha))[0];
+  const costoRef = ultimaCompra ? Number(ultimaCompra.precio_unitario_compra) : null;
+  const precioSugerido = costoRef != null && margen != null
+    ? Math.round(costoRef * (1 + margen / 100) * (1 + (cat?.porcentaje_iva ?? 19) / 100))
+    : null;
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Espejo de producto_proveedor: un producto siempre debe poder
-    // conseguirse de al menos un proveedor (no existe un producto huérfano).
-    if (proveedoresSeleccionados.length === 0) {
-      showAlert.error('Falta el proveedor', 'Un producto debe estar asociado a al menos un proveedor.');
+    // v3: id_producto ES el código (SKU) del negocio — lo asigna el usuario,
+    // la app no lo inventa. Formato validado igual que ck_producto_codigo.
+    const codigo = (formData.codigo || '').trim().toUpperCase();
+    if (!CODIGO_REGEX.test(codigo)) {
+      showAlert.error('Código inválido', 'El código (SKU) debe tener entre 3 y 30 caracteres: solo letras mayúsculas, números y guiones.');
       return;
     }
-    const dataToSave = producto ? formData : { ...formData, estado: 'Activo' };
-    onSave({ ...dataToSave, proveedoresSeleccionados, preciosReferencia });
+    const yaExiste = productos.some((p) => p.codigo === codigo && p.codigo !== producto?.codigo);
+    if (yaExiste) {
+      showAlert.error('Código duplicado', 'Ya existe un producto registrado con ese código.');
+      return;
+    }
+    if (!(Number(formData.precioVenta) >= 0) || formData.precioVenta === '') {
+      showAlert.error('Precio inválido', 'El precio de venta debe ser un número mayor o igual a 0.');
+      return;
+    }
+    const dataToSave = producto ? { ...formData, codigo } : { ...formData, codigo, estado: 'Activo' };
+    onSave(dataToSave);
   };
 
   const handleChange = (e) => {
@@ -124,12 +112,23 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
           
           <form onSubmit={handleSubmit}>
             <div className="modal-body p-4 d-flex flex-column gap-3">
-              {producto && (
-                <div>
-                  <label className="form-label small fw-semibold" style={{ color: styles.mutedColor }}>Código</label>
-                  <input type="text" className="form-control" disabled value={formData.codigo || ''} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.mutedColor }} />
+              <div>
+                <label className="form-label small fw-semibold">Código (SKU)</label>
+                <input
+                  type="text"
+                  name="codigo"
+                  required
+                  disabled={Boolean(producto)}
+                  className="form-control shadow-none text-uppercase"
+                  placeholder="Ej: TEQ-DJ-750"
+                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: producto ? styles.mutedColor : styles.textColor }}
+                  value={formData.codigo || ''}
+                  onChange={handleChange}
+                />
+                <div className="form-text small" style={{ color: styles.mutedColor }}>
+                  El código del negocio (SKU). Letras mayúsculas, números y guiones; no se puede cambiar después de creado.
                 </div>
-              )}
+              </div>
 
               <div>
                 <label className="form-label small fw-semibold">Nombre del Producto</label>
@@ -202,96 +201,25 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
                   value={formData.precioVenta}
                   onChange={(val) => setFormData((prev) => ({ ...prev, precioVenta: val }))}
                 />
-              </div>
-
-              <div>
-                <div className="d-flex justify-content-between align-items-baseline">
-                  <label className="form-label small fw-semibold">Proveedores</label>
-                  <span className="small" style={{ color: styles.mutedColor }}>
-                    {proveedoresSeleccionados.length} seleccionado{proveedoresSeleccionados.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-                <div
-                  className="rounded-3"
-                  style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}`, overflow: 'hidden' }}
-                >
-                  <div className="position-relative p-2 border-bottom" style={{ borderColor: styles.borderCol }}>
-                    <Search size={14} className="position-absolute top-50 start-0 translate-middle-y ms-3" style={{ color: styles.mutedColor }} />
-                    <input
-                      type="text"
-                      className="form-control form-control-sm ps-4 border-0"
-                      placeholder="Buscar proveedor..."
-                      value={proveedorSearch}
-                      onChange={(e) => { setProveedorSearch(e.target.value); setProveedorPagina(0); }}
-                      style={{ backgroundColor: 'transparent', color: styles.textColor, boxShadow: 'none' }}
-                    />
-                  </div>
-                  <div className="d-flex flex-column" style={{ minHeight: '176px' }}>
-                    {proveedoresPagina.length === 0 ? (
-                      <span className="small p-2" style={{ color: styles.mutedColor }}>
-                        {proveedoresActivos.length === 0 ? 'No hay proveedores activos.' : 'Sin resultados.'}
+                <div className="form-text small d-flex flex-wrap align-items-center gap-2" style={{ color: styles.mutedColor }}>
+                  {precioSugerido != null ? (
+                    <>
+                      <span>
+                        Sugerido: ${precioSugerido.toLocaleString('es-CO')} (costo ${costoRef.toLocaleString('es-CO')} + {margen}% margen + IVA)
                       </span>
-                    ) : (
-                      proveedoresPagina.map((prov, idx) => {
-                        const seleccionado = proveedoresSeleccionados.includes(prov.codigo);
-                        return (
-                        <div
-                          key={prov.codigo}
-                          className="form-check py-1 ps-4 pe-2 m-0 d-flex align-items-center justify-content-between gap-2"
-                          style={{ borderBottom: idx < proveedoresPagina.length - 1 ? `1px solid ${styles.borderCol}` : 'none' }}
-                        >
-                          <div>
-                            <input
-                              type="checkbox"
-                              className="form-check-input"
-                              id={`prov-${prov.codigo}`}
-                              checked={seleccionado}
-                              onChange={() => toggleProveedor(prov.codigo)}
-                            />
-                            <label className="form-check-label small d-block" htmlFor={`prov-${prov.codigo}`}>
-                              {prov.razon_social}
-                            </label>
-                          </div>
-                          {seleccionado && (
-                            <MoneyInput
-                              placeholder="Precio ref."
-                              className="form-control form-control-sm"
-                              style={{ width: '110px' }}
-                              value={preciosReferencia[prov.codigo] ?? ''}
-                              onChange={(val) => handlePrecioReferencia(prov.codigo, val)}
-                            />
-                          )}
-                        </div>
-                        );
-                      })
-                    )}
-                  </div>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary py-0"
+                        onClick={() => setFormData((prev) => ({ ...prev, precioVenta: precioSugerido }))}
+                      >
+                        Aceptar sugerencia
+                      </button>
+                    </>
+                  ) : (
+                    <span>Sin sugerencia: el producto aún no tiene compras registradas. Ingrese el precio manualmente.</span>
+                  )}
+                  {producto && <span>· Precio actual: ${Number(producto.precioVenta || 0).toLocaleString('es-CO')}</span>}
                 </div>
-                {proveedoresFiltrados.length > PROVEEDORES_POR_PAGINA && (
-                  <div className="d-flex justify-content-between align-items-center mt-2">
-                    <button
-                      type="button"
-                      className="btn btn-sm p-1 border-0"
-                      style={{ color: styles.mutedColor, opacity: paginaActual === 0 ? 0.4 : 1 }}
-                      disabled={paginaActual === 0}
-                      onClick={() => setProveedorPagina((p) => p - 1)}
-                    >
-                      <ChevronLeft size={16} /> Anterior
-                    </button>
-                    <span className="small" style={{ color: styles.mutedColor }}>
-                      Página {paginaActual + 1} de {totalPaginas}
-                    </span>
-                    <button
-                      type="button"
-                      className="btn btn-sm p-1 border-0"
-                      style={{ color: styles.mutedColor, opacity: paginaActual >= totalPaginas - 1 ? 0.4 : 1 }}
-                      disabled={paginaActual >= totalPaginas - 1}
-                      onClick={() => setProveedorPagina((p) => p + 1)}
-                    >
-                      Siguiente <ChevronRight size={16} />
-                    </button>
-                  </div>
-                )}
               </div>
 
               <div className="row g-3">

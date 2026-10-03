@@ -6,7 +6,7 @@ import { StatusToggle } from '../../components/common/StatusToggle';
 import { ClienteFormModal } from './ClienteFormModal';
 import { ClienteDetailModal } from './ClienteDetailModal';
 import { showToast, showAlert } from '../../utils/alerts';
-import { generateNextId } from '../../utils/identifiers';
+import { generateNextIdentifier } from '../../utils/identifiers';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultClientes } from '../../data/defaultClientes';
 
@@ -25,7 +25,7 @@ export const ClientesPage = () => {
   const handleOpenDelete = (c) => { setSelectedCliente(c); setShowDeleteModal(true); };
 
   const handleToggleEstado = (c) => {
-    if (c.id_cliente === 0) {
+    if (c.id_cliente === 'CLI-00000') {
       showAlert.error('Cliente protegido', 'El cliente "Consumidor Final" no puede desactivarse: es la opción por defecto del punto de venta.');
       return;
     }
@@ -58,7 +58,7 @@ export const ClientesPage = () => {
       setClientes(clientes.map(c => c.id_cliente === selectedCliente.id_cliente ? { ...selectedCliente, ...formData } : c));
       showToast('success', 'Cliente actualizado exitosamente');
     } else {
-      const nuevoId = generateNextId(clientes, 'id_cliente');
+      const nuevoId = generateNextIdentifier({ items: clientes, key: 'id_cliente', prefix: 'CLI', pad: 5, separator: '-' });
       setClientes([...clientes, { ...formData, id_cliente: nuevoId, estado: 'Activo', fecha_registro: new Date().toISOString() }]);
       showToast('success', `Cliente ${nuevoId} creado exitosamente`);
     }
@@ -139,7 +139,7 @@ export const ClientesPage = () => {
                         onView={() => handleOpenDetail(cli)}
                         onEdit={() => handleOpenEdit(cli)}
                         onDelete={() => handleOpenDelete(cli)}
-                        disabledReason={cli.id_cliente === 0 ? 'Cliente protegido: es la opción por defecto del punto de venta.' : undefined}
+                        disabledReason={cli.id_cliente === 'CLI-00000' ? 'Cliente protegido: es la opción por defecto del punto de venta.' : undefined}
                       />
                     </td>
                   </tr>

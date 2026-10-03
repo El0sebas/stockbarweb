@@ -4,7 +4,6 @@ import { Building } from 'react-bootstrap-icons';
 export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
 
   const initialState = {
-    codigo: '',
     nit: '',
     razon_social: '',
     nombre_comercial: '',
@@ -60,13 +59,6 @@ export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
 
           <form onSubmit={handleSubmit}>
             <div className="modal-body p-4 d-flex flex-column gap-3">
-              {proveedor && (
-                <div>
-                  <label className="form-label small fw-semibold" style={{ color: styles.mutedColor }}>Código</label>
-                  <input type="text" className="form-control" disabled value={formData.codigo || ''} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.mutedColor }} />
-                </div>
-              )}
-
               <div className="row g-3">
                 <div className="col-6">
                   <label className="form-label small fw-semibold">NIT</label>
@@ -74,12 +66,16 @@ export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
                     type="text"
                     name="nit"
                     required
+                    disabled={Boolean(proveedor)}
                     className="form-control shadow-none"
-                    placeholder="900123456-1"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                    placeholder="9001234561"
+                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: proveedor ? styles.mutedColor : styles.textColor }}
                     value={formData.nit || ''}
                     onChange={handleChange}
                   />
+                  <div className="form-text small" style={{ color: styles.mutedColor }}>
+                    El NIT identifica al proveedor; no se puede cambiar después de creado.
+                  </div>
                 </div>
                 <div className="col-6">
                   <label className="form-label small fw-semibold">Razón Social</label>

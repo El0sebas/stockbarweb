@@ -45,7 +45,7 @@ export const BajasPage = () => {
 
   const filteredBajas = bajas.filter((b) => {
     const lote = getLote(b.id_lote);
-    const producto = lote ? getProducto(lote.producto_codigo) : null;
+    const producto = lote ? getProducto(lote.id_producto) : null;
     const term = searchTerm.toLowerCase();
     return (
       (producto?.nombre || '').toLowerCase().includes(term) ||
@@ -118,7 +118,7 @@ export const BajasPage = () => {
             ) : (
               filteredBajas.map((b) => {
                 const lote = getLote(b.id_lote);
-                const producto = lote ? getProducto(lote.producto_codigo) : null;
+                const producto = lote ? getProducto(lote.id_producto) : null;
                 return (
                   <tr key={b.id_baja} style={{ borderBottom: `1px solid ${styles.borderCol}` }}>
                     <td className="py-3 small" style={{ color: styles.mutedColor }}>
@@ -127,7 +127,7 @@ export const BajasPage = () => {
                     <td className="py-3">
                       <div className="fw-semibold">{producto?.nombre || 'Producto eliminado'}</div>
                       <div className="small" style={{ color: styles.mutedColor }}>
-                        Lote {lote?.numero_lote_proveedor || `#${b.id_lote}`}
+                        Lote {b.id_lote}{lote?.fecha_vencimiento ? ` • vence ${lote.fecha_vencimiento}` : ''}
                       </div>
                     </td>
                     <td className="py-3">
@@ -171,7 +171,7 @@ export const BajasPage = () => {
         onClose={() => { setShowDetailModal(false); setSelectedBaja(null); }}
         baja={selectedBaja}
         lote={selectedBaja ? getLote(selectedBaja.id_lote) : null}
-        producto={selectedBaja ? getProducto(getLote(selectedBaja.id_lote)?.producto_codigo) : null}
+        producto={selectedBaja ? getProducto(getLote(selectedBaja.id_lote)?.id_producto) : null}
         motivoNombre={selectedBaja ? getMotivo(selectedBaja.id_motivo_baja) : ''}
       />
     </div>
