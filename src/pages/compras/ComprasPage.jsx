@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { PlusLg, Search, BagCheck, XCircle } from 'react-bootstrap-icons';
+import { PlusLg, Search, BagCheck, XCircle, CheckCircle } from 'react-bootstrap-icons';
 import { CompraFormModal } from './ComprasFormModal';
 import { CompraDetailModal } from './CompraDetailModal';
 import { RowActions } from '../../components/common/RowActions';
@@ -57,11 +57,12 @@ export const ComprasPage = () => {
     metodosPago.find((m) => m.id_metodo_pago === idMetodoPago)?.nombre || 'N/A';
 
   // v3: un lote ES (producto, fecha_vencimiento). Busca un lote existente
-  // con esa identidad y le suma la cantidad (nunca crea uno duplicado);
-  // si no existe, lo crea. Cada línea también queda registrada en
-  // detalle_compra (historial inmutable de qué trajo esta compra y a qué
-  // precio) — mirror de sp_agregar_detalle_compra.
-  const registrarEntradasCompra = (idCompra, items) => {
+  // con esa identidad (nunca crea uno duplicado); si no existe, lo crea.
+  // Cada línea también queda registrada en detalle_compra (historial
+  // inmutable de qué trajo esta compra y a qué precio) — mirror de
+  // sp_agregar_detalle_compra. v6: NO toca cantidad_disponible — eso solo
+  // ocurre al completar la compra (fn_stock_lote solo suma REGISTRADA).
+  const crearDetalleCompraPendiente = (idCompra, items) => {
     let siguienteNumero = lotes.reduce((max, l) => Math.max(max, Number(l.id_lote.split('-')[1]) || 0), 0);
     const lotesActualizados = lotes.map((l) => ({ ...l }));
     const nuevasEntradas = [];
@@ -80,7 +81,6 @@ export const ComprasPage = () => {
         };
         lotesActualizados.push(lote);
       }
-      lote.cantidad_disponible = Number(lote.cantidad_disponible) + Number(item.cantidad);
       nuevasEntradas.push({
         id_compra: idCompra,
         id_lote: lote.id_lote,
@@ -93,53 +93,68 @@ export const ComprasPage = () => {
     setDetalleCompra((prevDetalle) => [...prevDetalle, ...nuevasEntradas]);
   };
 
-  const handleSaveCompra = (compra) => {
-    // v3: compra.estado solo admite REGISTRADA/ANULADA — editar una compra ya
-    // ANULADA no tiene sentido (trg_validar_anulacion_compra la bloquearía).
-    // No hay edición de una compra ya registrada en esta vista — ver RowActions.
+  // Espejo de sp_completar_compra: PENDIENTE -> REGISTRADA. Solo ahora el
+  // stock de sus líneas cuenta (fn_stock_lote solo suma compras REGISTRADA).
+  const completarCompra = (idCompra) => {
+    const entradas = detalleCompra.filter((dc) => dc.id_compra === idCompra);
+    setLotes((prev) => prev.map((l) => {
+      const aportes = entradas.filter((dc) => dc.id_lote === l.id_lote);
+      if (aportes.length === 0) return l;
+      const totalAportado = aportes.reduce((acc, dc) => acc + Number(dc.cantidad), 0);
+      return { ...l, cantidad_disponible: Number(l.cantidad_disponible) + totalAportado };
+    }));
+    setCompras((prev) => prev.map((c) => (c.id_compra === idCompra ? { ...c, estado: 'REGISTRADA' } : c)));
+  };
+
+  const crearCompra = (compra, estadoInicial) => {
     const facturaGenerada = (compra.numero_factura_proveedor || nextFactura).trim();
     const idCompra = generateNextIdentifier({ items: compras, key: 'id_compra', prefix: 'CMP', pad: 6, separator: '-' });
     setCompras(prev => [{
       ...compra,
       id_compra: idCompra,
       numero_factura_proveedor: facturaGenerada,
-      estado: 'REGISTRADA',
+      estado: estadoInicial,
       id_usuario: currentUser?.id_usuario || null,
       usuario: currentUser?.nombre || 'N/A',
       fecha_registro: new Date().toISOString()
     }, ...prev]);
-    // v3: una compra REGISTRADA cuenta como stock y es vendible de inmediato
-    // — ya no existe el paso intermedio "marcar como recibida".
-    registrarEntradasCompra(idCompra, compra.items);
+    crearDetalleCompraPendiente(idCompra, compra.items);
+    return { idCompra, facturaGenerada };
+  };
+
+  // v6: toda compra nace PENDIENTE (espejo de venta); "Registrar Compra" la
+  // crea y la completa en el mismo paso (su stock cuenta de inmediato).
+  const handleSaveCompra = (compra) => {
+    const { idCompra, facturaGenerada } = crearCompra(compra, 'PENDIENTE');
+    completarCompra(idCompra);
     showToast('success', `Compra ${facturaGenerada} registrada`);
     setShowFormModal(false);
     setSelectedCompra(null);
   };
 
-  // Espejo de trg_validar_anulacion_compra: solo se puede anular si ninguno
-  // de sus lotes ya tiene ventas/bajas que dependan de lo que esta compra
-  // aportó. REGISTRADA -> ANULADA es la única transición válida y es terminal.
+  const handleGuardarCompraPendiente = (compra) => {
+    const { facturaGenerada } = crearCompra(compra, 'PENDIENTE');
+    showToast('success', `Compra ${facturaGenerada} guardada como pendiente`);
+    setShowFormModal(false);
+    setSelectedCompra(null);
+  };
+
+  const handleCompletarCompra = (compra) => {
+    completarCompra(compra.id_compra);
+    showToast('success', `Compra ${compra.numero_factura_proveedor} registrada`);
+    setShowDetailModal(false);
+  };
+
+  // Espejo de trg_validar_anulacion_compra (v6): solo se puede anular
+  // mientras está PENDIENTE. Su stock nunca contó, así que no hay nada que
+  // revertir en los lotes.
   const handleAnularCompra = async (compra) => {
-    const confirmado = await showAlert.confirm('¿Anular esta compra?', 'Se revertirá el stock que aportó. Esta acción no se puede deshacer.');
+    const confirmado = await showAlert.confirm('¿Anular esta compra pendiente?', 'Esta acción no se puede deshacer.');
     if (!confirmado) return;
 
-    const entradas = detalleCompra.filter((dc) => dc.id_compra === compra.id_compra);
-
-    const stockInsuficiente = entradas.some((dc) => {
-      const lote = lotes.find((l) => l.id_lote === dc.id_lote);
-      return !lote || Number(lote.cantidad_disponible) < dc.cantidad;
-    });
-    if (stockInsuficiente) {
-      showAlert.error('No se puede anular', 'Uno o más lotes de esta compra ya tienen ventas o bajas que dependen de ese stock.');
-      return;
-    }
-
-    setLotes((prev) => prev.map((l) => {
-      const entrada = entradas.find((dc) => dc.id_lote === l.id_lote);
-      return entrada ? { ...l, cantidad_disponible: Number(l.cantidad_disponible) - entrada.cantidad } : l;
-    }));
     setCompras(prev => prev.map(item => item.id_compra === compra.id_compra ? { ...item, estado: 'ANULADA' } : item));
     showToast('success', `Compra ${compra.numero_factura_proveedor} anulada`);
+    setShowDetailModal(false);
   };
 
   return (
@@ -191,11 +206,11 @@ export const ComprasPage = () => {
           </thead>
           <tbody>
             {filteredCompras.map((c) => {
-              // v3: REGISTRADA -> ANULADA es la única transición, y es terminal.
-              // Ya no existe edición de una compra registrada (sus lotes ya
-              // pueden tener ventas/bajas encima) ni el paso "recibida".
-              const registrada = c.estado === 'REGISTRADA';
+              // v6: PENDIENTE -> REGISTRADA (ya no se puede anular) o
+              // PENDIENTE -> ANULADA (terminal). Ya no existe edición de una
+              // compra registrada ni el paso "recibida".
               const estadoColores = {
+                PENDIENTE: { bg: 'var(--amber-soft-bg)', color: 'var(--amber-action)' },
                 REGISTRADA: { bg: 'var(--success-soft-bg)', color: 'var(--brand-success)' },
                 ANULADA: { bg: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' }
               }[c.estado] || { bg: 'var(--bg-main)', color: 'var(--text-muted)' };
@@ -210,28 +225,28 @@ export const ComprasPage = () => {
                 <td className="py-3" style={{ color: styles.mutedColor }}>{c.fecha_compra}</td>
                 <td className="py-3 fw-bold">$ {Number(c.total).toLocaleString()}</td>
                 <td className="py-3">
-                  {registrada ? (
-                    <button
-                      type="button"
-                      className="badge px-3 py-2 border-0 d-flex align-items-center gap-1"
-                      style={{ backgroundColor: estadoColores.bg, color: estadoColores.color, cursor: 'pointer' }}
-                      title="Anular compra"
-                      onClick={() => handleAnularCompra(c)}
-                    >
-                      {c.estado} <XCircle size={12} />
-                    </button>
-                  ) : (
-                    <span className="badge px-3 py-2" style={{ backgroundColor: estadoColores.bg, color: estadoColores.color }}>
-                      {c.estado}
-                    </span>
-                  )}
+                  <span className="badge px-3 py-2" style={{ backgroundColor: estadoColores.bg, color: estadoColores.color }}>
+                    {c.estado}
+                  </span>
                 </td>
                 <td className="py-3 text-center">
-                  <RowActions
-                    onView={() => { setSelectedCompra(c); setShowDetailModal(true); }}
-                    hideEdit
-                    hideDelete
-                  />
+                  <div className="d-flex justify-content-center gap-2">
+                    <RowActions
+                      onView={() => { setSelectedCompra(c); setShowDetailModal(true); }}
+                      hideEdit
+                      hideDelete
+                    />
+                    {c.estado === 'PENDIENTE' && (
+                      <>
+                        <button className="btn btn-sm p-1 border-0" style={{ color: 'var(--brand-success)' }} title="Registrar (completar)" onClick={() => handleCompletarCompra(c)}>
+                          <CheckCircle size={18} />
+                        </button>
+                        <button className="btn btn-sm p-1 border-0" style={{ color: 'var(--brand-danger)' }} title="Anular" onClick={() => handleAnularCompra(c)}>
+                          <XCircle size={18} />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </td>
               </tr>
               );
@@ -244,6 +259,7 @@ export const ComprasPage = () => {
         show={showFormModal}
         onClose={() => setShowFormModal(false)}
         onSave={handleSaveCompra}
+        onGuardarPendiente={handleGuardarCompraPendiente}
         compra={selectedCompra}
         nextFactura={nextFactura}
       />
@@ -253,6 +269,7 @@ export const ComprasPage = () => {
         onClose={() => { setShowDetailModal(false); setSelectedCompra(null); }}
         compra={selectedCompra}
         onAnular={handleAnularCompra}
+        onCompletar={handleCompletarCompra}
       />
     </div>
   );

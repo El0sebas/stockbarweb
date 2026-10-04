@@ -1,11 +1,11 @@
 import React from 'react';
-import { CartCheck, Person, CreditCard, Calendar3, XCircle, Printer } from 'react-bootstrap-icons';
+import { CartCheck, Person, CreditCard, Calendar3, Printer } from 'react-bootstrap-icons';
 import { calcularTotalesVenta } from '../../utils/impuestos';
 import { generarFacturaPDF } from '../../utils/factura';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 
-export const VentaDetailModal = ({ show, onClose, venta, clientes = [], onAnular }) => {
+export const VentaDetailModal = ({ show, onClose, venta, clientes = [] }) => {
   const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
 
   if (!show || !venta) return null;
@@ -155,16 +155,6 @@ export const VentaDetailModal = ({ show, onClose, venta, clientes = [], onAnular
                 onClick={() => generarFacturaPDF(venta, clientes)}
               >
                 <Printer size={16} /> Descargar factura
-              </button>
-            )}
-            {venta.estado === 'COMPLETADA' && onAnular && (
-              <button
-                type="button"
-                className="btn btn-sm px-4 fw-bold text-white d-flex align-items-center gap-2 border-0"
-                style={{ backgroundColor: 'var(--brand-danger)' }}
-                onClick={() => onAnular(venta)}
-              >
-                <XCircle size={16} /> Anular venta
               </button>
             )}
           </div>

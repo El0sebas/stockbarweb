@@ -1,6 +1,6 @@
 # Database Schema — StockBar
 
-Documentación de la estructura de base de datos relacional (MySQL 8.0+ / MariaDB 10.5+). **Este es el script físico vigente** (`/scripts/sch.sql`, versión 5), ya probado contra un servidor real. Confirma nombres exactos de tablas, columnas, vistas y triggers; los pendientes reales de cierre de sprint quedan en la sección 7.
+Documentación de la estructura de base de datos relacional (MySQL 8.0+ / MariaDB 10.5+). **Este es el script físico vigente** (`/scripts/sch.sql`, versión 6), ya probado contra un servidor real. Confirma nombres exactos de tablas, columnas, vistas y triggers; los pendientes reales de cierre de sprint quedan en la sección 7.
 
 **v3 (observaciones de la profesora) — resumen de cambios respecto a v2:**
 1. **Llaves primarias semánticas, sin `AUTO_INCREMENT` en ninguna tabla.** La aplicación asigna cada id con el formato que le corresponde (ver sección 2.1).
@@ -12,6 +12,8 @@ Documentación de la estructura de base de datos relacional (MySQL 8.0+ / MariaD
 **v4:** se agrega `producto.precio_venta_actual` (precio final vigente con IVA; el margen de la categoría/producto solo lo sugiere, no lo calcula en caliente). El histórico de precio sigue viviendo en `detalle_venta.precio_unitario_venta`.
 
 **v5:** se restaura `producto_proveedor` como catálogo puro `(id_producto, id_proveedor)`, sin atributos propios. La compra (`compra.id_proveedor` → `detalle_compra` → `lote.id_producto`) solo dice quién entregó una compra ya hecha; `producto_proveedor` responde una pregunta distinta — quién **puede** surtir un producto, incluso antes de comprárselo a alguien — así que no es redundante. Vista nueva `vw_productos_por_proveedor`.
+
+**v6:** `compra` gana el estado `PENDIENTE` que `venta` ya tenía — `PENDIENTE` (su stock no cuenta) → `sp_completar_compra` → `REGISTRADA` (stock cuenta, inmutable), o `PENDIENTE` → `ANULADA`. Y en **ambas** tablas la anulación queda restringida a mientras el registro está `PENDIENTE`: ni una venta `COMPLETADA` ni una compra `REGISTRADA` se pueden anular ya. Esto también simplifica `trg_validar_anulacion_compra`: ya no hace falta revisar si los lotes de la compra tienen ventas/bajas encima, porque mientras está `PENDIENTE` su stock nunca contó.
 
 Detalle completo, comentario por comentario, en el encabezado de `scripts/sch.sql`.
 
@@ -239,7 +241,7 @@ Campos:
   - ruta_factura (VARCHAR(255), nullable) — URL/ruta del comprobante digitalizado
   - fecha_compra (DATE, NOT NULL)
   - fecha_registro (TIMESTAMP)
-  - estado (VARCHAR(12), CHECK IN ('REGISTRADA','ANULADA'), DEFAULT 'REGISTRADA')
+  - estado (VARCHAR(12), CHECK IN ('PENDIENTE','REGISTRADA','ANULADA'), DEFAULT 'PENDIENTE')
   - observaciones (VARCHAR(255), nullable)
 
 Índices:
@@ -247,7 +249,7 @@ Campos:
   - UNIQUE: (id_proveedor, numero_factura_proveedor) — evita registrar la misma factura dos veces
 ```
 
-Dos estados: una compra nace `REGISTRADA` y su stock cuenta y es vendible **de inmediato**; desde `REGISTRADA` solo puede pasar a `ANULADA`, que es terminal (no puede reactivarse, y solo se permite si ninguno de sus lotes tiene ya movimientos de inventario) — ver `trg_validar_anulacion_compra`. El valor total **no se guarda**: se calcula en `vw_totales_compra`.
+Tres estados, espejo exacto del ciclo de `venta` (sección siguiente): una compra nace `PENDIENTE` (su stock **no** cuenta todavía — `fn_stock_lote` solo suma compras `REGISTRADA`) → `CALL sp_completar_compra(id_compra)` la pasa a `REGISTRADA` (exige al menos un detalle, ver `sp_validar_cierre_compra`), momento en el que su stock cuenta y es vendible de inmediato. **Solo se puede anular mientras está `PENDIENTE`** (`trg_validar_anulacion_compra`); una vez `REGISTRADA` la compra ya no se puede anular ni se pueden modificar/eliminar sus líneas (`sp_validar_vencimiento_compra`, `trg_validar_detalle_compra_del`) — y `ANULADA` es terminal, no se reactiva. El valor total **no se guarda**: se calcula en `vw_totales_compra`.
 
 #### `lote` (producto + fecha de vencimiento — v3)
 **Un lote ES la combinación `(producto, fecha_vencimiento)`, no una entrada de compra.** Si el mismo producto con el mismo vencimiento (o sin vencimiento) llega en compras distintas, es **el mismo lote** — sus entradas se acumulan vía `detalle_compra`. `lote` ya **no** guarda precio, cantidad, compra ni número de lote del proveedor: eso vive en `detalle_compra`.
@@ -280,7 +282,7 @@ Campos:
   - precio_unitario_compra (DECIMAL(12,2), NOT NULL, >= 0)
 ```
 
-`sp_agregar_detalle_compra(compra, producto, vencimiento, cantidad, precio, lote_nuevo)` es el procedimiento de conveniencia que la app llama por cada línea: busca el lote por `(producto, vencimiento)`, lo crea si no existe (usando el id que la app ya generó), y agrega la entrada en `detalle_compra`. Un mismo `detalle_compra` no puede reducirse (editar/eliminar) por debajo del stock ya vendido o dado de baja de ese lote (`trg_validar_detalle_compra_upd/_del`).
+`sp_agregar_detalle_compra(compra, producto, vencimiento, cantidad, precio, lote_nuevo)` es el procedimiento de conveniencia que la app llama por cada línea: busca el lote por `(producto, vencimiento)`, lo crea si no existe (usando el id que la app ya generó), y agrega la entrada en `detalle_compra`. Solo se puede agregar, editar o eliminar un `detalle_compra` mientras su compra está PENDIENTE (`trg_validar_detalle_compra_ins/_upd/_del`); una vez `REGISTRADA`, sus líneas quedan inmutables.
 
 **Baja automática de vencidos:** `sp_dar_baja_lotes_vencidos(p_id_usuario)` da de baja (motivo `VEN`) todos los lotes con `fecha_vencimiento < CURDATE()` y stock disponible > 0 (usa `GET_LOCK` para numerar `BAJ-######` sin colisiones si corre dos veces a la vez). La BD no se ejecuta sola: el backend debe llamarlo una vez al día (cron de aplicación, no el EVENT SCHEDULER de MySQL).
 
@@ -308,7 +310,7 @@ Campos:
   - observaciones (nullable)
 ```
 
-Flujo obligatorio: `INSERT venta` (queda PENDIENTE, con su método de pago ya fijo) → `INSERT detalle_venta` (una o más líneas; reserva el stock del lote) → `CALL sp_completar_venta(id_venta)` (valida que tenga al menos un detalle y total > 0). Una venta ANULADA no puede reactivarse; anular una venta PENDIENTE o COMPLETADA libera el stock reservado.
+Flujo obligatorio: `INSERT venta` (queda PENDIENTE, con su método de pago ya fijo) → `INSERT detalle_venta` (una o más líneas; reserva el stock del lote) → `CALL sp_completar_venta(id_venta)` (valida que tenga al menos un detalle y total > 0). Una venta ANULADA no puede reactivarse. **Solo se puede anular mientras está PENDIENTE** (`trg_validar_anulacion_venta`) — anularla libera el stock reservado; una venta ya COMPLETADA no se puede anular (sería una devolución, un proceso distinto que la ficha no pide).
 
 > **Eliminada `venta_pago`.** La versión anterior permitía pago dividido en varios métodos; las historias de usuario (HU_58) piden "método de pago" en singular, así que `venta.id_metodo_pago` basta. El total pagado/pendiente ya no aplica como concepto — el total de la venta se calcula en `vw_totales_venta`.
 
@@ -437,20 +439,21 @@ JOIN proveedor pv ON pv.id_proveedor = pp.id_proveedor;
 | `trg_proteger_admin_principal` | BEFORE UPDATE `usuario` | Rechaza desactivar al admin principal y rechaza modificar la marca `es_admin_principal`. |
 | `trg_validar_lote_ins` | BEFORE INSERT `lote` | Exige `fecha_vencimiento` si `producto.maneja_vencimiento`. |
 | `trg_validar_lote_upd` | BEFORE UPDATE `lote` | Rechaza cambiar `id_producto` o `fecha_vencimiento` de un lote ya creado (la identidad del lote es inmutable). |
-| `trg_validar_detalle_compra_ins` | BEFORE INSERT `detalle_compra` | Exige que el vencimiento del lote sea al menos 15 días posterior a `fecha_compra`, y que la compra no esté ANULADA. |
-| `trg_validar_detalle_compra_upd` | BEFORE UPDATE `detalle_compra` | Igual validación de vencimiento; además rechaza reducir la cantidad si el lote ya tiene ventas/bajas que la requieren. |
-| `trg_validar_detalle_compra_del` | BEFORE DELETE `detalle_compra` | Rechaza eliminar una entrada si el lote ya tiene ventas/bajas que la requieren. |
+| `trg_validar_detalle_compra_ins` | BEFORE INSERT `detalle_compra` | Exige que el vencimiento del lote sea al menos 15 días posterior a `fecha_compra`, y que la compra esté PENDIENTE (ni ANULADA ni ya REGISTRADA). |
+| `trg_validar_detalle_compra_upd` | BEFORE UPDATE `detalle_compra` | Misma validación (vencimiento + compra PENDIENTE). |
+| `trg_validar_detalle_compra_del` | BEFORE DELETE `detalle_compra` | Rechaza eliminar una entrada si la compra no está PENDIENTE (ANULADA o ya REGISTRADA). |
 | `trg_validar_baja_ins` / `_upd` | BEFORE INSERT/UPDATE `baja_inventario` | Rechaza una baja mayor al disponible del lote. |
 | `trg_validar_detalle_venta_ins` / `_upd` | BEFORE INSERT/UPDATE `detalle_venta` | Valida jornada abierta, venta no ANULADA/COMPLETADA, stock disponible, vencimiento del lote y edad mínima (18) si la categoría lo exige; **rellena `porcentaje_impuesto_aplicado`** desde `categoria.porcentaje_iva`. |
 | `trg_validar_venta_ins` / `_upd` | BEFORE INSERT/UPDATE `venta` | Si `estado = 'COMPLETADA'`: exige jornada ABIERTA, cliente activo (si hay) y usuario activo. |
 | `trg_validar_cierre_venta_ins` / `_upd` | AFTER INSERT/UPDATE `venta` | Cuando `estado` pasa a `COMPLETADA`: exige al menos un detalle y total > 0. |
-| `trg_validar_anulacion_venta` | BEFORE UPDATE `venta` | Impide reactivar una venta ANULADA. |
-| `trg_validar_anulacion_compra` | BEFORE UPDATE `compra` | Solo permite `REGISTRADA → ANULADA`, y solo si ninguno de sus lotes tiene ya movimientos de inventario (ventas o bajas); `ANULADA` es terminal. |
+| `trg_validar_cierre_compra_ins` / `_upd` | AFTER INSERT/UPDATE `compra` | Cuando `estado` pasa a `REGISTRADA`: exige al menos un detalle (espejo del cierre de venta). |
+| `trg_validar_anulacion_venta` | BEFORE UPDATE `venta` | Impide reactivar una venta ANULADA, y **solo permite anular mientras está PENDIENTE** (una venta COMPLETADA ya no se puede anular). |
+| `trg_validar_anulacion_compra` | BEFORE UPDATE `compra` | Impide reactivar una compra ANULADA, y **solo permite anular mientras está PENDIENTE** (una compra REGISTRADA ya no se puede anular). |
 | `trg_validar_jornada_ins` / `_upd` | BEFORE INSERT/UPDATE `jornada` | Exige/prohíbe datos de cierre según el estado. |
 
 **Funciones auxiliares** (usadas por triggers y vistas, no expuestas al frontend): `fn_stock_lote`, `fn_total_venta`, `fn_base_gravable_venta`, `fn_iva_venta`.
 
-**Procedimientos de conveniencia**: `sp_agregar_detalle_compra(...)` (busca o crea el lote y agrega la entrada en una sola llamada); `sp_completar_venta(id_venta)` (paso final del flujo de venta); `sp_dar_baja_lotes_vencidos(id_usuario)` (baja automática diaria, con `GET_LOCK` para numerar `BAJ-######` sin colisiones concurrentes).
+**Procedimientos de conveniencia**: `sp_agregar_detalle_compra(...)` (busca o crea el lote y agrega la entrada en una sola llamada); `sp_completar_venta(id_venta)` / `sp_completar_compra(id_compra)` (paso final de cada flujo, PENDIENTE → estado final); `sp_dar_baja_lotes_vencidos(id_usuario)` (baja automática diaria, con `GET_LOCK` para numerar `BAJ-######` sin colisiones concurrentes).
 
 ---
 

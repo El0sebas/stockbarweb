@@ -1,10 +1,9 @@
 // El stock de un producto nunca es un número guardado: siempre se calcula
 // sumando lo disponible en sus lotes (mismo criterio que vw_stock_producto /
 // vw_stock_lotes en la base de datos). Ver docs/DATABASE.md sección 3.
-// v3: un lote ya no carga estado_compra — solo las entradas REGISTRADA de
-// detalle_compra suman a cantidad_disponible (ComprasPage.registrarEntradasCompra
-// y handleAnularCompra se encargan de eso), así que todo lote con cantidad
-// visible aquí ya es, por construcción, vendible.
+// v6: un lote ya no carga estado_compra — cantidad_disponible solo sube al
+// completar una compra PENDIENTE (ComprasPage.completarCompra), así que todo
+// lote con cantidad visible aquí ya es, por construcción, vendible.
 export const getLotesProducto = (lotes, idProducto) =>
   (lotes || []).filter((lote) => lote.id_producto === idProducto);
 

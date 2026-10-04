@@ -251,8 +251,8 @@ export const VentasPage = () => {
     }
   };
 
-  // Libera el stock reservado por todas las líneas de una venta (cancelar
-  // PENDIENTE o anular COMPLETADA usan la misma liberación).
+  // Libera el stock reservado por todas las líneas de una venta PENDIENTE
+  // (solo se puede anular/cancelar mientras está PENDIENTE).
   const liberarStockVenta = (venta) => {
     setLotes((prev) =>
       prev.map((l) => {
@@ -322,15 +322,6 @@ export const VentasPage = () => {
     liberarStockVenta(venta);
     actualizarVenta(venta.id_venta, (v) => ({ ...v, estado: 'ANULADA' }));
     showToast('success', `Venta ${venta.id_venta} cancelada`);
-  };
-
-  const handleAnularCompletada = async (venta) => {
-    const confirmado = await showAlert.confirm('¿Anular esta venta?', 'El stock se repone y la venta queda marcada como ANULADA en el historial (no se borra).');
-    if (!confirmado) return;
-    liberarStockVenta(venta);
-    actualizarVenta(venta.id_venta, (v) => ({ ...v, estado: 'ANULADA' }));
-    setShowDetailModal(false);
-    showToast('success', `Venta ${venta.id_venta} anulada`);
   };
 
   const filteredVentas = ventas.filter((v) =>
@@ -451,11 +442,6 @@ export const VentasPage = () => {
                               <XCircle size={18} />
                             </button>
                           </>
-                        )}
-                        {v.estado === 'COMPLETADA' && (
-                          <button className="btn btn-sm p-1 border-0" style={{ color: 'var(--brand-danger)' }} title="Anular" onClick={() => handleAnularCompletada(v)}>
-                            <XCircle size={18} />
-                          </button>
                         )}
                       </div>
                     </td>
@@ -686,7 +672,6 @@ export const VentasPage = () => {
         onClose={() => { setShowDetailModal(false); setSelectedVenta(null); }}
         venta={selectedVenta}
         clientes={clientes}
-        onAnular={handleAnularCompletada}
       />
     </div>
   );

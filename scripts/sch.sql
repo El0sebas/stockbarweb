@@ -1,88 +1,92 @@
 -- ============================================================
 -- STOCKBAR - BASE DE DATOS (MySQL 8.0.16+ / MariaDB 10.5+)
--- Versión 5 (V4 + producto_proveedor restaurada) - Normalizada según las observaciones de la profesora.
+-- Versión 5 (V4 + producto_proveedor restaurada).
 --
 -- Requisitos: MySQL 8.0.16+ (CHECK reales) o MariaDB 10.5+.
 -- Las funciones se crean DETERMINISTIC para poder crearse sin SUPER con
 -- binlog STATEMENT (alternativa: SET GLOBAL log_bin_trust_function_creators=1).
 --
 -- ============================================================
--- QUÉ CAMBIÓ EN LA V3 Y POR QUÉ
+-- QUÉ CAMBIÓ EN LA V5 Y POR QUÉ
 -- ============================================================
 --
--- 1) RECUPERACIÓN DE CONTRASEÑA (comentarios 7 y 16): se ELIMINA la tabla
---    recuperacion_contrasena. La ficha solo pide "recuperar contraseña" en
---    el Subproceso de Acceso; no pide historial ni auditoría. El enlace
---    seguro con vencimiento (HU_77) necesita guardar UN token vigente por
---    usuario: son dos columnas de usuario (token_recuperacion_hash y
---    token_recuperacion_expira). NULL = no hay recuperación en curso.
+-- PRODUCTO POR PROVEEDOR (se RESTAURA la tabla producto_proveedor):
+--    Relación MUCHOS A MUCHOS: un producto lo pueden proporcionar varios
+--    proveedores y un proveedor proporciona varios productos. La forma
+--    normalizada de resolverla es una tabla intermedia con llave primaria
+--    compuesta (id_producto, id_proveedor), sin más columnas, por lo que no
+--    repite ningún dato.
 --
--- 2) PRODUCTO POR PROVEEDOR (comentario 9 de la V3; RESTAURADA en V5): la
---    compra (compra.id_proveedor + detalle_compra -> lote -> producto) solo
---    registra QUIÉN entregó una compra ya hecha, no QUIÉN PUEDE surtir un
---    producto. Catálogo (comprar/cotizar) necesita esa segunda pregunta
---    incluso para productos que aún no se le han comprado a nadie, así que
---    producto_proveedor vuelve como catálogo puro: (id_producto,
---    id_proveedor), sin atributos propios (precio y cantidad siguen
---    viviendo una sola vez, en detalle_compra). No es redundante con la
---    compra: son dos preguntas distintas.
+--    No es redundante con la compra:
+--      producto_proveedor        = CATÁLOGO: qué proveedores pueden entregar
+--                                  cada producto. Existe antes de cualquier
+--                                  compra y se llena al crear/editar el
+--                                  producto (se seleccionan sus proveedores).
+--      compra / detalle_compra   = TRANSACCIÓN: qué se compró realmente,
+--                                  a quién, cuándo y a qué precio.
 --
--- 3) LOTES Y PRECIO (comentarios 12 y 15): para StockBar un lote ES la
---    fecha de vencimiento de un producto. Por eso:
+--    Uso en la aplicación: al registrar una compra se elige el proveedor de
+--    la factura y se listan solo los productos asociados a él
+--    (vw_productos_por_proveedor). Sin este catálogo, un producto nunca
+--    comprado a un proveedor no podría aparecer en el listado.
+--
+--    detalle_compra NO referencia a producto_proveedor: el proveedor sigue
+--    siendo dato del encabezado de la compra. Por eso editar el catálogo
+--    (agregar o quitar un proveedor de un producto) no invalida compras ya
+--    registradas, y cambiar el proveedor de una compra no invalida sus
+--    líneas.
+--
+-- Todo lo demás es idéntico a la V4:
+--
+-- 1) RECUPERACIÓN DE CONTRASEÑA: sin tabla propia. usuario guarda UN token
+--    vigente (token_recuperacion_hash y token_recuperacion_expira).
+--    NULL = no hay recuperación en curso.
+--
+-- 2) LOTES Y PRECIO: para StockBar un lote ES la fecha de vencimiento de un
+--    producto.
 --      lote            = (producto, fecha de vencimiento). Único.
---                        Ya NO guarda precio, cantidad, compra ni número de
---                        lote del proveedor.
 --      compra          = encabezado (proveedor, usuario, forma de pago,
 --                        factura, fecha).
 --      detalle_compra  = qué lote entró en esa compra, con su cantidad y su
---                        precio unitario (el precio vive UNA sola vez, en la
---                        compra). PK compuesta (compra, lote).
---    Producto, proveedor, precio y total se obtienen por JOIN.
+--                        precio unitario. PK compuesta (compra, lote).
 --    El stock de un lote = entradas de compras REGISTRADAS - ventas
 --    (PENDIENTE/COMPLETADA) - bajas.
 --
--- 4) LLAVES PRIMARIAS (comentario 17): ninguna tabla usa AUTO_INCREMENT.
---    Las llaves las define el analista y las asigna la aplicación:
---      - Identificadores que ya existen en el negocio: id_producto = código
---        (SKU), id_proveedor = NIT, id_rol = identificación del rol (HU_04),
+-- 3) LLAVES PRIMARIAS: ninguna tabla usa AUTO_INCREMENT. Las llaves las
+--    define el analista y las asigna la aplicación:
+--      - Identificadores del negocio: id_producto = código (SKU),
+--        id_proveedor = NIT, id_rol = identificación del rol (HU_04),
 --        id_permiso = código del permiso, catálogos = código de 3 letras.
---      - Entidades que el sistema numera (número de compra, de venta, etc.):
---        prefijo + consecutivo con formato fijo, validado con CHECK:
+--      - Entidades numeradas por el sistema: prefijo + consecutivo con
+--        formato fijo, validado con CHECK:
 --        CAT-001, USR-0001, CLI-00001, JOR-000001, CMP-000001,
 --        LOT-000001, BAJ-000001, VTA-000001.
---      - Detalles: llave compuesta con su maestro, sin código propio:
+--      - Detalles y relaciones: llave compuesta con su maestro:
 --        detalle_compra(compra, lote), detalle_venta(venta, lote),
---        contacto_proveedor(proveedor, nro_contacto).
+--        contacto_proveedor(proveedor, nro_contacto),
+--        producto_proveedor(producto, proveedor).
 --    Las columnas llave usan ascii_bin (sensibles a mayúsculas, el formato
 --    se valida con REGEXP).
 --
--- 5) FORMA DE PAGO: UNA sola por compra y UNA sola por venta, porque las HU
---    la piden en singular (HU_39 "forma de pago", HU_58 "método de pago") y
---    la ficha solo dice que se paga por Nequi, Bancolombia o en efectivo.
---    No existe tabla de pagos: se eliminó venta_pago (pago dividido en varios
---    métodos, que la ficha no pide). Quedan compra.id_metodo_pago y
---    venta.id_metodo_pago, ambos NOT NULL contra metodo_pago.
---    El valor total de la compra NO se guarda: se calcula
---    (vw_totales_compra). Igual con los totales de la jornada
---    (vw_totales_jornada), que pide la ficha en el historial de jornadas.
+-- 4) FORMA DE PAGO: UNA sola por compra y UNA sola por venta (HU_39, HU_58).
+--    Los totales de compra y de jornada NO se guardan: se calculan
+--    (vw_totales_compra, vw_totales_jornada).
 --
--- 6) usuario.fecha_nacimiento ELIMINADA (decisión de negocio del equipo,
---    no del profesor): no tiene ningún uso real en la aplicación — la
---    verificación de edad para productos restringidos usa cliente.fecha_nacimiento,
---    nunca la del usuario que atiende la venta. Se mantiene únicamente en
---    cliente.
+-- 5) usuario.fecha_nacimiento no existe: la verificación de edad usa
+--    cliente.fecha_nacimiento.
 --
--- Decisiones heredadas que se mantienen (ver documentación del proyecto):
---   * rol sin descripción y categoria sin estado (pedido del negocio/ficha).
+-- Decisiones heredadas que se mantienen:
+--   * rol sin descripción y categoria sin estado.
 --   * venta.id_cliente NULLABLE (venta de mostrador) y verificación de edad.
---   * venta PENDIENTE -> COMPLETADA (MySQL no tiene triggers diferibles) y
---     stock reservado desde PENDIENTE.
+--   * venta PENDIENTE -> COMPLETADA y stock reservado desde PENDIENTE.
 --   * UNIQUE (proveedor, factura), ruta_factura, IVA por categoría congelado
 --     por línea de venta, un solo administrador principal, una jornada
---     abierta, un contacto principal activo por proveedor.
---
--- IMPORTANTE: stockbar_datos_prueba*.sql y los casos de prueba anteriores
--- quedan obsoletos (cambiaron llaves y tablas). Usar stockbar_pruebas_v3.sql.
+--     abierta, un contacto principal por proveedor.
+--   * metodo_pago y contacto_proveedor sin "estado": un método de pago es
+--     un catálogo fijo (Efectivo, Nequi, Bancolombia) y un contacto que ya
+--     no sirve se elimina (ninguna tabla lo referencia).
+--   * producto.precio_venta_actual (precio final con IVA; el histórico vive
+--     en detalle_venta).
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS stockbar
@@ -101,7 +105,7 @@ DROP TABLE IF EXISTS detalle_compra;
 DROP TABLE IF EXISTS lote;
 DROP TABLE IF EXISTS compra;
 DROP TABLE IF EXISTS jornada;
-DROP TABLE IF EXISTS producto_proveedor;      -- restaurada en v5 (catálogo puro)
+DROP TABLE IF EXISTS producto_proveedor;
 DROP TABLE IF EXISTS contacto_proveedor;
 DROP TABLE IF EXISTS proveedor;
 DROP TABLE IF EXISTS cliente;
@@ -145,7 +149,6 @@ CREATE TABLE rol_permiso (
 CREATE TABLE metodo_pago (
     id_metodo_pago CHAR(3) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
     nombre VARCHAR(30) NOT NULL UNIQUE,
-    estado BOOLEAN NOT NULL DEFAULT TRUE,
     CONSTRAINT ck_metodo_pago_id CHECK (id_metodo_pago REGEXP '^[A-Z]{3}$')
 ) ENGINE=InnoDB;
 
@@ -258,12 +261,11 @@ CREATE TABLE contacto_proveedor (
     telefono VARCHAR(20) NOT NULL,
     correo VARCHAR(100),
     es_principal BOOLEAN NOT NULL DEFAULT FALSE,
-    estado BOOLEAN NOT NULL DEFAULT TRUE,
-    -- Índice único parcial simulado: un solo contacto principal activo.
-    id_proveedor_principal_activo VARCHAR(20) CHARACTER SET ascii COLLATE ascii_bin
-        GENERATED ALWAYS AS (CASE WHEN es_principal = TRUE AND estado = TRUE THEN id_proveedor END) STORED,
+    -- Índice único parcial simulado: un solo contacto principal por proveedor.
+    id_proveedor_principal VARCHAR(20) CHARACTER SET ascii COLLATE ascii_bin
+        GENERATED ALWAYS AS (CASE WHEN es_principal = TRUE THEN id_proveedor END) STORED,
     PRIMARY KEY (id_proveedor, nro_contacto),
-    UNIQUE KEY uq_contacto_principal_activo (id_proveedor_principal_activo),
+    UNIQUE KEY uq_contacto_principal (id_proveedor_principal),
     CONSTRAINT ck_contacto_nro CHECK (nro_contacto > 0),
     FOREIGN KEY (id_proveedor) REFERENCES proveedor(id_proveedor)
 ) ENGINE=InnoDB;
@@ -278,7 +280,7 @@ CREATE TABLE producto (
     id_categoria CHAR(7) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     id_unidad_medida CHAR(3) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     margen_personalizado_porcentaje DECIMAL(5,2),
-    precio_venta_actual DECIMAL(12,2) NOT NULL,                 -- V4: precio final con IVA; el margen solo sugiere. Histórico: detalle_venta
+    precio_venta_actual DECIMAL(12,2) NOT NULL,                 -- precio final con IVA; el margen solo sugiere. Histórico: detalle_venta
     maneja_vencimiento BOOLEAN NOT NULL DEFAULT TRUE,
     stock_minimo DECIMAL(10,2) NOT NULL DEFAULT 0,
     estado BOOLEAN NOT NULL DEFAULT TRUE,
@@ -291,9 +293,10 @@ CREATE TABLE producto (
     FOREIGN KEY (id_unidad_medida) REFERENCES unidad_medida(id_unidad_medida)
 ) ENGINE=InnoDB;
 
--- Catálogo puro: qué proveedores pueden surtir qué producto (independiente
--- de si ya se le ha comprado). Sin atributos propios: precio y cantidad
--- viven en detalle_compra, no aquí.
+-- Relación N:M producto - proveedor (catálogo). Se llena al crear/editar el
+-- producto (se seleccionan los proveedores que lo proporcionan) y filtra la
+-- lista de productos al registrar una compra. Desmarcar un proveedor elimina
+-- la fila; el historial de compras no se afecta (no depende de esta tabla).
 CREATE TABLE producto_proveedor (
     id_producto VARCHAR(30) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     id_proveedor VARCHAR(20) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -351,7 +354,7 @@ CREATE TABLE compra (
     FOREIGN KEY (id_metodo_pago) REFERENCES metodo_pago(id_metodo_pago)
 ) ENGINE=InnoDB;
 
--- Un lote ES la fecha de vencimiento de un producto (comentario 12).
+-- Un lote ES la fecha de vencimiento de un producto.
 -- No guarda precio ni cantidad: eso pertenece a la compra (detalle_compra).
 CREATE TABLE lote (
     id_lote CHAR(10) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
@@ -1099,6 +1102,20 @@ DELIMITER ;
 -- VISTAS DE CONSULTA (todo lo derivado se calcula, no se guarda)
 -- ============================================================
 
+-- Catálogo proveedor-producto: lista de productos por proveedor para el
+-- formulario de compra, y de proveedores por producto para su ficha.
+CREATE OR REPLACE VIEW vw_productos_por_proveedor AS
+SELECT
+    pr.id_proveedor,
+    pr.razon_social AS proveedor,
+    p.id_producto,
+    p.nombre AS producto,
+    p.estado AS producto_activo,
+    pr.estado AS proveedor_activo
+FROM producto_proveedor pp
+JOIN proveedor pr ON pr.id_proveedor = pp.id_proveedor
+JOIN producto p ON p.id_producto = pp.id_producto;
+
 CREATE OR REPLACE VIEW vw_stock_lotes AS
 SELECT
     l.id_lote,
@@ -1163,23 +1180,6 @@ SELECT
     fn_total_venta(v.id_venta) AS total_venta,
     v.id_metodo_pago
 FROM venta v;
-
--- Qué proveedores surten cada producto (y viceversa), para el catálogo y la
--- ficha de producto/proveedor. Solo lectura: no reemplaza detalle_compra.
-CREATE OR REPLACE VIEW vw_productos_por_proveedor AS
-SELECT
-    pp.id_producto,
-    p.nombre AS producto,
-    p.id_categoria,
-    cat.nombre AS categoria,
-    p.estado AS producto_activo,
-    pp.id_proveedor,
-    pv.razon_social AS proveedor,
-    pv.estado AS proveedor_activo
-FROM producto_proveedor pp
-JOIN producto p ON p.id_producto = pp.id_producto
-JOIN categoria cat ON cat.id_categoria = p.id_categoria
-JOIN proveedor pv ON pv.id_proveedor = pp.id_proveedor;
 
 -- Historial de jornadas con su total de ventas (ficha: Subproceso de jornada).
 CREATE OR REPLACE VIEW vw_totales_jornada AS
@@ -1270,33 +1270,44 @@ WHERE r.id_rol = 'EMP';
 --    de la misma transacción (SELECT MAX(...) ... FOR UPDATE). El CHECK de
 --    cada tabla rechaza cualquier formato distinto.
 --
--- 3. Flujo de compra:
+-- 3. Flujo de producto:
+--       BEGIN
+--       INSERT producto (SKU, nombre, categoría, unidad, ...)
+--       INSERT producto_proveedor (SKU, NIT)   -- una fila por proveedor
+--                                              -- seleccionado en el formulario
+--       COMMIT
+--    Al editar el producto: marcar un proveedor inserta la fila; desmarcarlo
+--    la elimina. Las compras ya registradas no se afectan.
+--
+-- 4. Flujo de compra:
 --       BEGIN
 --       INSERT compra (CMP-######, proveedor, usuario, forma de pago, ...)
+--       -- el formulario lista los productos de vw_productos_por_proveedor
+--       -- filtrados por el proveedor elegido en la factura
 --       CALL sp_agregar_detalle_compra(compra, producto, vencimiento,
 --                                      cantidad, precio, 'LOT-######')
 --       ... una llamada por línea ...
 --       COMMIT
 --    Valor total = vw_totales_compra.
 --
--- 4. Flujo de venta:
+-- 5. Flujo de venta:
 --       BEGIN
 --       INSERT venta (VTA-######, método de pago, queda PENDIENTE)
 --       INSERT detalle_venta (...)   -- reserva el stock del lote
 --       CALL sp_completar_venta(id_venta);   -- valida que tenga detalle y total > 0
 --       COMMIT
 --
--- 5. Recuperación de contraseña: la app guarda en usuario el hash del token
+-- 6. Recuperación de contraseña: la app guarda en usuario el hash del token
 --    y su vencimiento (ej. 24 h, HU_77); al restablecer o vencer pone ambas
 --    columnas en NULL.
 --
--- 6. FEFO: al vender, la app propone primero el lote con vencimiento más
+-- 7. FEFO: al vender, la app propone primero el lote con vencimiento más
 --    cercano (vw_stock_lotes ordenada por fecha_vencimiento).
 --
--- 7. Operaciones concurrentes sobre un lote: transacciones y
+-- 8. Operaciones concurrentes sobre un lote: transacciones y
 --    SELECT ... FOR UPDATE sobre el lote en la capa de servicio.
 --
--- 8. Edad mínima 18 fijada en el trigger (la ficha no la parametriza).
+-- 9. Edad mínima 18 fijada en el trigger (la ficha no la parametriza).
 --
--- 9. usuario.fecha_nacimiento no existe (ver comentario 6 del encabezado):
---    la verificación de edad usa siempre cliente.fecha_nacimiento.
+-- 10. usuario.fecha_nacimiento no existe: la verificación de edad usa
+--     siempre cliente.fecha_nacimiento.

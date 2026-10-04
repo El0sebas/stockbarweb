@@ -10,7 +10,7 @@ import { generateNextId } from '../../utils/identifiers';
 import { QuantityStepper } from '../../components/common/QuantityStepper';
 import { MoneyInput } from '../../components/common/MoneyInput';
 
-export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) => {
+export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, compra, nextFactura }) => {
   // metodo_pago es un catálogo fijo sin pantalla de administración (no es
   // un subproceso listado en la Ficha de Proyecto aprobada), igual que
   // unidad_medida y motivo_baja.
@@ -174,28 +174,38 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
   const calcularTotal = () =>
     formData.items.reduce((acc, item) => acc + item.cantidad * item.costoUnitario, 0);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  // Espejo de sp_validar_cierre_compra: solo exige proveedor/factura/items,
+  // sin importar si el resultado va a quedar PENDIENTE o REGISTRADA.
+  const construirCompraFinal = () => {
     const numeroFactura = (formData.numero_factura_proveedor || nextFactura || '').trim();
 
     if (!formData.proveedor || !numeroFactura) {
       showAlert.error('Facturación incompleta', 'Debe completar proveedor y el número de factura para continuar.');
-      return;
+      return null;
     }
 
     if (formData.items.length === 0) {
-      showAlert.error('Compra sin productos', 'Debe agregar al menos un producto antes de registrar la compra.');
-      return;
+      showAlert.error('Compra sin productos', 'Debe agregar al menos un producto antes de guardar la compra.');
+      return null;
     }
 
-    const compraFinal = {
+    return {
       ...formData,
       numero_factura_proveedor: numeroFactura,
       total: calcularTotal(),
       fecha_compra: compra ? compra.fecha_compra : new Date().toISOString().split('T')[0]
     };
+  };
 
-    onSave(compraFinal);
+  const handleRegistrar = (e) => {
+    e.preventDefault();
+    const compraFinal = construirCompraFinal();
+    if (compraFinal) onSave(compraFinal);
+  };
+
+  const handleGuardarPendiente = () => {
+    const compraFinal = construirCompraFinal();
+    if (compraFinal) onGuardarPendiente(compraFinal);
   };
 
   const proveedorSeleccionado = proveedoresActivos.find((p) => p.razon_social === formData.proveedor);
@@ -246,7 +256,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
             <button type="button" className="btn-close shadow-none btn-close-themed" onClick={onClose}></button>
           </div>
 
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleRegistrar}>
             <div className="modal-body p-4 d-flex flex-column gap-3">
               <div className="row g-3">
                 <div className="col-md-6">
@@ -521,8 +531,11 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
 
             <div className="modal-footer border-top p-3 d-flex gap-2" style={{ borderColor: styles.borderCol }}>
               <button type="button" className="btn border-0 text-secondary fw-medium" onClick={onClose}>Cancelar</button>
+              <button type="button" className="btn btn-outline-secondary fw-medium" onClick={handleGuardarPendiente} title="Queda PENDIENTE: su stock no cuenta todavía y se puede anular más tarde">
+                Guardar como pendiente
+              </button>
               <button type="submit" className="btn fw-bold px-4 text-white border-0" style={{ backgroundColor: 'var(--amber-action)' }}>
-                {compra ? 'Actualizar Compra' : 'Registrar Compra'}
+                Registrar Compra
               </button>
             </div>
           </form>

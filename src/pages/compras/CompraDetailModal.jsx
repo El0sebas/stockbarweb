@@ -1,14 +1,15 @@
 import React from 'react';
-import { BagCheck, Truck, Calendar3, CreditCard, FileEarmarkText, Hash, XCircle, Person } from 'react-bootstrap-icons';
+import { BagCheck, Truck, Calendar3, CreditCard, FileEarmarkText, Hash, XCircle, CheckCircle, Person } from 'react-bootstrap-icons';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 
 const ESTADO_COLORES = {
+  PENDIENTE: { bg: 'var(--amber-soft-bg)', color: 'var(--amber-action)' },
   REGISTRADA: { bg: 'var(--success-soft-bg)', color: 'var(--brand-success)' },
   ANULADA: { bg: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' }
 };
 
-export const CompraDetailModal = ({ show, onClose, compra, onAnular }) => {
+export const CompraDetailModal = ({ show, onClose, compra, onAnular, onCompletar }) => {
   const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
 
   if (!show || !compra) return null;
@@ -182,7 +183,17 @@ export const CompraDetailModal = ({ show, onClose, compra, onAnular }) => {
             >
               Cerrar
             </button>
-            {compra.estado === 'REGISTRADA' && onAnular && (
+            {compra.estado === 'PENDIENTE' && onCompletar && (
+              <button
+                type="button"
+                className="btn btn-sm px-4 fw-bold text-white d-flex align-items-center gap-2 border-0"
+                style={{ backgroundColor: 'var(--brand-success)' }}
+                onClick={() => onCompletar(compra)}
+              >
+                <CheckCircle size={16} /> Registrar compra
+              </button>
+            )}
+            {compra.estado === 'PENDIENTE' && onAnular && (
               <button
                 type="button"
                 className="btn btn-sm px-4 fw-bold text-white d-flex align-items-center gap-2 border-0"
