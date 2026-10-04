@@ -193,15 +193,14 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
     return d.toISOString().split('T')[0];
   })();
 
-  // v3: sin producto_proveedor, cualquier producto activo del catálogo se
-  // puede agregar en cuanto haya un proveedor seleccionado.
-  const resultadosBusqueda = proveedorSeleccionado
-    ? productosActivos.filter((prod) =>
-        !debouncedSearch ||
-        prod.nombre.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-        prod.codigo.toLowerCase().includes(debouncedSearch.toLowerCase())
-      )
-    : [];
+  // v3: sin producto_proveedor, el proveedor es solo dato del encabezado:
+  // cualquier producto activo se puede agregar y cambiar de proveedor no
+  // invalida las líneas del detalle.
+  const resultadosBusqueda = productosActivos.filter((prod) =>
+    !debouncedSearch ||
+    prod.nombre.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    prod.codigo.toLowerCase().includes(debouncedSearch.toLowerCase())
+  );
 
   const styles = {
     modalBg: 'var(--bg-card)',
@@ -234,8 +233,6 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                     value={formData.proveedor}
                     onChange={(e) => {
                       setFormData({ ...formData, proveedor: e.target.value });
-                      setProductSearch('');
-                      setSelectedProductToAdd(null);
                     }}
                     required
                     style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
@@ -334,8 +331,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                       <input
                         type="text"
                         className="form-control form-control-sm ps-4"
-                        placeholder={proveedorSeleccionado ? 'Ej: Tequila o PROD-01' : 'Seleccione un proveedor primero'}
-                        disabled={!proveedorSeleccionado}
+                        placeholder="Ej: Tequila o PROD-01"
                         value={productSearch}
                         onChange={(e) => {
                           setProductSearch(e.target.value);
@@ -394,7 +390,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                   </div>
                 </div>
 
-                {proveedorSeleccionado && !selectedProductToAdd && (
+                {!selectedProductToAdd && (
                   <div
                     className="rounded-3 mt-2"
                     style={{ border: `1px solid ${styles.borderCol}`, maxHeight: '180px', overflowY: 'auto' }}
