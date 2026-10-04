@@ -1,6 +1,6 @@
 # Database Schema — StockBar
 
-Documentación de la estructura de base de datos relacional (MySQL 8.0+ / MariaDB 10.5+). **Este es el script físico vigente** (`/scripts/sch.sql`, versión 3), ya probado contra un servidor real. Confirma nombres exactos de tablas, columnas, vistas y triggers; los pendientes reales de cierre de sprint quedan en la sección 7.
+Documentación de la estructura de base de datos relacional (MySQL 8.0+ / MariaDB 10.5+). **Este es el script físico vigente** (`/scripts/sch.sql`, versión 5), ya probado contra un servidor real. Confirma nombres exactos de tablas, columnas, vistas y triggers; los pendientes reales de cierre de sprint quedan en la sección 7.
 
 **v3 (observaciones de la profesora) — resumen de cambios respecto a v2:**
 1. **Llaves primarias semánticas, sin `AUTO_INCREMENT` en ninguna tabla.** La aplicación asigna cada id con el formato que le corresponde (ver sección 2.1).
@@ -8,6 +8,10 @@ Documentación de la estructura de base de datos relacional (MySQL 8.0+ / MariaD
 3. **Pago único:** se elimina `venta_pago`. `compra` y `venta` tienen cada una **un solo** `id_metodo_pago` (HU_39/HU_58 piden "forma/método de pago" en singular).
 4. Vista nueva `vw_totales_jornada` (la Ficha pide el historial de jornadas con sus totales de venta) y `vw_detalle_compra`.
 5. `usuario.fecha_nacimiento` sigue sin existir (decisión de negocio, no de la profesora — ver v2): nunca tuvo uso real, la verificación de edad siempre usa `cliente.fecha_nacimiento`.
+
+**v4:** se agrega `producto.precio_venta_actual` (precio final vigente con IVA; el margen de la categoría/producto solo lo sugiere, no lo calcula en caliente). El histórico de precio sigue viviendo en `detalle_venta.precio_unitario_venta`.
+
+**v5:** se restaura `producto_proveedor` como catálogo puro `(id_producto, id_proveedor)`, sin atributos propios. La compra (`compra.id_proveedor` → `detalle_compra` → `lote.id_producto`) solo dice quién entregó una compra ya hecha; `producto_proveedor` responde una pregunta distinta — quién **puede** surtir un producto, incluso antes de comprárselo a alguien — así que no es redundante. Vista nueva `vw_productos_por_proveedor`.
 
 Detalle completo, comentario por comentario, en el encabezado de `scripts/sch.sql`.
 
@@ -96,7 +100,19 @@ Campos:
   - FK: id_categoria, id_unidad_medida (InnoDB indexa automáticamente cada FK)
 ```
 
-> **Eliminada `producto_proveedor`.** Qué proveedor suministró qué producto (y a qué precio) ya se sabe por `compra.id_proveedor → detalle_compra → lote.id_producto`; mantener la tabla aparte era redundante y ninguna historia de usuario pide un catálogo producto‑proveedor independiente de las compras reales.
+#### `producto_proveedor`
+Catálogo puro de afiliación: qué proveedores **pueden** surtir qué producto, independiente de si ya se le ha comprado a alguno. No es redundante con `compra`/`detalle_compra` — esas tablas solo dicen quién entregó una compra **ya hecha**; esta responde la pregunta de catálogo (útil, por ejemplo, para cotizar o decidir a quién comprarle un producto que nunca se ha comprado). Sin atributos propios: precio y cantidad siguen viviendo una sola vez, en `detalle_compra`.
+
+```
+Campos:
+  - id_producto (VARCHAR(30), PK compuesta, FK → producto.id_producto)
+  - id_proveedor (VARCHAR(20), PK compuesta, FK → proveedor.id_proveedor)
+
+Índices:
+  - PK: (id_producto, id_proveedor)
+```
+
+Lectura conjunta (producto + proveedor + categoría) vía `vw_productos_por_proveedor` (sección 3).
 
 #### `proveedor` / `contacto_proveedor`
 Empresas que suministran productos, y sus contactos. `id_proveedor` **es** el NIT del proveedor.
@@ -395,6 +411,19 @@ FROM jornada j
 LEFT JOIN venta v ON v.id_jornada = j.id_jornada AND v.estado = 'COMPLETADA'
 GROUP BY j.id_jornada, j.estado, j.fecha_hora_apertura, j.id_usuario_apertura,
          j.fecha_hora_cierre, j.id_usuario_cierre;
+```
+
+### `vw_productos_por_proveedor`
+Qué proveedores surten cada producto (y viceversa), con nombre/categoría/proveedor ya resueltos. Solo lectura — no reemplaza `detalle_compra` para precio o cantidad.
+
+```sql
+SELECT pp.id_producto, p.nombre AS producto, p.id_categoria, cat.nombre AS categoria,
+       p.estado AS producto_activo, pp.id_proveedor, pv.razon_social AS proveedor,
+       pv.estado AS proveedor_activo
+FROM producto_proveedor pp
+JOIN producto p ON p.id_producto = pp.id_producto
+JOIN categoria cat ON cat.id_categoria = p.id_categoria
+JOIN proveedor pv ON pv.id_proveedor = pp.id_proveedor;
 ```
 
 ---

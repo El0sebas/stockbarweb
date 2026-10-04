@@ -13,6 +13,7 @@ import { defaultCategorias } from '../../data/defaultCategorias';
 import { defaultLotes } from '../../data/defaultLotes';
 import { defaultMotivosBaja } from '../../data/defaultMotivosBaja';
 import { defaultBajas } from '../../data/defaultBajas';
+import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
 import { getStockDisponible } from '../../utils/stock';
 import { aplicarBaja } from '../../utils/bajas';
 import { useAuth } from '../../context/AuthContext';
@@ -24,6 +25,7 @@ export const ProductosPage = () => {
   const [lotes, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
   const [motivos] = usePersistentState('stockbar_motivos_baja', defaultMotivosBaja);
   const [bajas, setBajas] = usePersistentState('stockbar_bajas', defaultBajas);
+  const [productoProveedor, setProductoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
   const { currentUser } = useAuth();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -89,13 +91,20 @@ export const ProductosPage = () => {
   const handleSaveProducto = (productoData) => {
     // v3: id_producto ES el código (SKU) que escribió el usuario en el
     // formulario — ProductoFormModal ya validó formato y unicidad.
+    // nitsProveedores es transitorio: no es columna de producto, sincroniza
+    // la tabla producto_proveedor aparte.
+    const { nitsProveedores = [], ...producto } = productoData;
     if (selectedProducto) {
-      setProductos(productos.map(p => p.codigo === productoData.codigo ? productoData : p));
+      setProductos(productos.map(p => p.codigo === producto.codigo ? producto : p));
       showToast('success', 'Producto actualizado exitosamente');
     } else {
-      setProductos([...productos, { ...productoData, fechaCreacion: new Date().toISOString() }]);
-      showToast('success', `Producto ${productoData.codigo} creado exitosamente`);
+      setProductos([...productos, { ...producto, fechaCreacion: new Date().toISOString() }]);
+      showToast('success', `Producto ${producto.codigo} creado exitosamente`);
     }
+    setProductoProveedor([
+      ...productoProveedor.filter((pp) => pp.id_producto !== producto.codigo),
+      ...nitsProveedores.map((nit) => ({ id_producto: producto.codigo, nit_proveedor: nit }))
+    ]);
     setShowFormModal(false);
     setSelectedProducto(null);
   };
@@ -103,6 +112,7 @@ export const ProductosPage = () => {
   const handleConfirmDelete = () => {
     if (selectedProducto) {
       setProductos(productos.filter(p => p.codigo !== selectedProducto.codigo));
+      setProductoProveedor(productoProveedor.filter((pp) => pp.id_producto !== selectedProducto.codigo));
       showToast('success', 'Producto eliminado exitosamente');
     }
     setShowDeleteModal(false);

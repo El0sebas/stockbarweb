@@ -1,6 +1,6 @@
 -- ============================================================
 -- STOCKBAR - BASE DE DATOS (MySQL 8.0.16+ / MariaDB 10.5+)
--- Versión 4 (V3 + producto.precio_venta_actual) - Normalizada según las observaciones de la profesora.
+-- Versión 5 (V4 + producto_proveedor restaurada) - Normalizada según las observaciones de la profesora.
 --
 -- Requisitos: MySQL 8.0.16+ (CHECK reales) o MariaDB 10.5+.
 -- Las funciones se crean DETERMINISTIC para poder crearse sin SUPER con
@@ -17,12 +17,15 @@
 --    usuario: son dos columnas de usuario (token_recuperacion_hash y
 --    token_recuperacion_expira). NULL = no hay recuperación en curso.
 --
--- 2) PRODUCTO POR PROVEEDOR (comentario 9): se ELIMINA producto_proveedor.
---    Qué proveedor entregó qué producto ya está en la compra
---    (compra.id_proveedor + detalle_compra -> lote -> producto). Además
---    desaparece el problema del prototipo (comentario 0): al no existir un
---    vínculo producto-proveedor, el proveedor es dato del encabezado de la
---    compra y cambiarlo no invalida las líneas del detalle.
+-- 2) PRODUCTO POR PROVEEDOR (comentario 9 de la V3; RESTAURADA en V5): la
+--    compra (compra.id_proveedor + detalle_compra -> lote -> producto) solo
+--    registra QUIÉN entregó una compra ya hecha, no QUIÉN PUEDE surtir un
+--    producto. Catálogo (comprar/cotizar) necesita esa segunda pregunta
+--    incluso para productos que aún no se le han comprado a nadie, así que
+--    producto_proveedor vuelve como catálogo puro: (id_producto,
+--    id_proveedor), sin atributos propios (precio y cantidad siguen
+--    viviendo una sola vez, en detalle_compra). No es redundante con la
+--    compra: son dos preguntas distintas.
 --
 -- 3) LOTES Y PRECIO (comentarios 12 y 15): para StockBar un lote ES la
 --    fecha de vencimiento de un producto. Por eso:
@@ -98,7 +101,7 @@ DROP TABLE IF EXISTS detalle_compra;
 DROP TABLE IF EXISTS lote;
 DROP TABLE IF EXISTS compra;
 DROP TABLE IF EXISTS jornada;
-DROP TABLE IF EXISTS producto_proveedor;      -- retirada en v2
+DROP TABLE IF EXISTS producto_proveedor;      -- restaurada en v5 (catálogo puro)
 DROP TABLE IF EXISTS contacto_proveedor;
 DROP TABLE IF EXISTS proveedor;
 DROP TABLE IF EXISTS cliente;
@@ -286,6 +289,17 @@ CREATE TABLE producto (
     CONSTRAINT ck_producto_precio_venta CHECK (precio_venta_actual >= 0),
     FOREIGN KEY (id_categoria) REFERENCES categoria(id_categoria),
     FOREIGN KEY (id_unidad_medida) REFERENCES unidad_medida(id_unidad_medida)
+) ENGINE=InnoDB;
+
+-- Catálogo puro: qué proveedores pueden surtir qué producto (independiente
+-- de si ya se le ha comprado). Sin atributos propios: precio y cantidad
+-- viven en detalle_compra, no aquí.
+CREATE TABLE producto_proveedor (
+    id_producto VARCHAR(30) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    id_proveedor VARCHAR(20) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    PRIMARY KEY (id_producto, id_proveedor),
+    FOREIGN KEY (id_producto) REFERENCES producto(id_producto),
+    FOREIGN KEY (id_proveedor) REFERENCES proveedor(id_proveedor)
 ) ENGINE=InnoDB;
 
 -- -------------------------
@@ -1149,6 +1163,23 @@ SELECT
     fn_total_venta(v.id_venta) AS total_venta,
     v.id_metodo_pago
 FROM venta v;
+
+-- Qué proveedores surten cada producto (y viceversa), para el catálogo y la
+-- ficha de producto/proveedor. Solo lectura: no reemplaza detalle_compra.
+CREATE OR REPLACE VIEW vw_productos_por_proveedor AS
+SELECT
+    pp.id_producto,
+    p.nombre AS producto,
+    p.id_categoria,
+    cat.nombre AS categoria,
+    p.estado AS producto_activo,
+    pp.id_proveedor,
+    pv.razon_social AS proveedor,
+    pv.estado AS proveedor_activo
+FROM producto_proveedor pp
+JOIN producto p ON p.id_producto = pp.id_producto
+JOIN categoria cat ON cat.id_categoria = p.id_categoria
+JOIN proveedor pv ON pv.id_proveedor = pp.id_proveedor;
 
 -- Historial de jornadas con su total de ventas (ficha: Subproceso de jornada).
 CREATE OR REPLACE VIEW vw_totales_jornada AS

@@ -5,6 +5,7 @@ import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultMetodosPago } from '../../data/defaultMetodosPago';
 import { defaultProveedores } from '../../data/defaultProveedores';
 import { defaultProductos } from '../../data/defaultProductos';
+import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
 import { generateNextId } from '../../utils/identifiers';
 import { QuantityStepper } from '../../components/common/QuantityStepper';
 import { MoneyInput } from '../../components/common/MoneyInput';
@@ -16,12 +17,13 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
   const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
   const metodosPagoActivos = metodosPago.filter((m) => m.estado === 'Activo');
 
-  // v3: ya no existe producto_proveedor — cualquier producto activo puede
-  // buscarse y agregarse a la compra, sin restringir por afiliación.
   const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
   const proveedoresActivos = proveedores.filter((p) => p.estado === 'Activo');
   const [productos] = usePersistentState('stockbar_productos', defaultProductos);
   const productosActivos = productos.filter((p) => p.estado === 'Activo');
+
+  const [productoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
+  const [verTodoCatalogo, setVerTodoCatalogo] = useState(false);
 
   const initialState = {
     proveedor: '',
@@ -84,6 +86,20 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
       ruta_factura: file.name,
       ruta_factura_url: URL.createObjectURL(file)
     }));
+  };
+
+  // Una compra es de UN solo proveedor: al cambiarlo con líneas ya agregadas
+  // se pide confirmación y, si acepta, se limpia el detalle.
+  const handleCambiarProveedor = async (e) => {
+    const nuevo = e.target.value;
+    if (formData.items.length > 0 && formData.proveedor && nuevo !== formData.proveedor) {
+      const ok = await showAlert.confirm('¿Desea cambiar de proveedor?', 'Se eliminarán los productos ya agregados a esta compra.');
+      if (!ok) return;
+    }
+    setFormData((prev) => ({ ...prev, proveedor: nuevo, items: nuevo === prev.proveedor ? prev.items : [] }));
+    setProductSearch('');
+    setSelectedProductToAdd(null);
+    setVerTodoCatalogo(false);
   };
 
   const handleAddItem = () => {
@@ -193,10 +209,17 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
     return d.toISOString().split('T')[0];
   })();
 
-  // v3: sin producto_proveedor, el proveedor es solo dato del encabezado:
-  // cualquier producto activo se puede agregar y cambiar de proveedor no
-  // invalida las líneas del detalle.
-  const resultadosBusqueda = productosActivos.filter((prod) =>
+  // v5: "productos de este proveedor" = el catálogo producto_proveedor
+  // (afiliación), no el historial de compras. "Ver todo el catálogo" permite
+  // agregar a la compra un producto que aún no está afiliado a este proveedor.
+  const codigosProveedor = new Set(
+    productoProveedor
+      .filter((pp) => pp.nit_proveedor === proveedorSeleccionado?.nit)
+      .map((pp) => pp.id_producto)
+  );
+  const disponibles = verTodoCatalogo ? productosActivos : productosActivos.filter((p) => codigosProveedor.has(p.codigo));
+
+  const resultadosBusqueda = disponibles.filter((prod) =>
     !debouncedSearch ||
     prod.nombre.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
     prod.codigo.toLowerCase().includes(debouncedSearch.toLowerCase())
@@ -231,9 +254,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                   <select
                     className="form-select shadow-none"
                     value={formData.proveedor}
-                    onChange={(e) => {
-                      setFormData({ ...formData, proveedor: e.target.value });
-                    }}
+                    onChange={handleCambiarProveedor}
                     required
                     style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                   >
@@ -331,7 +352,8 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                       <input
                         type="text"
                         className="form-control form-control-sm ps-4"
-                        placeholder="Ej: Tequila o PROD-01"
+                        placeholder={proveedorSeleccionado ? 'Ej: Tequila o PROD-01' : 'Seleccione un proveedor primero'}
+                        disabled={!proveedorSeleccionado}
                         value={productSearch}
                         onChange={(e) => {
                           setProductSearch(e.target.value);
@@ -397,7 +419,7 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                   >
                     {resultadosBusqueda.length === 0 ? (
                       <div className="small text-center py-2" style={{ color: styles.mutedColor }}>
-                        {debouncedSearch ? 'Sin resultados.' : 'No hay productos activos en el catálogo.'}
+                        {debouncedSearch ? 'Sin resultados.' : proveedorSeleccionado ? 'Este proveedor aún no ha entregado productos. Use "Ver todo el catálogo".' : 'Seleccione un proveedor primero.'}
                       </div>
                     ) : (
                       resultadosBusqueda.map((prod, idx) => (
@@ -419,6 +441,11 @@ export const CompraFormModal = ({ show, onClose, onSave, compra, nextFactura }) 
                     )}
                   </div>
                 )}
+
+                <div className="form-check mt-2 small">
+                  <input id="verTodo" type="checkbox" className="form-check-input" checked={verTodoCatalogo} onChange={(e) => setVerTodoCatalogo(e.target.checked)} />
+                  <label htmlFor="verTodo" className="form-check-label">Ver todo el catálogo (no solo los productos de este proveedor)</label>
+                </div>
 
                 {selectedProductToAdd?.maneja_vencimiento && (
                   <div className="form-text small mt-1" style={{ color: styles.mutedColor }}>

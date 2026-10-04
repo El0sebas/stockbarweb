@@ -6,6 +6,8 @@ import { defaultUnidadesMedida } from '../../data/defaultUnidadesMedida';
 import { defaultLotes } from '../../data/defaultLotes';
 import { defaultCompras } from '../../data/defaultCompras';
 import { defaultDetalleCompra } from '../../data/defaultDetalleCompra';
+import { defaultProveedores } from '../../data/defaultProveedores';
+import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
 import { MoneyInput } from '../../components/common/MoneyInput';
 import { showAlert } from '../../utils/alerts';
 
@@ -20,6 +22,10 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
   const [lotes] = usePersistentState('stockbar_lotes', defaultLotes);
   const [compras] = usePersistentState('stockbar_compras', defaultCompras);
   const [detalleCompra] = usePersistentState('stockbar_detalle_compra', defaultDetalleCompra);
+  const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
+  const proveedoresActivos = proveedores.filter((p) => p.estado === 'Activo');
+  const [productoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
+  const [nitsSeleccionados, setNitsSeleccionados] = useState([]);
 
   const initialState = {
     codigo: '',
@@ -38,6 +44,11 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
 
   useEffect(() => {
     setFormData(producto ? producto : { ...initialState, estado: 'Activo' });
+    setNitsSeleccionados(
+      producto
+        ? productoProveedor.filter((pp) => pp.id_producto === producto.codigo).map((pp) => pp.nit_proveedor)
+        : []
+    );
   }, [producto, show]);
 
   if (!show) return null;
@@ -79,7 +90,13 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
       return;
     }
     const dataToSave = producto ? { ...formData, codigo } : { ...formData, codigo, estado: 'Activo' };
-    onSave(dataToSave);
+    onSave({ ...dataToSave, nitsProveedores: nitsSeleccionados });
+  };
+
+  const handleToggleProveedor = (nit) => {
+    setNitsSeleccionados((prev) =>
+      prev.includes(nit) ? prev.filter((n) => n !== nit) : [...prev, nit]
+    );
   };
 
   const handleChange = (e) => {
@@ -299,8 +316,36 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
                   />
                 </div>
               </div>
+
+              <div>
+                <label className="form-label small fw-semibold">Proveedores que surten este producto</label>
+                <div
+                  className="rounded-3 p-2"
+                  style={{ border: `1px solid ${styles.borderCol}`, backgroundColor: styles.inputBg, maxHeight: '160px', overflowY: 'auto' }}
+                >
+                  {proveedoresActivos.length === 0 ? (
+                    <div className="small" style={{ color: styles.mutedColor }}>No hay proveedores activos registrados.</div>
+                  ) : (
+                    proveedoresActivos.map((prov) => (
+                      <div className="form-check small" key={prov.nit}>
+                        <input
+                          id={`prov-${prov.nit}`}
+                          type="checkbox"
+                          className="form-check-input"
+                          checked={nitsSeleccionados.includes(prov.nit)}
+                          onChange={() => handleToggleProveedor(prov.nit)}
+                        />
+                        <label htmlFor={`prov-${prov.nit}`} className="form-check-label">{prov.razon_social}</label>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="form-text small" style={{ color: styles.mutedColor }}>
+                  Catálogo de afiliación: quién puede surtir este producto. No reemplaza el historial real de compras.
+                </div>
+              </div>
             </div>
-            
+
             <div className="modal-footer border-top p-3 d-flex gap-2" style={{ borderColor: styles.borderCol }}>
               <button type="button" className="btn border-0 text-secondary fw-medium" onClick={onClose}>Cancelar</button>
               <button type="submit" className="btn fw-bold px-4 text-white border-0" style={{ backgroundColor: 'var(--amber-action)' }}>

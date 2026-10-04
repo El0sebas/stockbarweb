@@ -3,13 +3,22 @@ import { BoxSeam, Tag, CurrencyDollar, Layers, ShieldExclamation, ExclamationTri
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultCategorias } from '../../data/defaultCategorias';
 import { defaultLotes } from '../../data/defaultLotes';
+import { defaultProveedores } from '../../data/defaultProveedores';
+import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
 import { getLotesProducto, getStockDisponible, getEstadoVencimiento } from '../../utils/stock';
 
 export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) => {
   const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
   const [lotes] = usePersistentState('stockbar_lotes', defaultLotes);
+  const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
+  const [productoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
 
   if (!show || !producto) return null;
+
+  const proveedoresProducto = productoProveedor
+    .filter((pp) => pp.id_producto === producto.codigo)
+    .map((pp) => proveedores.find((p) => p.nit === pp.nit_proveedor))
+    .filter(Boolean);
 
   const porcentajeIva = categorias.find((c) => c.nombre === producto.categoria)?.porcentaje_iva ?? 19;
   const margenCategoria = categorias.find((c) => c.nombre === producto.categoria)?.margen_defecto_porcentaje;
@@ -153,6 +162,27 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
                 <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
                   <div className="small" style={{ color: styles.mutedColor }}>Maneja vencimiento / lote</div>
                   <div className="fw-semibold mt-1">{producto.maneja_vencimiento || producto.manejaVencimiento ? 'Sí' : 'No'}</div>
+                </div>
+              </div>
+
+              <div className="col-12">
+                <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
+                  <div className="small" style={{ color: styles.mutedColor }}>Proveedores que surten este producto</div>
+                  {proveedoresProducto.length === 0 ? (
+                    <div className="small mt-1" style={{ color: styles.mutedColor }}>Ninguno afiliado todavía.</div>
+                  ) : (
+                    <div className="d-flex flex-wrap gap-2 mt-1">
+                      {proveedoresProducto.map((prov) => (
+                        <span
+                          key={prov.nit}
+                          className="badge px-2 py-1"
+                          style={{ backgroundColor: 'var(--border-color)', color: styles.textColor }}
+                        >
+                          {prov.razon_social}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
