@@ -5,7 +5,7 @@
 // nuevos — evita repetir el bug de "el navegador quedó con datos viejos e
 // incompatibles" cada vez que el esquema cambia (pasó con proveedores,
 // clientes y compras en la misma sesión).
-const STORAGE_VERSION = 4;
+const STORAGE_VERSION = 5;
 const VERSION_KEY = 'stockbar_storage_version';
 
 export const ensureStorageVersion = () => {

@@ -198,7 +198,7 @@ export const ComprasPage = () => {
               const estadoColores = {
                 REGISTRADA: { bg: 'var(--success-soft-bg)', color: 'var(--brand-success)' },
                 ANULADA: { bg: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' }
-              }[c.estado];
+              }[c.estado] || { bg: 'var(--bg-main)', color: 'var(--text-muted)' };
               return (
               <tr key={c.id_compra} style={{ borderBottom: `1px solid ${styles.borderCol}` }}>
                 <td className="py-3 fw-bold" style={{ color: 'var(--amber-action)' }}>{c.numero_factura_proveedor}</td>
