@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultRoles } from '../../data/defaultRoles';
+import { Field, useFormValidation } from '../../components/common/Field';
 
 const emptyForm = {
   documento: '',
@@ -17,6 +18,7 @@ export const UsuarioFormModal = ({ show, onClose, onSave, usuario }) => {
   const [roles] = usePersistentState('stockbar_roles', defaultRoles);
 
   const [formData, setFormData] = useState(emptyForm);
+  const { errors, formProps, resetErrors } = useFormValidation();
 
   useEffect(() => {
     if (usuario) {
@@ -31,6 +33,7 @@ export const UsuarioFormModal = ({ show, onClose, onSave, usuario }) => {
     } else {
       setFormData({ ...emptyForm, rol: roles[0]?.nombre || '' });
     }
+    resetErrors();
   }, [usuario, show]);
 
   if (!show) return null;
@@ -57,6 +60,7 @@ export const UsuarioFormModal = ({ show, onClose, onSave, usuario }) => {
     borderCol: 'var(--border-color)',
     inputBg: 'var(--bg-input)',
   };
+  const inputStyle = { backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor };
 
   return (
     <div
@@ -82,111 +86,40 @@ export const UsuarioFormModal = ({ show, onClose, onSave, usuario }) => {
           </div>
 
           {/* Formulario */}
-          <form onSubmit={handleSubmit}>
-            <div className="modal-body p-4">
+          <form {...formProps(handleSubmit)}>
+            <div className="modal-body p-4 d-flex flex-column gap-3">
+              <div className="small fw-bold text-uppercase" style={{ color: styles.mutedColor }}>Información personal</div>
               <div className="row g-3">
-                {/* Documento */}
-                <div className="col-12 col-md-6">
-                  <label className="form-label small fw-semibold" style={{ color: styles.mutedColor }}>
-                    Documento de Identidad *
-                  </label>
-                  <input
-                    type="text"
-                    className="form-control shadow-none"
-                    name="documento"
-                    required
-                    value={formData.documento}
-                    onChange={handleChange}
-                    placeholder="Ej. 1098765432"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  />
-                </div>
+                <Field className="col-12 col-md-6" label="Documento de Identidad" required error={errors.documento}>
+                  <input type="text" className="form-control shadow-none" name="documento" required value={formData.documento} onChange={handleChange} placeholder="Ej. 1098765432" style={inputStyle} />
+                </Field>
+                <Field className="col-12 col-md-6" label="Nombre Completo" required error={errors.nombre}>
+                  <input type="text" className="form-control shadow-none" name="nombre" required value={formData.nombre} onChange={handleChange} placeholder="Ej. Carlos Andrés Gómez" style={inputStyle} />
+                </Field>
+              </div>
 
-                {/* Nombre Completo */}
-                <div className="col-12 col-md-6">
-                  <label className="form-label small fw-semibold" style={{ color: styles.mutedColor }}>
-                    Nombre Completo *
-                  </label>
-                  <input
-                    type="text"
-                    className="form-control shadow-none"
-                    name="nombre"
-                    required
-                    value={formData.nombre}
-                    onChange={handleChange}
-                    placeholder="Ej. Carlos Andrés Gómez"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  />
-                </div>
+              <div className="small fw-bold text-uppercase mt-2" style={{ color: styles.mutedColor }}>Contacto</div>
+              <div className="row g-3">
+                <Field className="col-12 col-md-6" label="Correo Electrónico" required error={errors.correo}>
+                  <input type="email" className="form-control shadow-none" name="correo" required value={formData.correo} onChange={handleChange} placeholder="carlos@stockbar.com" style={inputStyle} />
+                </Field>
+                <Field className="col-12 col-md-6" label="Teléfono" required error={errors.telefono}>
+                  <input type="text" className="form-control shadow-none" name="telefono" required value={formData.telefono} onChange={handleChange} placeholder="Ej. 3101234567" style={inputStyle} />
+                </Field>
+              </div>
 
-                {/* Email */}
-                <div className="col-12 col-md-6">
-                  <label className="form-label small fw-semibold" style={{ color: styles.mutedColor }}>
-                    Correo Electrónico *
-                  </label>
-                  <input
-                    type="email"
-                    className="form-control shadow-none"
-                    name="correo"
-                    required
-                    value={formData.correo}
-                    onChange={handleChange}
-                    placeholder="carlos@stockbar.com"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  />
-                </div>
-
-                {/* Teléfono */}
-                <div className="col-12 col-md-6">
-                  <label className="form-label small fw-semibold" style={{ color: styles.mutedColor }}>
-                    Teléfono *
-                  </label>
-                  <input
-                    type="text"
-                    className="form-control shadow-none"
-                    name="telefono"
-                    required
-                    value={formData.telefono}
-                    onChange={handleChange}
-                    placeholder="Ej. 3101234567"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  />
-                </div>
-
-                {/* Rol */}
-                <div className="col-12 col-md-6">
-                  <label className="form-label small fw-semibold" style={{ color: styles.mutedColor }}>
-                    Rol de Sistema *
-                  </label>
-                  <select
-                    className="form-select shadow-none"
-                    name="rol"
-                    value={formData.rol}
-                    onChange={handleChange}
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  >
+              <div className="small fw-bold text-uppercase mt-2" style={{ color: styles.mutedColor }}>Acceso al sistema</div>
+              <div className="row g-3">
+                <Field className="col-12 col-md-6" label="Rol de Sistema" required error={errors.rol}>
+                  <select className="form-select shadow-none" name="rol" required value={formData.rol} onChange={handleChange} style={inputStyle}>
                     {roles.map((rol) => (
                       <option key={rol.codigo} value={rol.nombre}>{rol.nombre}</option>
                     ))}
                   </select>
-                </div>
-
-                {/* Contraseña */}
-                <div className="col-12 col-md-6">
-                  <label className="form-label small fw-semibold" style={{ color: styles.mutedColor }}>
-                    Contraseña {usuario ? '(Dejar vacía para conservar)' : '*'}
-                  </label>
-                  <input
-                    type="password"
-                    className="form-control shadow-none"
-                    name="password"
-                    required={!usuario}
-                    value={formData.password}
-                    onChange={handleChange}
-                    placeholder="••••••••"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  />
-                </div>
+                </Field>
+                <Field className="col-12 col-md-6" label={usuario ? 'Contraseña (vacía = conservar)' : 'Contraseña'} required={!usuario} error={errors.password}>
+                  <input type="password" className="form-control shadow-none" name="password" required={!usuario} value={formData.password} onChange={handleChange} placeholder="••••••••" style={inputStyle} />
+                </Field>
               </div>
             </div>
 

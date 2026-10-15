@@ -249,3 +249,9 @@ textarea::placeholder {
   background-color: var(--danger-soft-bg);
   color: var(--brand-danger) !important;
 }
+
+/* Campo con error (ver components/common/Field.jsx) */
+.field-error .form-control,
+.field-error .form-select {
+  border-color: var(--brand-danger) !important;
+}

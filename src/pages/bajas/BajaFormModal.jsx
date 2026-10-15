@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { ExclamationTriangle, Search } from 'react-bootstrap-icons';
-import { showAlert } from '../../utils/alerts';
 import { getEstadoVencimiento } from '../../utils/stock';
 import { validarCantidadBaja } from '../../utils/bajas';
 
@@ -13,6 +12,7 @@ export const BajaFormModal = ({ show, onClose, onSave, lotes, productos, motivos
   const [idMotivoBaja, setIdMotivoBaja] = useState(motivos[0]?.id_motivo_baja || 1);
   const [cantidad, setCantidad] = useState(1);
   const [observaciones, setObservaciones] = useState('');
+  const [tocado, setTocado] = useState(false);
 
   useEffect(() => {
     if (show) {
@@ -21,6 +21,7 @@ export const BajaFormModal = ({ show, onClose, onSave, lotes, productos, motivos
       setIdMotivoBaja(motivos[0]?.id_motivo_baja || 1);
       setCantidad(1);
       setObservaciones('');
+      setTocado(false);
     }
   }, [show, loteInicial, motivos]);
 
@@ -43,17 +44,8 @@ export const BajaFormModal = ({ show, onClose, onSave, lotes, productos, motivos
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!loteSeleccionado) {
-      showAlert.error('Falta el lote', 'Selecciona el lote que vas a dar de baja.');
-      return;
-    }
-
-    const disponible = Number(loteSeleccionado.cantidad_disponible);
-    const mensajeError = validarCantidadBaja(Number(cantidad), disponible);
-    if (mensajeError) {
-      showAlert.error('Baja rechazada', mensajeError);
-      return;
-    }
+    setTocado(true);
+    if (errLote || errCantidad) return;
 
     onSave({
       id_lote: loteSeleccionado.id_lote,
@@ -63,6 +55,9 @@ export const BajaFormModal = ({ show, onClose, onSave, lotes, productos, motivos
     });
   };
 
+  const errLote = loteSeleccionado ? '' : 'Campo obligatorio: selecciona un lote';
+  const errCantidad = loteSeleccionado ? validarCantidadBaja(Number(cantidad), Number(loteSeleccionado.cantidad_disponible)) || '' : '';
+  const msg = (t) => tocado && t && <div className="small mt-1" style={{ color: 'var(--brand-danger)' }}>{t}</div>;
   const productoSeleccionado = loteSeleccionado ? getProducto(loteSeleccionado.id_producto) : null;
   const estadoVencimiento = loteSeleccionado ? getEstadoVencimiento(loteSeleccionado.fecha_vencimiento) : null;
 
@@ -93,7 +88,7 @@ export const BajaFormModal = ({ show, onClose, onSave, lotes, productos, motivos
           <form onSubmit={handleSubmit} noValidate>
             <div className="modal-body p-4 d-flex flex-column gap-3">
               <div>
-                <label className="form-label small fw-semibold">Lote a dar de baja</label>
+                <label className="form-label small fw-semibold">Lote a dar de baja <span style={{ color: 'var(--brand-danger)' }}>*</span></label>
                 {loteSeleccionado ? (
                   <div className="p-3 rounded-3 d-flex justify-content-between align-items-center" style={{ backgroundColor: styles.tableBg, border: `1px solid ${styles.borderCol}` }}>
                     <div>
@@ -153,11 +148,12 @@ export const BajaFormModal = ({ show, onClose, onSave, lotes, productos, motivos
                     )}
                   </>
                 )}
+                {msg(errLote)}
               </div>
 
               <div className="row g-3">
                 <div className="col-md-6">
-                  <label className="form-label small fw-semibold">Motivo</label>
+                  <label className="form-label small fw-semibold">Motivo <span style={{ color: 'var(--brand-danger)' }}>*</span></label>
                   <select
                     className="form-select shadow-none"
                     value={idMotivoBaja}
@@ -170,7 +166,7 @@ export const BajaFormModal = ({ show, onClose, onSave, lotes, productos, motivos
                   </select>
                 </div>
                 <div className="col-md-6">
-                  <label className="form-label small fw-semibold">Cantidad</label>
+                  <label className="form-label small fw-semibold">Cantidad <span style={{ color: 'var(--brand-danger)' }}>*</span></label>
                   <input
                     type="number"
                     min="1"
@@ -178,8 +174,10 @@ export const BajaFormModal = ({ show, onClose, onSave, lotes, productos, motivos
                     className="form-control shadow-none"
                     value={cantidad}
                     onChange={(e) => setCantidad(Number(e.target.value) || 0)}
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
+                    onBlur={() => setTocado(true)}
+                    style={{ backgroundColor: styles.inputBg, borderColor: tocado && errCantidad ? 'var(--brand-danger)' : styles.borderCol, color: styles.textColor }}
                   />
+                  {msg(errCantidad)}
                 </div>
               </div>
 

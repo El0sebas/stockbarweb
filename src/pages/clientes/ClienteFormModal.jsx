@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Person } from 'react-bootstrap-icons';
+import { Field, useFormValidation } from '../../components/common/Field';
 
 export const ClienteFormModal = ({ show, onClose, onSave, cliente }) => {
   const initialState = { tipo_documento: 'CC', numero_documento: '', nombre_completo: '', telefono: '', correo: '', fecha_nacimiento: '', genero: '' };
   const [formData, setFormData] = useState(initialState);
+  const { errors, formProps, resetErrors } = useFormValidation();
 
   useEffect(() => {
     if (cliente) {
@@ -19,6 +21,7 @@ export const ClienteFormModal = ({ show, onClose, onSave, cliente }) => {
     } else {
       setFormData(initialState);
     }
+    resetErrors();
   }, [cliente, show]);
 
   if (!show) return null;
@@ -33,6 +36,7 @@ export const ClienteFormModal = ({ show, onClose, onSave, cliente }) => {
     borderCol: 'var(--border-color)',
     inputBg: 'var(--bg-input)',
   };
+  const inputStyle = { backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor };
 
   return (
     <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'var(--overlay-scrim)', backdropFilter: 'blur(3px)', zIndex: 1050 }}>
@@ -45,55 +49,48 @@ export const ClienteFormModal = ({ show, onClose, onSave, cliente }) => {
             </div>
             <button type="button" className="btn-close shadow-none btn-close-themed" onClick={onClose}></button>
           </div>
-          <form onSubmit={handleSubmit}>
+          <form {...formProps(handleSubmit)}>
             <div className="modal-body p-4 d-flex flex-column gap-3">
+              <div className="small fw-bold text-uppercase" style={{ color: styles.mutedColor }}>Información personal</div>
               <div className="row g-3">
-                <div className="col-4">
-                  <label className="form-label small fw-semibold">Tipo</label>
-                  <select name="tipo_documento" className="form-select shadow-none" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.tipo_documento} onChange={handleChange}>
+                <Field className="col-4" label="Tipo" required error={errors.tipo_documento}>
+                  <select name="tipo_documento" required className="form-select shadow-none" style={inputStyle} value={formData.tipo_documento} onChange={handleChange}>
                     <option value="CC">CC</option>
                     <option value="CE">CE</option>
                     <option value="TI">TI</option>
                     <option value="PAS">PAS</option>
                     <option value="NIT">NIT</option>
                   </select>
-                </div>
-                <div className="col-8">
-                  <label className="form-label small fw-semibold">N° Documento</label>
-                  <input type="text" name="numero_documento" required className="form-control shadow-none" placeholder="Ej: 1017223344" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.numero_documento} onChange={handleChange} />
-                </div>
+                </Field>
+                <Field className="col-8" label="N° Documento" required error={errors.numero_documento}>
+                  <input type="text" name="numero_documento" required className="form-control shadow-none" placeholder="Ej: 1017223344" style={inputStyle} value={formData.numero_documento} onChange={handleChange} />
+                </Field>
               </div>
-              <div>
-                <label className="form-label small fw-semibold">Nombre Completo</label>
-                <input type="text" name="nombre_completo" required className="form-control shadow-none" placeholder="Ej: Andrés Pérez" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.nombre_completo} onChange={handleChange} />
-              </div>
+              <Field label="Nombre Completo" required error={errors.nombre_completo}>
+                <input type="text" name="nombre_completo" required className="form-control shadow-none" placeholder="Ej: Andrés Pérez" style={inputStyle} value={formData.nombre_completo} onChange={handleChange} />
+              </Field>
               <div className="row g-3">
-                <div className="col-6">
-                  <label className="form-label small fw-semibold">Teléfono</label>
-                  <input type="text" name="telefono" className="form-control shadow-none" placeholder="300 123 4567" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.telefono} onChange={handleChange} />
-                </div>
-                <div className="col-6">
-                  <label className="form-label small fw-semibold">Correo Electrónico</label>
-                  <input type="email" name="correo" className="form-control shadow-none" placeholder="correo@ejemplo.com" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.correo} onChange={handleChange} />
-                </div>
-              </div>
-              <div className="row g-3">
-                <div className="col-8">
-                  <label className="form-label small fw-semibold">Fecha de nacimiento</label>
-                  <input type="date" name="fecha_nacimiento" className="form-control shadow-none" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.fecha_nacimiento} onChange={handleChange} />
-                  <div className="form-text small" style={{ color: styles.mutedColor }}>
-                    Necesaria para vender productos con verificación de edad (licores, cerveza).
-                  </div>
-                </div>
-                <div className="col-4">
-                  <label className="form-label small fw-semibold">Género</label>
-                  <select name="genero" className="form-select shadow-none" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} value={formData.genero} onChange={handleChange}>
+                <Field className="col-7" label="Fecha de nacimiento" error={errors.fecha_nacimiento}>
+                  <input type="date" name="fecha_nacimiento" className="form-control shadow-none" style={inputStyle} value={formData.fecha_nacimiento} onChange={handleChange} />
+                </Field>
+                <Field className="col-5" label="Género" error={errors.genero}>
+                  <select name="genero" className="form-select shadow-none" style={inputStyle} value={formData.genero} onChange={handleChange}>
                     <option value="">No especifica</option>
                     <option value="M">Masculino</option>
                     <option value="F">Femenino</option>
                     <option value="OTRO">Otro</option>
                   </select>
-                </div>
+                </Field>
+              </div>
+
+              <div className="small fw-bold text-uppercase mt-2" style={{ color: styles.mutedColor }}>Contacto</div>
+              <div className="row g-3">
+                <Field className="col-6" label="Teléfono" error={errors.telefono}>
+                  <input type="text" name="telefono" className="form-control shadow-none" placeholder="300 123 4567" style={inputStyle} value={formData.telefono} onChange={handleChange} />
+                </Field>
+                <Field className="col-6" label="Correo Electrónico" error={errors.correo}>
+                  <input type="email" name="correo" className="form-control shadow-none" placeholder="correo@ejemplo.com" style={inputStyle} value={formData.correo} onChange={handleChange} />
+                </Field>
               </div>
             </div>
             <div className="modal-footer border-top p-3 d-flex gap-2" style={{ borderColor: styles.borderCol }}>

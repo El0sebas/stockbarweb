@@ -470,7 +470,7 @@ export const VentasPage = () => {
              <div className="modal-body p-4">
                <div className="row g-3 mb-4">
                  <div className="col-md-6">
-                   <label className="form-label small fw-semibold">Cliente</label>
+                   <label className="form-label small fw-semibold">Cliente <span style={{ color: 'var(--brand-danger)' }}>*</span></label>
                    <select
                      className="form-select"
                      value={idCliente}
@@ -486,14 +486,15 @@ export const VentasPage = () => {
                    {ventaActiva && ventaActiva.productos.some((p) => getRequiereEdad(p.categoria)) && clienteSeleccionado && clienteSeleccionado.id_cliente !== 0 && (
                      <div className="small mt-1 d-flex align-items-center gap-1" style={{ color: 'var(--brand-danger)' }}>
                        <ShieldExclamation size={12} />
-                       El carrito tiene productos +18: este cliente registrado necesita fecha de nacimiento y ser mayor de edad. Una venta de mostrador o al Consumidor Final no lo exige.
+                       Hay productos +18: el cliente necesita fecha de nacimiento y ser mayor de edad.
                      </div>
                    )}
                  </div>
                </div>
 
-               <div className="row g-3 mb-4">
-                 <div className="col-md-7">
+               <div className="row g-4">
+                 <div className="col-lg-8 d-flex flex-column gap-3">
+                 <div>
                    <label className="form-label small fw-semibold">Agregar producto</label>
                    <div className="position-relative mb-2">
                      <Search size={14} className="position-absolute top-50 start-0 translate-middle-y ms-3" style={{ color: styles.mutedColor }} />
@@ -551,28 +552,7 @@ export const VentasPage = () => {
                      )}
                    </div>
                  </div>
-
-                 <div className="col-md-5">
-                   <div className="rounded-3 p-3" style={{ backgroundColor: 'var(--bg-main)', border: `1px solid ${styles.borderCol}` }}>
-                     <div className="d-flex justify-content-between small" style={{ color: styles.mutedColor }}>
-                       <span>Subtotal (base gravable)</span>
-                       <span>${new Intl.NumberFormat('es-CO').format(Math.round((ventaActiva ? calcularTotalesVenta(ventaActiva.productos) : { baseGravable: 0 }).baseGravable))}</span>
-                     </div>
-                     <div className="d-flex justify-content-between small mb-2" style={{ color: styles.mutedColor }}>
-                       <span>IVA</span>
-                       <span>${new Intl.NumberFormat('es-CO').format(Math.round((ventaActiva ? calcularTotalesVenta(ventaActiva.productos) : { iva: 0 }).iva))}</span>
-                     </div>
-                     <div className="d-flex justify-content-between align-items-center pt-2 border-top" style={{ borderColor: styles.borderCol }}>
-                       <span className="fw-semibold">Total</span>
-                       <span className="fw-bold fs-4" style={{ color: 'var(--amber-action)' }}>
-                         ${new Intl.NumberFormat('es-CO').format(ventaActiva ? ventaActiva.total : 0)}
-                       </span>
-                     </div>
-                   </div>
-                 </div>
-               </div>
-
-               <div className="table-responsive mb-4">
+               <div className="table-responsive">
                  <table className="table align-middle mb-0" style={{ color: styles.textColor }}>
                    <thead>
                      <tr style={{ borderColor: styles.borderCol }}>
@@ -617,9 +597,29 @@ export const VentasPage = () => {
                  </table>
                </div>
 
-               <div className="rounded-3 p-3" style={{ backgroundColor: 'var(--bg-main)', border: `1px solid ${styles.borderCol}` }}>
+                 </div>
+
+                 <div className="col-lg-4">
+                   <div className="position-sticky" style={{ top: 0 }}>
+                   <div className="rounded-3 p-3" style={{ backgroundColor: 'var(--bg-main)', border: `1px solid ${styles.borderCol}` }}>
+                     <div className="d-flex justify-content-between small" style={{ color: styles.mutedColor }}>
+                       <span>Subtotal (base gravable)</span>
+                       <span>${new Intl.NumberFormat('es-CO').format(Math.round((ventaActiva ? calcularTotalesVenta(ventaActiva.productos) : { baseGravable: 0 }).baseGravable))}</span>
+                     </div>
+                     <div className="d-flex justify-content-between small mb-2" style={{ color: styles.mutedColor }}>
+                       <span>IVA</span>
+                       <span>${new Intl.NumberFormat('es-CO').format(Math.round((ventaActiva ? calcularTotalesVenta(ventaActiva.productos) : { iva: 0 }).iva))}</span>
+                     </div>
+                     <div className="d-flex justify-content-between align-items-center pt-2 border-top" style={{ borderColor: styles.borderCol }}>
+                       <span className="fw-semibold">Total</span>
+                       <span className="fw-bold fs-4" style={{ color: 'var(--amber-action)' }}>
+                         ${new Intl.NumberFormat('es-CO').format(ventaActiva ? ventaActiva.total : 0)}
+                       </span>
+                     </div>
+                   </div>
+               <div className="rounded-3 p-3 mt-3" style={{ backgroundColor: 'var(--bg-main)', border: `1px solid ${styles.borderCol}` }}>
                  <h6 className="fw-bold small mb-3 d-flex align-items-center gap-2" style={{ color: 'var(--amber-action)' }}>
-                   <CashCoin size={16} /> Método de pago
+                   <CashCoin size={16} /> Método de pago <span style={{ color: 'var(--brand-danger)' }}>*</span>
                  </h6>
                  <select
                    className="form-select form-select-sm"
@@ -635,16 +635,18 @@ export const VentasPage = () => {
                </div>
 
                <div className="mt-3">
-                 <label className="form-label small text-muted">Observaciones (opcional)</label>
+                 <label className="form-label small text-muted">Observaciones <span style={{ color: 'var(--text-muted)' }}>(opcional)</span></label>
                  <textarea
                    className="form-control form-control-sm"
                    rows="2"
-                   placeholder="Notas de la venta, acuerdos con el cliente, etc."
-                   disabled={!ventaActiva}
+                     disabled={!ventaActiva}
                    value={ventaActiva?.observaciones || ''}
                    onChange={(e) => actualizarVenta(ventaActiva.id_venta, (v) => ({ ...v, observaciones: e.target.value }))}
                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                  />
+               </div>
+                   </div>
+                 </div>
                </div>
              </div>
 

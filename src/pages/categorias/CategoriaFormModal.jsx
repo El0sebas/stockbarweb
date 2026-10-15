@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Tag } from 'react-bootstrap-icons';
+import { Field, useFormValidation } from '../../components/common/Field';
 
 export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
   const initialState = {
@@ -12,6 +13,7 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
   };
 
   const [formData, setFormData] = useState(initialState);
+  const { errors, formProps, resetErrors } = useFormValidation();
 
   useEffect(() => {
     if (categoria) {
@@ -19,6 +21,7 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
     } else {
       setFormData(initialState);
     }
+    resetErrors();
   }, [categoria, show]);
 
   if (!show) return null;
@@ -40,6 +43,7 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
     borderCol: 'var(--border-color)',
     inputBg: 'var(--bg-input)',
   };
+  const inputStyle = { backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor };
 
   return (
     <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'var(--overlay-scrim)', backdropFilter: 'blur(3px)', zIndex: 1050 }}>
@@ -53,91 +57,37 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
             <button type="button" className="btn-close shadow-none btn-close-themed" onClick={onClose}></button>
           </div>
           
-          <form onSubmit={handleSubmit}>
+          <form {...formProps(handleSubmit)}>
             <div className="modal-body p-4 d-flex flex-column gap-3">
               {categoria && (
                 <div>
                   <label className="form-label small fw-semibold" style={{ color: styles.mutedColor }}>Código</label>
-                  <input type="text" className="form-control" disabled value={formData.codigo || ''} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.mutedColor }} />
+                  <input type="text" className="form-control" disabled value={formData.codigo || ''} style={{ ...inputStyle, color: styles.mutedColor }} />
                 </div>
               )}
 
-              <div>
-                <label className="form-label small fw-semibold">Nombre de la Categoría</label>
-                <input 
-                  type="text" 
-                  name="nombre"
-                  required 
-                  className="form-control shadow-none" 
-                  placeholder="Ej: Licores"
-                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} 
-                  value={formData.nombre} 
-                  onChange={handleChange} 
-                />
-              </div>
+              <Field label="Nombre de la Categoría" required error={errors.nombre}>
+                <input type="text" name="nombre" required className="form-control shadow-none" placeholder="Ej: Licores" style={inputStyle} value={formData.nombre} onChange={handleChange} />
+              </Field>
 
-              <div>
-                <label className="form-label small fw-semibold">Descripción</label>
-                <textarea 
-                  name="descripcion"
-                  className="form-control shadow-none" 
-                  rows="3" 
-                  placeholder="Detalles sobre los productos que incluye..."
-                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} 
-                  value={formData.descripcion} 
-                  onChange={handleChange}
-                ></textarea>
-              </div>
+              <Field label="Descripción" error={errors.descripcion}>
+                <textarea name="descripcion" className="form-control shadow-none" rows="2" placeholder="Qué productos incluye" style={inputStyle} value={formData.descripcion} onChange={handleChange}></textarea>
+              </Field>
 
-              <div>
-                <label className="form-label small fw-semibold">Margen de ganancia por defecto (%)</label>
-                <input
-                  type="number"
-                  name="margen_defecto_porcentaje"
-                  min="0"
-                  step="0.01"
-                  required
-                  className="form-control shadow-none"
-                  placeholder="Ej: 35"
-                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  value={formData.margen_defecto_porcentaje}
-                  onChange={handleChange}
-                />
-                <div className="form-text small" style={{ color: styles.mutedColor }}>
-                  Margen que heredan los productos de esta categoría. Un producto puede definir su propio margen y sobreescribir este valor.
-                </div>
-              </div>
-
-              <div>
-                <label className="form-label small fw-semibold">% IVA cobrado al cliente</label>
-                <input
-                  type="number"
-                  name="porcentaje_iva"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  required
-                  className="form-control shadow-none"
-                  placeholder="19"
-                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  value={formData.porcentaje_iva ?? 19}
-                  onChange={handleChange}
-                />
-                <div className="form-text small" style={{ color: styles.mutedColor }}>
-                  19% general; 5% para licores destilados &gt;15° (tarifa diferencial). No incluye el impuesto al consumo de licores/cigarrillos: ese ya está diluido en el costo de compra y StockBar no lo vuelve a cobrar.
-                </div>
+              <div className="row g-3">
+                <Field className="col-6" label="Margen por defecto (%)" required error={errors.margen_defecto_porcentaje}>
+                  <input type="number" name="margen_defecto_porcentaje" min="0" step="0.01" required className="form-control shadow-none" placeholder="Ej: 35" style={inputStyle} value={formData.margen_defecto_porcentaje} onChange={handleChange} />
+                </Field>
+                <Field className="col-6" label="% IVA al cliente" required error={errors.porcentaje_iva}>
+                  <input type="number" name="porcentaje_iva" min="0" max="100" step="0.01" required className="form-control shadow-none" placeholder="19" style={inputStyle} value={formData.porcentaje_iva ?? 19} onChange={handleChange} />
+                </Field>
               </div>
 
               <div
                 className="p-3 rounded-3 d-flex align-items-center justify-content-between gap-3"
                 style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}
               >
-                <div>
-                  <div className="fw-semibold small">Requiere verificación de edad</div>
-                  <div className="small" style={{ color: styles.mutedColor }}>
-                    Exige cliente con fecha de nacimiento válida y 18+ años cumplidos en cada venta de esta categoría.
-                  </div>
-                </div>
+                <div className="fw-semibold small">Requiere verificación de edad (+18)</div>
                 <div className="form-check form-switch m-0 flex-shrink-0">
                   <input
                     className="form-check-input"
@@ -151,7 +101,7 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
                 </div>
               </div>
             </div>
-            
+
             <div className="modal-footer border-top p-3 d-flex gap-2" style={{ borderColor: styles.borderCol }}>
               <button type="button" className="btn border-0 text-secondary fw-medium" onClick={onClose}>Cancelar</button>
               <button type="submit" className="btn fw-bold px-4 text-white border-0" style={{ backgroundColor: 'var(--amber-action)' }}>

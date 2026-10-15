@@ -9,6 +9,7 @@ import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
 import { generateNextId } from '../../utils/identifiers';
 import { QuantityStepper } from '../../components/common/QuantityStepper';
 import { MoneyInput } from '../../components/common/MoneyInput';
+import { Field, useFormValidation } from '../../components/common/Field';
 
 export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, compra, nextFactura }) => {
   // metodo_pago es un catálogo fijo sin pantalla de administración (no es
@@ -36,6 +37,7 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
   };
 
   const [formData, setFormData] = useState(initialState);
+  const { errors, formProps, resetErrors } = useFormValidation();
   const [productSearch, setProductSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedProductToAdd, setSelectedProductToAdd] = useState(null);
@@ -63,6 +65,7 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
     setCantidad(1);
     setCostoUnitario(0);
     setFechaVencimiento('');
+    resetErrors();
   }, [compra, show, nextFactura]);
 
   if (!show) return null;
@@ -246,7 +249,7 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
 
   return (
     <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'var(--overlay-scrim)', backdropFilter: 'blur(3px)', zIndex: 1050 }}>
-      <div className="modal-dialog modal-dialog-centered modal-lg">
+      <div className="modal-dialog modal-dialog-centered modal-xl">
         <div className="modal-content border-0 shadow-lg" style={{ backgroundColor: styles.modalBg, color: styles.textColor, borderRadius: '12px' }}>
           <div className="modal-header border-bottom p-3 px-4" style={{ borderColor: styles.borderCol }}>
             <div className="d-flex align-items-center gap-2">
@@ -256,76 +259,40 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
             <button type="button" className="btn-close shadow-none btn-close-themed" onClick={onClose}></button>
           </div>
 
-          <form onSubmit={handleRegistrar}>
+          <form {...formProps(handleRegistrar)}>
             <div className="modal-body p-4 d-flex flex-column gap-3">
               <div className="row g-3">
-                <div className="col-md-6">
-                  <label className="form-label small fw-semibold">Proveedor</label>
-                  <select
-                    className="form-select shadow-none"
-                    value={formData.proveedor}
-                    onChange={handleCambiarProveedor}
-                    required
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  >
+                <Field className="col-md-5" label="Proveedor" required error={errors.proveedor}>
+                  <select name="proveedor" className="form-select shadow-none" value={formData.proveedor} onChange={handleCambiarProveedor} required style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}>
                     <option value="">Seleccione un proveedor...</option>
                     {proveedoresActivos.map((prov) => (
                       <option key={prov.nit} value={prov.razon_social}>{prov.razon_social}</option>
                     ))}
                   </select>
-                </div>
-
-                <div className="col-md-3">
-                  <label className="form-label small fw-semibold">N° Factura Proveedor</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    value={formData.numero_factura_proveedor}
-                    readOnly={!compra}
-                    onChange={(e) => setFormData({ ...formData, numero_factura_proveedor: e.target.value })}
-                    placeholder={nextFactura || 'FAC-0001'}
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  />
-                </div>
-
-                <div className="col-md-3">
-                  <label className="form-label small fw-semibold">Método de pago</label>
-                  <select
-                    className="form-select shadow-none"
-                    value={formData.id_metodo_pago}
-                    onChange={(e) => setFormData({ ...formData, id_metodo_pago: Number(e.target.value) })}
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  >
+                </Field>
+                <Field className="col-md-3" label="N° Factura Proveedor" required error={errors.numero_factura_proveedor}>
+                  <input type="text" name="numero_factura_proveedor" className="form-control" required value={formData.numero_factura_proveedor} readOnly={!compra}
+                    onChange={(e) => setFormData({ ...formData, numero_factura_proveedor: e.target.value })} placeholder={nextFactura || 'FAC-0001'} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} />
+                </Field>
+                <Field className="col-md-4" label="Método de pago" required error={errors.id_metodo_pago}>
+                  <select name="id_metodo_pago" className="form-select shadow-none" required value={formData.id_metodo_pago}
+                    onChange={(e) => setFormData({ ...formData, id_metodo_pago: Number(e.target.value) })} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}>
                     {metodosPagoActivos.map((m) => (
                       <option key={m.id_metodo_pago} value={m.id_metodo_pago}>{m.nombre}</option>
                     ))}
                   </select>
-                </div>
-                <div className="col-md-12">
-                  <label className="form-label small fw-semibold">Factura digitalizada (PDF o imagen)</label>
+                </Field>
+                <div className="col-md-6">
+                  <label className="form-label small fw-semibold">Factura digitalizada <span className="fw-normal" style={{ color: styles.mutedColor }}>(opcional)</span></label>
                   <div className="d-flex align-items-center gap-2">
-                    <label
-                      className="btn btn-sm d-flex align-items-center gap-2 m-0"
-                      style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}`, color: styles.textColor }}
-                    >
+                    <label className="btn btn-sm d-flex align-items-center gap-2 m-0" style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}`, color: styles.textColor }}>
                       <Upload size={14} />
                       Subir archivo
-                      <input
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={handleFacturaFileChange}
-                        hidden
-                      />
+                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleFacturaFileChange} hidden />
                     </label>
-                    {formData.ruta_factura ? (
+                    {formData.ruta_factura && (
                       formData.ruta_factura_url ? (
-                        <a
-                          href={formData.ruta_factura_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="small d-flex align-items-center gap-1"
-                          style={{ color: 'var(--amber-action)' }}
-                        >
+                        <a href={formData.ruta_factura_url} target="_blank" rel="noreferrer" className="small d-flex align-items-center gap-1" style={{ color: 'var(--amber-action)' }}>
                           <FileEarmarkText size={14} /> {formData.ruta_factura}
                         </a>
                       ) : (
@@ -333,25 +300,17 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
                           <FileEarmarkText size={14} /> {formData.ruta_factura}
                         </span>
                       )
-                    ) : (
-                      <span className="small" style={{ color: styles.mutedColor }}>Sin factura adjunta</span>
                     )}
                   </div>
                 </div>
-
-                <div className="col-md-12">
-                  <label className="form-label small fw-semibold">Observaciones (opcional)</label>
-                  <textarea
-                    className="form-control shadow-none"
-                    rows="2"
-                    placeholder="Novedades de la compra, acuerdos con el proveedor, etc."
-                    value={formData.observaciones}
-                    onChange={(e) => setFormData({ ...formData, observaciones: e.target.value })}
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  />
-                </div>
+                <Field className="col-md-6" label="Observaciones" error={errors.observaciones}>
+                  <textarea name="observaciones" className="form-control shadow-none" rows="1" value={formData.observaciones}
+                    onChange={(e) => setFormData({ ...formData, observaciones: e.target.value })} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} />
+                </Field>
               </div>
 
+              <div className="row g-3 mt-0">
+                <div className="col-lg-8 d-flex flex-column gap-3">
               <div className="p-3 rounded-3 mt-2" style={{ backgroundColor: styles.tableBg, border: `1px solid ${styles.borderCol}` }}>
                 <h6 className="fw-bold small mb-3" style={{ color: 'var(--amber-action)' }}>Agregar Productos</h6>
                 <div className="row g-2 align-items-end">
@@ -392,7 +351,7 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
                   {selectedProductToAdd &&
                     (selectedProductToAdd.maneja_vencimiento ? (
                       <div className="col-6 col-md-3">
-                        <label className="form-label small text-muted">Vence</label>
+                        <label className="form-label small text-muted">Vence <span style={{ color: 'var(--brand-danger)' }}>*</span></label>
                         <input
                           type="date"
                           min={minimoVencimiento}
@@ -403,9 +362,7 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
                         />
                       </div>
                     ) : (
-                      <div className="col-12 col-md-4">
-                        <span className="small text-muted">Sin control de vencimiento.</span>
-                      </div>
+                      <div className="col-12 col-md-3" />
                     ))}
 
                   <div className="col-12 col-md-1 d-grid">
@@ -457,11 +414,6 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
                   <label htmlFor="verTodo" className="form-check-label">Ver todo el catálogo (no solo los productos de este proveedor)</label>
                 </div>
 
-                {selectedProductToAdd?.maneja_vencimiento && (
-                  <div className="form-text small mt-1" style={{ color: styles.mutedColor }}>
-                    Fecha de vencimiento mínima: {minimoVencimiento} (15 días después de la compra).
-                  </div>
-                )}
               </div>
 
               <div className="table-responsive mt-2">
@@ -521,17 +473,28 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
                 </table>
               </div>
 
-              {formData.items.length > 0 && (
-                <div className="d-flex justify-content-end align-items-center gap-3 pt-2 border-top" style={{ borderColor: styles.borderCol }}>
-                  <span className="fw-bold fs-6">Total Compra:</span>
-                  <span className="fw-bold fs-5" style={{ color: 'var(--amber-action)' }}>$ {Number(calcularTotal()).toLocaleString()}</span>
                 </div>
-              )}
+
+                <div className="col-lg-4">
+                  <div className="position-sticky" style={{ top: 0 }}>
+                    <div className="rounded-3 p-3" style={{ backgroundColor: styles.tableBg, border: `1px solid ${styles.borderCol}` }}>
+                      <div className="d-flex justify-content-between small" style={{ color: styles.mutedColor }}>
+                        <span>Productos</span>
+                        <span>{formData.items.length}</span>
+                      </div>
+                      <div className="d-flex justify-content-between align-items-center pt-2 mt-2 border-top" style={{ borderColor: styles.borderCol }}>
+                        <span className="fw-semibold">Total Compra</span>
+                        <span className="fw-bold fs-4" style={{ color: 'var(--amber-action)' }}>$ {Number(calcularTotal()).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="modal-footer border-top p-3 d-flex gap-2" style={{ borderColor: styles.borderCol }}>
               <button type="button" className="btn border-0 text-secondary fw-medium" onClick={onClose}>Cancelar</button>
-              <button type="button" className="btn btn-outline-secondary fw-medium" onClick={handleGuardarPendiente} title="Queda PENDIENTE: su stock no cuenta todavía y se puede anular más tarde">
+              <button type="button" className="btn btn-outline-secondary fw-medium" onClick={handleGuardarPendiente}>
                 Guardar como pendiente
               </button>
               <button type="submit" className="btn fw-bold px-4 text-white border-0" style={{ backgroundColor: 'var(--amber-action)' }}>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldCheck } from 'react-bootstrap-icons';
+import { Field, useFormValidation } from '../../components/common/Field';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultPermisos } from '../../data/defaultPermisos';
 import { showAlert } from '../../utils/alerts';
@@ -20,6 +21,7 @@ export const RolFormModal = ({ show, onClose, onSave, rol }) => {
   };
 
   const [formData, setFormData] = useState(initialState);
+  const { errors, formProps, resetErrors } = useFormValidation();
 
   useEffect(() => {
     if (rol) {
@@ -27,6 +29,7 @@ export const RolFormModal = ({ show, onClose, onSave, rol }) => {
     } else {
       setFormData(initialState);
     }
+    resetErrors();
   }, [rol, show]);
 
   if (!show) return null;
@@ -65,6 +68,7 @@ export const RolFormModal = ({ show, onClose, onSave, rol }) => {
     borderCol: 'var(--border-color)',
     inputBg: 'var(--bg-input)',
   };
+  const inputStyle = { backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor };
 
   return (
     <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'var(--overlay-scrim)', backdropFilter: 'blur(3px)', zIndex: 1050 }}>
@@ -78,7 +82,7 @@ export const RolFormModal = ({ show, onClose, onSave, rol }) => {
             <button type="button" className="btn-close shadow-none btn-close-themed" onClick={onClose}></button>
           </div>
 
-          <form onSubmit={handleSubmit}>
+          <form {...formProps(handleSubmit)}>
             <div className="modal-body p-4 d-flex flex-column gap-3">
               {rol && (
                 <div>
@@ -87,22 +91,12 @@ export const RolFormModal = ({ show, onClose, onSave, rol }) => {
                 </div>
               )}
 
-              <div>
-                <label className="form-label small fw-semibold">Nombre del Rol</label>
-                <input
-                  type="text"
-                  name="nombre"
-                  required
-                  className="form-control shadow-none"
-                  placeholder="Ej: SUPERVISOR_CAJA"
-                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  value={formData.nombre}
-                  onChange={handleChange}
-                />
-              </div>
+              <Field label="Nombre del Rol" required error={errors.nombre}>
+                <input type="text" name="nombre" required className="form-control shadow-none" placeholder="Ej: SUPERVISOR_CAJA" style={inputStyle} value={formData.nombre} onChange={handleChange} />
+              </Field>
 
               <div>
-                <label className="form-label small fw-semibold mb-2">Permisos (rol_permiso)</label>
+                <label className="form-label small fw-semibold mb-2">Permisos <span style={{ color: 'var(--brand-danger)' }}>*</span> <span className="fw-normal" style={{ color: styles.mutedColor }}>(mínimo uno)</span></label>
                 <div className="d-flex flex-column gap-3 p-3 rounded-3" style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}>
                   {modulos.map((modulo) => (
                     <div key={modulo}>

@@ -1,10 +1,32 @@
 -- ============================================================
 -- STOCKBAR - BASE DE DATOS (MySQL 8.0.16+ / MariaDB 10.5+)
--- Versión 5 (V4 + producto_proveedor restaurada).
+-- Versión 6 (V5 + compra PENDIENTE y anulación restringida a PENDIENTE).
 --
 -- Requisitos: MySQL 8.0.16+ (CHECK reales) o MariaDB 10.5+.
 -- Las funciones se crean DETERMINISTIC para poder crearse sin SUPER con
 -- binlog STATEMENT (alternativa: SET GLOBAL log_bin_trust_function_creators=1).
+--
+-- ============================================================
+-- QUÉ CAMBIÓ EN LA V6 Y POR QUÉ
+-- ============================================================
+--
+-- COMPRA GANA EL ESTADO PENDIENTE (espejo exacto de venta):
+--    compra.estado pasa de (REGISTRADA, ANULADA) a (PENDIENTE, REGISTRADA,
+--    ANULADA). Una compra nace PENDIENTE — sus líneas se pueden agregar,
+--    editar o eliminar libremente y su stock NO cuenta todavía
+--    (fn_stock_lote solo suma compras REGISTRADA) — y sp_completar_compra la
+--    pasa a REGISTRADA (exige al menos un detalle, igual que
+--    sp_completar_venta). Desde REGISTRADA la compra queda inmutable: no se
+--    pueden tocar sus líneas ni anularla.
+--
+--    ANULACIÓN RESTRINGIDA A PENDIENTE, en AMBAS tablas: ni una venta
+--    COMPLETADA ni una compra REGISTRADA se pueden anular ya — antes sí se
+--    podía, y eso no corresponde a ninguna historia de usuario (anular algo
+--    ya entregado/facturado sería una devolución, un proceso distinto).
+--    Esto además simplifica trg_validar_anulacion_compra: ya no hace falta
+--    revisar si los lotes de la compra tienen ventas o bajas encima, porque
+--    mientras estuvo PENDIENTE su stock nunca contó, así que no puede haber
+--    ningún movimiento apoyado en ella.
 --
 -- ============================================================
 -- QUÉ CAMBIÓ EN LA V5 Y POR QUÉ
@@ -78,7 +100,9 @@
 -- Decisiones heredadas que se mantienen:
 --   * rol sin descripción y categoria sin estado.
 --   * venta.id_cliente NULLABLE (venta de mostrador) y verificación de edad.
---   * venta PENDIENTE -> COMPLETADA y stock reservado desde PENDIENTE.
+--   * venta/compra PENDIENTE -> estado final (MySQL no tiene triggers
+--     diferibles) y stock reservado/contado desde el estado final, nunca
+--     desde PENDIENTE.
 --   * UNIQUE (proveedor, factura), ruta_factura, IVA por categoría congelado
 --     por línea de venta, un solo administrador principal, una jornada
 --     abierta, un contacto principal por proveedor.
@@ -344,10 +368,10 @@ CREATE TABLE compra (
     ruta_factura VARCHAR(255),
     fecha_compra DATE NOT NULL,
     fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    estado VARCHAR(12) NOT NULL DEFAULT 'REGISTRADA',
+    estado VARCHAR(12) NOT NULL DEFAULT 'PENDIENTE',
     observaciones VARCHAR(255),
     CONSTRAINT ck_compra_id CHECK (id_compra REGEXP '^CMP-[0-9]{6}$'),
-    CONSTRAINT ck_compra_estado CHECK (estado IN ('REGISTRADA','ANULADA')),
+    CONSTRAINT ck_compra_estado CHECK (estado IN ('PENDIENTE','REGISTRADA','ANULADA')),
     CONSTRAINT uq_factura_proveedor UNIQUE (id_proveedor, numero_factura_proveedor),
     FOREIGN KEY (id_proveedor) REFERENCES proveedor(id_proveedor),
     FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario),
@@ -638,6 +662,10 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No se pueden modificar los detalles de una compra ANULADA.';
     END IF;
 
+    IF v_estado = 'REGISTRADA' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No se pueden modificar los detalles de una compra ya REGISTRADA.';
+    END IF;
+
     IF p_fecha_vencimiento IS NOT NULL
        AND p_fecha_vencimiento < DATE_ADD(v_fecha_compra, INTERVAL 15 DAY) THEN
         SIGNAL SQLSTATE '45000'
@@ -658,23 +686,16 @@ BEGIN
     CALL sp_validar_vencimiento_compra(NEW.id_compra, v_vencimiento);
 END$$
 
--- Editar una compra no puede dejar un lote con stock negativo (por ejemplo
--- reducir una cantidad que ya se vendió).
+-- Editar/eliminar líneas solo es posible mientras la compra está PENDIENTE
+-- (sp_validar_vencimiento_compra ya rechaza ANULADA/REGISTRADA): una vez
+-- REGISTRADA su stock cuenta y puede estar vendido, así que ya no hace falta
+-- revisar fn_stock_lote aquí — el bloqueo por estado es suficiente.
 CREATE TRIGGER trg_validar_detalle_compra_upd BEFORE UPDATE ON detalle_compra
 FOR EACH ROW
 BEGIN
     DECLARE v_vencimiento DATE;
-    DECLARE v_stock_resultante DECIMAL(10,2);
-
     SELECT fecha_vencimiento INTO v_vencimiento FROM lote WHERE id_lote = NEW.id_lote;
     CALL sp_validar_vencimiento_compra(NEW.id_compra, v_vencimiento);
-
-    SET v_stock_resultante = fn_stock_lote(OLD.id_lote) - OLD.cantidad
-        + IF(NEW.id_lote = OLD.id_lote AND NEW.id_compra = OLD.id_compra, NEW.cantidad, 0);
-    IF v_stock_resultante < 0 THEN
-        SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'No se puede reducir esta entrada: el lote ya tiene ventas o bajas que la requieren.';
-    END IF;
 END$$
 
 CREATE TRIGGER trg_validar_detalle_compra_del BEFORE DELETE ON detalle_compra
@@ -682,9 +703,12 @@ FOR EACH ROW
 BEGIN
     DECLARE v_estado VARCHAR(12);
     SELECT estado INTO v_estado FROM compra WHERE id_compra = OLD.id_compra;
-    IF v_estado = 'REGISTRADA' AND fn_stock_lote(OLD.id_lote) - OLD.cantidad < 0 THEN
+    IF v_estado = 'ANULADA' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No se pueden eliminar detalles de una compra ANULADA.';
+    END IF;
+    IF v_estado = 'REGISTRADA' THEN
         SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'No se puede eliminar esta entrada: el lote ya tiene ventas o bajas que la requieren.';
+            SET MESSAGE_TEXT = 'No se pueden eliminar detalles de una compra ya REGISTRADA.';
     END IF;
 END$$
 DELIMITER ;
@@ -720,6 +744,54 @@ BEGIN
 
     INSERT INTO detalle_compra (id_compra, id_lote, cantidad, precio_unitario_compra)
     VALUES (p_id_compra, v_id_lote, p_cantidad, p_precio_unitario_compra);
+END$$
+DELIMITER ;
+
+-- ============================================================
+-- CIERRE / REGISTRO DE COMPRA (compra PENDIENTE -> REGISTRADA)
+-- Espejo exacto del cierre de venta: una compra REGISTRADA necesita al
+-- menos un detalle, y a partir de ahí queda inmutable (ver
+-- sp_validar_vencimiento_compra y trg_validar_detalle_compra_del) y ya no
+-- se puede anular (ver trg_validar_anulacion_compra).
+-- ============================================================
+
+DROP PROCEDURE IF EXISTS sp_validar_cierre_compra;
+DELIMITER $$
+CREATE PROCEDURE sp_validar_cierre_compra(IN p_id_compra CHAR(10) CHARACTER SET ascii COLLATE ascii_bin)
+BEGIN
+    DECLARE v_detalles INT;
+    SELECT COUNT(*) INTO v_detalles FROM detalle_compra WHERE id_compra = p_id_compra;
+    IF v_detalles = 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Una compra REGISTRADA debe tener al menos un detalle.';
+    END IF;
+END$$
+DELIMITER ;
+
+DROP TRIGGER IF EXISTS trg_validar_cierre_compra_ins;
+DROP TRIGGER IF EXISTS trg_validar_cierre_compra_upd;
+DELIMITER $$
+CREATE TRIGGER trg_validar_cierre_compra_ins AFTER INSERT ON compra
+FOR EACH ROW
+BEGIN
+    IF NEW.estado = 'REGISTRADA' THEN
+        CALL sp_validar_cierre_compra(NEW.id_compra);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_validar_cierre_compra_upd AFTER UPDATE ON compra
+FOR EACH ROW
+BEGIN
+    IF NEW.estado = 'REGISTRADA' AND OLD.estado <> 'REGISTRADA' THEN
+        CALL sp_validar_cierre_compra(NEW.id_compra);
+    END IF;
+END$$
+DELIMITER ;
+
+DROP PROCEDURE IF EXISTS sp_completar_compra;
+DELIMITER $$
+CREATE PROCEDURE sp_completar_compra(IN p_id_compra CHAR(10) CHARACTER SET ascii COLLATE ascii_bin)
+BEGIN
+    UPDATE compra SET estado = 'REGISTRADA' WHERE id_compra = p_id_compra;
 END$$
 DELIMITER ;
 
@@ -1003,6 +1075,10 @@ DELIMITER ;
 -- ANULACIÓN DE VENTA
 -- ============================================================
 
+-- Solo se puede anular una venta mientras está PENDIENTE. Una vez
+-- COMPLETADA queda fuera de alcance de la anulación (regla de negocio): la
+-- venta ya se facturó y entregó, así que "deshacerla" sería una devolución,
+-- un proceso distinto que la ficha no pide.
 DROP TRIGGER IF EXISTS trg_validar_anulacion_venta;
 DELIMITER $$
 CREATE TRIGGER trg_validar_anulacion_venta BEFORE UPDATE ON venta
@@ -1012,15 +1088,22 @@ BEGIN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'Una venta ANULADA no puede reactivarse. Debe registrarse una nueva venta.';
     END IF;
-    -- Anular una venta PENDIENTE o COMPLETADA libera el stock: fn_stock_lote
+    IF NEW.estado = 'ANULADA' AND OLD.estado = 'COMPLETADA' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Solo se puede anular una venta mientras está PENDIENTE; una venta COMPLETADA ya no se puede anular.';
+    END IF;
+    -- Anular una venta PENDIENTE libera el stock reservado: fn_stock_lote
     -- solo descuenta ventas PENDIENTE/COMPLETADA.
 END$$
 DELIMITER ;
 
 -- ============================================================
 -- ANULACIÓN DE COMPRA
--- Regla conservadora: no se anula si algún lote de la compra ya tiene
--- ventas (incluidas las PENDIENTE) o bajas.
+-- Espejo exacto de la venta: solo se puede anular mientras está PENDIENTE.
+-- Antes de la V6 esto se validaba revisando si los lotes de la compra ya
+-- tenían ventas/bajas encima; ya no hace falta: mientras está PENDIENTE su
+-- stock no cuenta (fn_stock_lote solo suma compras REGISTRADA), así que no
+-- puede existir ninguna venta ni baja apoyada en ella todavía.
 -- ============================================================
 
 DROP TRIGGER IF EXISTS trg_validar_anulacion_compra;
@@ -1028,33 +1111,13 @@ DELIMITER $$
 CREATE TRIGGER trg_validar_anulacion_compra BEFORE UPDATE ON compra
 FOR EACH ROW
 BEGIN
-    DECLARE v_movimientos INT DEFAULT 0;
-
     IF OLD.estado <> NEW.estado THEN
-        IF OLD.estado = 'REGISTRADA' AND NEW.estado = 'ANULADA' THEN
-            SELECT COUNT(*) INTO v_movimientos
-            FROM detalle_compra dc
-            WHERE dc.id_compra = NEW.id_compra
-              AND (
-                EXISTS (
-                    SELECT 1 FROM detalle_venta dv
-                    JOIN venta v ON v.id_venta = dv.id_venta
-                    WHERE dv.id_lote = dc.id_lote
-                      AND v.estado IN ('PENDIENTE', 'COMPLETADA')
-                )
-                OR EXISTS (
-                    SELECT 1 FROM baja_inventario bi WHERE bi.id_lote = dc.id_lote
-                )
-              );
-
-            IF v_movimientos > 0 THEN
-                SIGNAL SQLSTATE '45000'
-                    SET MESSAGE_TEXT = 'No se puede anular la compra porque sus lotes ya tienen movimientos de inventario.';
-            END IF;
-        END IF;
-
-        IF OLD.estado = 'ANULADA' AND NEW.estado = 'REGISTRADA' THEN
+        IF OLD.estado = 'ANULADA' THEN
             SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Una compra ANULADA no puede reactivarse.';
+        END IF;
+        IF NEW.estado = 'ANULADA' AND OLD.estado <> 'PENDIENTE' THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Solo se puede anular una compra mientras está PENDIENTE; una compra REGISTRADA ya no se puede anular.';
         END IF;
     END IF;
 END$$
@@ -1282,13 +1345,16 @@ WHERE r.id_rol = 'EMP';
 -- 4. Flujo de compra:
 --       BEGIN
 --       INSERT compra (CMP-######, proveedor, usuario, forma de pago, ...)
+--                                      -- queda PENDIENTE, su stock no cuenta aún
 --       -- el formulario lista los productos de vw_productos_por_proveedor
 --       -- filtrados por el proveedor elegido en la factura
 --       CALL sp_agregar_detalle_compra(compra, producto, vencimiento,
 --                                      cantidad, precio, 'LOT-######')
 --       ... una llamada por línea ...
+--       CALL sp_completar_compra(id_compra);  -- valida que tenga detalle, pasa a REGISTRADA
 --       COMMIT
---    Valor total = vw_totales_compra.
+--    Valor total = vw_totales_compra. Una vez REGISTRADA ya no se puede
+--    anular ni modificar sus líneas (solo mientras está PENDIENTE).
 --
 -- 5. Flujo de venta:
 --       BEGIN
@@ -1296,6 +1362,7 @@ WHERE r.id_rol = 'EMP';
 --       INSERT detalle_venta (...)   -- reserva el stock del lote
 --       CALL sp_completar_venta(id_venta);   -- valida que tenga detalle y total > 0
 --       COMMIT
+--    Una vez COMPLETADA ya no se puede anular (solo mientras está PENDIENTE).
 --
 -- 6. Recuperación de contraseña: la app guarda en usuario el hash del token
 --    y su vencimiento (ej. 24 h, HU_77); al restablecer o vencer pone ambas

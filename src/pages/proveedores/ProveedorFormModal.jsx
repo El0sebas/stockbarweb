@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Building } from 'react-bootstrap-icons';
+import { Field, useFormValidation } from '../../components/common/Field';
 
 export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
 
@@ -15,6 +16,7 @@ export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
   };
 
   const [formData, setFormData] = useState(initialState);
+  const { errors, formProps, resetErrors } = useFormValidation();
 
   useEffect(() => {
     if (proveedor) {
@@ -22,6 +24,7 @@ export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
     } else {
       setFormData(initialState);
     }
+    resetErrors();
   }, [proveedor, show]);
 
   if (!show) return null;
@@ -44,6 +47,7 @@ export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
     borderCol: 'var(--border-color)',
     inputBg: 'var(--bg-input)',
   };
+  const inputStyle = { backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor };
 
   return (
     <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'var(--overlay-scrim)', backdropFilter: 'blur(3px)', zIndex: 1050 }}>
@@ -57,111 +61,36 @@ export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
             <button type="button" className="btn-close shadow-none btn-close-themed" onClick={onClose}></button>
           </div>
 
-          <form onSubmit={handleSubmit}>
+          <form {...formProps(handleSubmit)}>
             <div className="modal-body p-4 d-flex flex-column gap-3">
+              <div className="small fw-bold text-uppercase" style={{ color: styles.mutedColor }}>Información de la empresa</div>
               <div className="row g-3">
-                <div className="col-6">
-                  <label className="form-label small fw-semibold">NIT</label>
-                  <input
-                    type="text"
-                    name="nit"
-                    required
-                    disabled={Boolean(proveedor)}
-                    className="form-control shadow-none"
-                    placeholder="9001234561"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: proveedor ? styles.mutedColor : styles.textColor }}
-                    value={formData.nit || ''}
-                    onChange={handleChange}
-                  />
-                  <div className="form-text small" style={{ color: styles.mutedColor }}>
-                    El NIT identifica al proveedor; no se puede cambiar después de creado.
-                  </div>
-                </div>
-                <div className="col-6">
-                  <label className="form-label small fw-semibold">Razón Social</label>
-                  <input
-                    type="text"
-                    name="razon_social"
-                    required
-                    className="form-control shadow-none"
-                    placeholder="Ej: Distribuidora de Licores S.A.S."
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                    value={formData.razon_social}
-                    onChange={handleChange}
-                  />
-                </div>
+                <Field className="col-6" label="NIT" required error={errors.nit}>
+                  <input type="text" name="nit" required disabled={Boolean(proveedor)} className="form-control shadow-none" placeholder="9001234561"
+                    style={{ ...inputStyle, color: proveedor ? styles.mutedColor : styles.textColor }} value={formData.nit || ''} onChange={handleChange} />
+                </Field>
+                <Field className="col-6" label="Razón Social" required error={errors.razon_social}>
+                  <input type="text" name="razon_social" required className="form-control shadow-none" placeholder="Ej: Distribuidora de Licores S.A.S." style={inputStyle} value={formData.razon_social} onChange={handleChange} />
+                </Field>
               </div>
+              <Field label="Nombre Comercial" error={errors.nombre_comercial}>
+                <input type="text" name="nombre_comercial" className="form-control shadow-none" placeholder="Ej: Distrilicores" style={inputStyle} value={formData.nombre_comercial || ''} onChange={handleChange} />
+              </Field>
 
-              <div>
-                <label className="form-label small fw-semibold">Nombre Comercial (opcional)</label>
-                <input
-                  type="text"
-                  name="nombre_comercial"
-                  className="form-control shadow-none"
-                  placeholder="Ej: Distrilicores"
-                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  value={formData.nombre_comercial || ''}
-                  onChange={handleChange}
-                />
-              </div>
-
+              <div className="small fw-bold text-uppercase mt-2" style={{ color: styles.mutedColor }}>Contacto</div>
               <div className="row g-3">
-                <div className="col-6">
-                  <label className="form-label small fw-semibold">Ciudad</label>
-                  <input
-                    type="text"
-                    name="ciudad"
-                    className="form-control shadow-none"
-                    placeholder="Medellín"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                    value={formData.ciudad || ''}
-                    onChange={handleChange}
-                  />
-                </div>
-                <div className="col-6">
-                  <label className="form-label small fw-semibold">Dirección</label>
-                  <input
-                    type="text"
-                    name="direccion"
-                    className="form-control shadow-none"
-                    placeholder="Calle 45 # 12-34"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                    value={formData.direccion || ''}
-                    onChange={handleChange}
-                  />
-                </div>
-              </div>
-
-              <div className="row g-3">
-                <div className="col-6">
-                  <label className="form-label small fw-semibold">Teléfono Principal</label>
-                  <input
-                    type="text"
-                    name="telefono_principal"
-                    required
-                    className="form-control shadow-none"
-                    placeholder="3101234567"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                    value={formData.telefono_principal}
-                    onChange={handleChange}
-                  />
-                </div>
-                <div className="col-6">
-                  <label className="form-label small fw-semibold">Correo Principal</label>
-                  <input
-                    type="email"
-                    name="correo_principal"
-                    required
-                    className="form-control shadow-none"
-                    placeholder="correo@ejemplo.com"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                    value={formData.correo_principal}
-                    onChange={handleChange}
-                  />
-                </div>
-              </div>
-              <div className="form-text small" style={{ color: styles.mutedColor }}>
-                Los contactos de este proveedor (uno o varios, con un principal) se administran desde el detalle del proveedor una vez guardado.
+                <Field className="col-6" label="Teléfono Principal" required error={errors.telefono_principal}>
+                  <input type="text" name="telefono_principal" required className="form-control shadow-none" placeholder="3101234567" style={inputStyle} value={formData.telefono_principal} onChange={handleChange} />
+                </Field>
+                <Field className="col-6" label="Correo Principal" required error={errors.correo_principal}>
+                  <input type="email" name="correo_principal" required className="form-control shadow-none" placeholder="correo@ejemplo.com" style={inputStyle} value={formData.correo_principal} onChange={handleChange} />
+                </Field>
+                <Field className="col-6" label="Ciudad" error={errors.ciudad}>
+                  <input type="text" name="ciudad" className="form-control shadow-none" placeholder="Medellín" style={inputStyle} value={formData.ciudad || ''} onChange={handleChange} />
+                </Field>
+                <Field className="col-6" label="Dirección" error={errors.direccion}>
+                  <input type="text" name="direccion" className="form-control shadow-none" placeholder="Calle 45 # 12-34" style={inputStyle} value={formData.direccion || ''} onChange={handleChange} />
+                </Field>
               </div>
             </div>
 

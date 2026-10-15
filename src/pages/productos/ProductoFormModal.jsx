@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BoxSeam } from 'react-bootstrap-icons';
+import { Field, useFormValidation } from '../../components/common/Field';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { defaultCategorias } from '../../data/defaultCategorias';
 import { defaultUnidadesMedida } from '../../data/defaultUnidadesMedida';
@@ -41,6 +42,7 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
   };
 
   const [formData, setFormData] = useState(initialState);
+  const { errors, formProps, resetErrors } = useFormValidation();
 
   useEffect(() => {
     setFormData(producto ? producto : { ...initialState, estado: 'Activo' });
@@ -49,6 +51,7 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
         ? productoProveedor.filter((pp) => pp.id_producto === producto.codigo).map((pp) => pp.nit_proveedor)
         : []
     );
+    resetErrors();
   }, [producto, show]);
 
   if (!show) return null;
@@ -114,6 +117,7 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
     borderCol: 'var(--border-color)',
     inputBg: 'var(--bg-input)',
   };
+  const inputStyle = { backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor };
 
   return (
     <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'var(--overlay-scrim)', backdropFilter: 'blur(3px)', zIndex: 1050 }}>
@@ -127,170 +131,88 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
             <button type="button" className="btn-close shadow-none btn-close-themed" onClick={onClose}></button>
           </div>
           
-          <form onSubmit={handleSubmit}>
+          <form {...formProps(handleSubmit)}>
             <div className="modal-body p-4 d-flex flex-column gap-3">
-              <div>
-                <label className="form-label small fw-semibold">Código (SKU)</label>
-                <input
-                  type="text"
-                  name="codigo"
-                  required
-                  disabled={Boolean(producto)}
-                  className="form-control shadow-none text-uppercase"
-                  placeholder="Ej: TEQ-DJ-750"
-                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: producto ? styles.mutedColor : styles.textColor }}
-                  value={formData.codigo || ''}
-                  onChange={handleChange}
-                />
-                <div className="form-text small" style={{ color: styles.mutedColor }}>
-                  El código del negocio (SKU). Letras mayúsculas, números y guiones; no se puede cambiar después de creado.
-                </div>
+              <div className="row g-3">
+                <Field className="col-5" label="Código (SKU)" required error={errors.codigo}>
+                  <input type="text" name="codigo" required disabled={Boolean(producto)} className="form-control shadow-none text-uppercase" placeholder="Ej: TEQ-DJ-750"
+                    style={{ ...inputStyle, color: producto ? styles.mutedColor : styles.textColor }} value={formData.codigo || ''} onChange={handleChange} />
+                </Field>
+                <Field className="col-7" label="Nombre del Producto" required error={errors.nombre}>
+                  <input type="text" name="nombre" required className="form-control shadow-none" placeholder="Ej: Whisky Old Parr" style={inputStyle} value={formData.nombre} onChange={handleChange} />
+                </Field>
               </div>
 
-              <div>
-                <label className="form-label small fw-semibold">Nombre del Producto</label>
-                <input 
-                  type="text" 
-                  name="nombre"
-                  required 
-                  className="form-control shadow-none" 
-                  placeholder="Ej: Whisky Old Parr"
-                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} 
-                  value={formData.nombre} 
-                  onChange={handleChange} 
-                />
-              </div>
-
-              <div>
-                <label className="form-label small fw-semibold">Descripción</label>
-                <textarea
-                  name="descripcion"
-                  rows="3"
-                  className="form-control shadow-none"
-                  placeholder="Describe el producto, marca, origen y notas relevantes"
-                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  value={formData.descripcion || ''}
-                  onChange={handleChange}
-                />
-              </div>
+              <Field label="Descripción" error={errors.descripcion}>
+                <textarea name="descripcion" rows="2" className="form-control shadow-none" placeholder="Marca, origen, notas" style={inputStyle} value={formData.descripcion || ''} onChange={handleChange} />
+              </Field>
 
               <div className="row g-3">
-                <div className="col-6">
-                  <label className="form-label small fw-semibold">Categoría</label>
-                  <select 
-                    name="categoria"
-                    className="form-select shadow-none"
-                    required
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} 
-                    value={formData.categoria} 
-                    onChange={handleChange}
-                  >
+                <Field className="col-6" label="Categoría" required error={errors.categoria}>
+                  <select name="categoria" className="form-select shadow-none" required style={inputStyle} value={formData.categoria} onChange={handleChange}>
                     <option value="">Seleccione...</option>
                     {categorias.map((cat) => (
                       <option key={cat.codigo} value={cat.nombre}>{cat.nombre}</option>
                     ))}
                   </select>
-                </div>
-                <div className="col-6">
-                  <label className="form-label small fw-semibold">Unidad de Medida</label>
-                  <select
-                    name="unidad_medida"
-                    className="form-select shadow-none"
-                    required
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                    value={formData.unidad_medida}
-                    onChange={handleChange}
-                  >
+                </Field>
+                <Field className="col-6" label="Unidad de Medida" required error={errors.unidad_medida}>
+                  <select name="unidad_medida" className="form-select shadow-none" required style={inputStyle} value={formData.unidad_medida} onChange={handleChange}>
                     <option value="">Seleccione...</option>
                     {unidadesMedida.map((um) => (
                       <option key={um.id_unidad_medida} value={um.nombre}>{um.nombre}</option>
                     ))}
                   </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="form-label small fw-semibold">Precio de Venta</label>
-                <MoneyInput
-                  required
-                  placeholder="0"
-                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  value={formData.precioVenta}
-                  onChange={(val) => setFormData((prev) => ({ ...prev, precioVenta: val }))}
-                />
-                <div className="form-text small d-flex flex-wrap align-items-center gap-2" style={{ color: styles.mutedColor }}>
-                  {precioSugerido != null ? (
-                    <>
-                      <span>
-                        Sugerido: ${precioSugerido.toLocaleString('es-CO')} (costo ${costoRef.toLocaleString('es-CO')} + {margen}% margen + IVA)
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-secondary py-0"
-                        onClick={() => setFormData((prev) => ({ ...prev, precioVenta: precioSugerido }))}
-                      >
-                        Aceptar sugerencia
-                      </button>
-                    </>
-                  ) : (
-                    <span>Sin sugerencia: el producto aún no tiene compras registradas. Ingrese el precio manualmente.</span>
-                  )}
-                  {producto && <span>· Precio actual: ${Number(producto.precioVenta || 0).toLocaleString('es-CO')}</span>}
-                </div>
+                </Field>
               </div>
 
               <div className="row g-3">
-                <div className="col-6">
-                  <label className="form-label small fw-semibold">Stock Mínimo</label>
+                <Field className="col-6" label="Precio de Venta" required error={errors.precioVenta}>
+                  <MoneyInput
+                    name="precioVenta"
+                    required
+                    placeholder="0"
+                    style={inputStyle}
+                    value={formData.precioVenta}
+                    onChange={(val) => setFormData((prev) => ({ ...prev, precioVenta: val }))}
+                  />
+                  {precioSugerido != null && (
+                    <div className="form-text small d-flex flex-wrap align-items-center gap-2" style={{ color: styles.mutedColor }}>
+                      <span>Sugerido: ${precioSugerido.toLocaleString('es-CO')}</span>
+                      <button type="button" className="btn btn-sm btn-outline-secondary py-0" onClick={() => setFormData((prev) => ({ ...prev, precioVenta: precioSugerido }))}>
+                        Aplicar
+                      </button>
+                    </div>
+                  )}
+                </Field>
+                <Field className="col-6" label="Stock Mínimo" required error={errors.stockMinimo}>
+                  <input type="number" name="stockMinimo" min="0" required className="form-control shadow-none" placeholder="0" style={inputStyle} value={formData.stockMinimo} onChange={handleChange} />
+                </Field>
+              </div>
+
+              <div className="row g-3">
+                <Field className="col-6" label="Margen personalizado (%)" error={errors.margenPersonalizado}>
                   <input
                     type="number"
-                    name="stockMinimo"
-                    required
+                    name="margenPersonalizado"
+                    min="0"
+                    step="0.01"
                     className="form-control shadow-none"
-                    placeholder="0"
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                    value={formData.stockMinimo}
+                    placeholder={formData.categoria ? `Categoría: ${categorias.find((c) => c.nombre === formData.categoria)?.margen_defecto_porcentaje ?? 0}%` : 'Seleccione categoría'}
+                    style={inputStyle}
+                    value={formData.margenPersonalizado}
                     onChange={handleChange}
                   />
-                  <div className="form-text small" style={{ color: styles.mutedColor }}>
-                    El stock actual no se edita aquí: siempre se calcula desde los lotes registrados en Compras.
-                  </div>
-                </div>
+                </Field>
                 <div className="col-6">
-                  <label className="form-label small fw-semibold">% IVA (según categoría)</label>
+                  <label className="form-label small fw-semibold">% IVA (de la categoría)</label>
                   <input
                     type="text"
                     disabled
                     className="form-control"
-                    value={
-                      formData.categoria
-                        ? `${categorias.find((c) => c.nombre === formData.categoria)?.porcentaje_iva ?? 19}%`
-                        : 'Seleccione una categoría'
-                    }
-                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.mutedColor }}
+                    value={formData.categoria ? `${categorias.find((c) => c.nombre === formData.categoria)?.porcentaje_iva ?? 19}%` : '—'}
+                    style={{ ...inputStyle, color: styles.mutedColor }}
                   />
-                </div>
-              </div>
-
-              <div>
-                <label className="form-label small fw-semibold">Margen de ganancia personalizado (%)</label>
-                <input
-                  type="number"
-                  name="margenPersonalizado"
-                  min="0"
-                  step="0.01"
-                  className="form-control shadow-none"
-                  placeholder={
-                    formData.categoria
-                      ? `Vacío = usa el ${categorias.find((c) => c.nombre === formData.categoria)?.margen_defecto_porcentaje ?? 0}% de la categoría`
-                      : 'Seleccione una categoría'
-                  }
-                  style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
-                  value={formData.margenPersonalizado}
-                  onChange={handleChange}
-                />
-                <div className="form-text small" style={{ color: styles.mutedColor }}>
-                  Opcional. Si lo dejas vacío, este producto hereda el margen por defecto de su categoría.
                 </div>
               </div>
 
@@ -298,12 +220,7 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
                 className="p-3 rounded-3 d-flex align-items-center justify-content-between gap-3"
                 style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}
               >
-                <div>
-                  <div className="fw-semibold small">Maneja vencimiento / lote</div>
-                  <div className="small" style={{ color: styles.mutedColor }}>
-                    Solo exige fecha de vencimiento cuando este producto entre en un lote nuevo desde Compras. No crea lotes desde aquí.
-                  </div>
-                </div>
+                <div className="fw-semibold small">Maneja vencimiento / lote</div>
                 <div className="form-check form-switch m-0 flex-shrink-0">
                   <input
                     className="form-check-input"
@@ -318,7 +235,9 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
               </div>
 
               <div>
-                <label className="form-label small fw-semibold">Proveedores que surten este producto</label>
+                <label className="form-label small fw-semibold">
+                  Proveedores que surten este producto <span className="fw-normal" style={{ color: styles.mutedColor }}>(opcional)</span>
+                </label>
                 <div
                   className="rounded-3 p-2"
                   style={{ border: `1px solid ${styles.borderCol}`, backgroundColor: styles.inputBg, maxHeight: '160px', overflowY: 'auto' }}
@@ -339,9 +258,6 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
                       </div>
                     ))
                   )}
-                </div>
-                <div className="form-text small" style={{ color: styles.mutedColor }}>
-                  Catálogo de afiliación: quién puede surtir este producto. No reemplaza el historial real de compras.
                 </div>
               </div>
             </div>
