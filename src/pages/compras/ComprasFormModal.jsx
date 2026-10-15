@@ -55,10 +55,7 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
     if (compra) {
       setFormData({ ...initialState, ...compra });
     } else {
-      setFormData({
-        ...initialState,
-        numero_factura_proveedor: nextFactura || initialState.numero_factura_proveedor
-      });
+      setFormData(initialState);
     }
     setProductSearch('');
     setSelectedProductToAdd(null);
@@ -180,7 +177,7 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
   // Espejo de sp_validar_cierre_compra: solo exige proveedor/factura/items,
   // sin importar si el resultado va a quedar PENDIENTE o REGISTRADA.
   const construirCompraFinal = () => {
-    const numeroFactura = (formData.numero_factura_proveedor || nextFactura || '').trim();
+    const numeroFactura = (formData.numero_factura_proveedor || '').trim();
 
     if (!formData.proveedor || !numeroFactura) {
       showAlert.error('Facturación incompleta', 'Debe completar proveedor y el número de factura para continuar.');
@@ -271,8 +268,8 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
                   </select>
                 </Field>
                 <Field className="col-md-3" label="N° Factura Proveedor" required error={errors.numero_factura_proveedor}>
-                  <input type="text" name="numero_factura_proveedor" className="form-control" required value={formData.numero_factura_proveedor} readOnly={!compra}
-                    onChange={(e) => setFormData({ ...formData, numero_factura_proveedor: e.target.value })} placeholder={nextFactura || 'FAC-0001'} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} />
+                  <input type="text" name="numero_factura_proveedor" className="form-control" required value={formData.numero_factura_proveedor}
+                    onChange={(e) => setFormData({ ...formData, numero_factura_proveedor: e.target.value })} placeholder="Como aparece en la factura" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} />
                 </Field>
                 <Field className="col-md-4" label="Método de pago" required error={errors.id_metodo_pago}>
                   <select name="id_metodo_pago" className="form-select shadow-none" required value={formData.id_metodo_pago}
