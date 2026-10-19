@@ -1,21 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldCheck } from 'react-bootstrap-icons';
 import { Field, useFormValidation } from '../../components/common/Field';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { defaultPermisos } from '../../data/defaultPermisos';
+import { useApi } from '../../hooks/useApi';
 import { showAlert } from '../../utils/alerts';
 import { humanizarPermiso } from '../../utils/permisos';
 
 export const RolFormModal = ({ show, onClose, onSave, rol }) => {
-  // Catálogo real de permiso (scripts/sch.sql) — nunca nombres de módulo
-  // inventados. Editable solo desde este catálogo, no hardcodeado aquí.
-  const [permisos] = usePersistentState('stockbar_permisos', defaultPermisos);
+  // Catálogo real de permisos (tabla permiso), servido por la API.
+  const { data: permisos } = useApi(show ? '/permisos' : null, []);
   const modulos = [...new Set(permisos.map((p) => p.modulo))];
 
   // Sin descripcion: rol no tiene esa columna (decisión explícita del
   // negocio, aunque la matriz de historias de usuario la mencione).
   const initialState = {
-    codigo: '',
     nombre: '',
     permisos: []
   };
@@ -25,7 +22,7 @@ export const RolFormModal = ({ show, onClose, onSave, rol }) => {
 
   useEffect(() => {
     if (rol) {
-      setFormData(rol);
+      setFormData({ nombre: rol.nombre, permisos: rol.permisos, id_rol: rol.id_rol });
     } else {
       setFormData(initialState);
     }
@@ -87,7 +84,7 @@ export const RolFormModal = ({ show, onClose, onSave, rol }) => {
               {rol && (
                 <div>
                   <label className="form-label small fw-semibold" style={{ color: styles.mutedColor }}>Código</label>
-                  <input type="text" className="form-control" disabled value={formData.codigo || ''} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.mutedColor }} />
+                  <input type="text" className="form-control" disabled value={formData.id_rol || ''} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.mutedColor }} />
                 </div>
               )}
 
@@ -107,12 +104,12 @@ export const RolFormModal = ({ show, onClose, onSave, rol }) => {
                             className="form-check-input shadow-none"
                             type="checkbox"
                             id={`perm-${permiso.id_permiso}`}
-                            checked={formData.permisos.includes(permiso.nombre)}
-                            onChange={() => handleCheckboxChange(permiso.nombre)}
+                            checked={formData.permisos.includes(permiso.id_permiso)}
+                            onChange={() => handleCheckboxChange(permiso.id_permiso)}
                             style={{ cursor: 'pointer' }}
                           />
                           <label className="form-check-label small" htmlFor={`perm-${permiso.id_permiso}`} style={{ cursor: 'pointer' }}>
-                            {humanizarPermiso(permiso.nombre)}
+                            {humanizarPermiso(permiso.id_permiso)}
                           </label>
                         </div>
                       ))}

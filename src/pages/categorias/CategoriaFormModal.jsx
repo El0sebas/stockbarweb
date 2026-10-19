@@ -4,7 +4,6 @@ import { Field, useFormValidation } from '../../components/common/Field';
 
 export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
   const initialState = {
-    codigo: '',
     nombre: '',
     descripcion: '',
     margen_defecto_porcentaje: '',
@@ -17,7 +16,7 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
 
   useEffect(() => {
     if (categoria) {
-      setFormData(categoria);
+      setFormData({ ...categoria, descripcion: categoria.descripcion || '' });
     } else {
       setFormData(initialState);
     }
@@ -28,7 +27,13 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSave(formData);
+    onSave({
+      nombre: formData.nombre,
+      descripcion: formData.descripcion,
+      margen_defecto_porcentaje: Number(formData.margen_defecto_porcentaje),
+      porcentaje_iva: Number(formData.porcentaje_iva),
+      requiere_verificacion_edad: Boolean(formData.requiere_verificacion_edad)
+    });
   };
 
   const handleChange = (e) => {
@@ -62,7 +67,7 @@ export const CategoriaFormModal = ({ show, onClose, onSave, categoria }) => {
               {categoria && (
                 <div>
                   <label className="form-label small fw-semibold" style={{ color: styles.mutedColor }}>Código</label>
-                  <input type="text" className="form-control" disabled value={formData.codigo || ''} style={{ ...inputStyle, color: styles.mutedColor }} />
+                  <input type="text" className="form-control" disabled value={formData.id_categoria || ''} style={{ ...inputStyle, color: styles.mutedColor }} />
                 </div>
               )}
 

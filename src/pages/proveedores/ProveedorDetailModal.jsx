@@ -1,54 +1,49 @@
 import React, { useState } from 'react';
 import { Building, Person, Telephone, Envelope, StarFill, Star, PlusLg, Trash, Calendar3 } from 'react-bootstrap-icons';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { defaultContactosProveedor } from '../../data/defaultContactosProveedor';
 import { showToast } from '../../utils/alerts';
+import { useApi } from '../../hooks/useApi';
+import { api } from '../../services/api';
+import { ejecutar } from '../../utils/accion';
 
-export const ProveedorDetailModal = ({ show, onClose, proveedor }) => {
-  const [contactos, setContactos] = usePersistentState('stockbar_contactos_proveedor', defaultContactosProveedor);
+// onCambio: avisa al listado (columna "contacto principal") que hubo cambios.
+export const ProveedorDetailModal = ({ show, onClose, proveedor: resumen, onCambio }) => {
+  const { data: detalle, recargar } = useApi(show && resumen ? `/proveedores/${resumen.id_proveedor}` : null);
   const [formVisible, setFormVisible] = useState(false);
   const [nuevoContacto, setNuevoContacto] = useState({ nombres: '', apellidos: '', cargo: '', telefono: '', correo: '', es_principal: false });
 
-  if (!show || !proveedor) return null;
+  if (!show || !resumen) return null;
 
-  const contactosProveedor = contactos.filter((c) => c.id_proveedor === proveedor.nit);
+  // Mientras llega el detalle se muestra la fila del listado.
+  const proveedor = detalle?.id_proveedor === resumen.id_proveedor ? detalle : resumen;
+  const contactosProveedor = proveedor.contactos ?? [];
+  const base = `/proveedores/${proveedor.id_proveedor}/contactos`;
+  const tras = async (promesa) => {
+    if (await promesa) {
+      recargar();
+      onCambio?.();
+    }
+  };
 
-  // uq_contacto_principal_activo: al marcar uno nuevo como principal se
-  // desmarca el anterior como parte de la MISMA operación, en vez de
-  // mandar el INSERT a ciegas y mostrar el rechazo de la BD como sorpresa.
-  // v3: PK compuesta (id_proveedor, nro_contacto) — nro_contacto es un
-  // consecutivo POR PROVEEDOR (1, 2, 3…), no un id global.
-  const handleAgregarContacto = (e) => {
+  // Un solo contacto principal por proveedor: el backend desmarca el
+  // anterior en la misma transacción.
+  const handleAgregarContacto = async (e) => {
     e.preventDefault();
     if (!nuevoContacto.nombres.trim() || !nuevoContacto.apellidos.trim() || !nuevoContacto.telefono.trim()) {
       showToast('error', 'Nombres, apellidos y teléfono son obligatorios');
       return;
     }
-    const siguienteNro = Math.max(0, ...contactosProveedor.map((c) => c.nro_contacto)) + 1;
-    setContactos((prev) => {
-      const actualizados = nuevoContacto.es_principal
-        ? prev.map((c) => (c.id_proveedor === proveedor.nit && c.estado === 'Activo' ? { ...c, es_principal: false } : c))
-        : prev;
-      return [...actualizados, { ...nuevoContacto, nro_contacto: siguienteNro, id_proveedor: proveedor.nit, estado: 'Activo' }];
-    });
+    const ok = await ejecutar(() => api.post(base, nuevoContacto), 'Contacto agregado');
+    if (!ok) return;
     setNuevoContacto({ nombres: '', apellidos: '', cargo: '', telefono: '', correo: '', es_principal: false });
     setFormVisible(false);
-    showToast('success', 'Contacto agregado');
+    tras(ok);
   };
 
-  const handleMarcarPrincipal = (contacto) => {
-    setContactos((prev) =>
-      prev.map((c) => {
-        if (c.id_proveedor !== proveedor.nit) return c;
-        if (c.nro_contacto === contacto.nro_contacto) return { ...c, es_principal: true };
-        return c.es_principal ? { ...c, es_principal: false } : c;
-      })
-    );
-  };
+  const handleMarcarPrincipal = (contacto) =>
+    tras(ejecutar(() => api.patch(`${base}/${contacto.nro_contacto}/principal`), 'Contacto principal actualizado'));
 
-  const handleQuitarContacto = (contacto) => {
-    setContactos((prev) => prev.filter((c) => !(c.id_proveedor === contacto.id_proveedor && c.nro_contacto === contacto.nro_contacto)));
-  };
+  const handleQuitarContacto = (contacto) =>
+    tras(ejecutar(() => api.del(`${base}/${contacto.nro_contacto}`), 'Contacto eliminado'));
 
   const styles = {
     modalBg: 'var(--bg-card)',
@@ -74,7 +69,7 @@ export const ProveedorDetailModal = ({ show, onClose, proveedor }) => {
           <div className="modal-body p-4 d-flex flex-column gap-4">
             <div className="d-flex justify-content-between align-items-center p-3 rounded-3" style={{ backgroundColor: styles.cardBg, border: `1px solid ${styles.borderCol}` }}>
               <div>
-                <span className="small fw-semibold text-uppercase" style={{ color: 'var(--amber-action)', fontSize: '0.75rem' }}>{proveedor.nit}</span>
+                <span className="small fw-semibold text-uppercase" style={{ color: 'var(--amber-action)', fontSize: '0.75rem' }}>{proveedor.id_proveedor}</span>
                 <h4 className="fw-bold m-0 mt-1" style={{ color: styles.textColor }}>{proveedor.razon_social}</h4>
                 {proveedor.nombre_comercial && (
                   <div className="small" style={{ color: styles.mutedColor }}>{proveedor.nombre_comercial}</div>
@@ -83,12 +78,12 @@ export const ProveedorDetailModal = ({ show, onClose, proveedor }) => {
               <span
                 className="badge px-3 py-2 fw-medium"
                 style={{
-                  backgroundColor: proveedor.estado === 'Activo' ? 'var(--success-soft-bg)' : 'var(--danger-soft-bg)',
-                  color: proveedor.estado === 'Activo' ? 'var(--brand-success)' : 'var(--brand-danger)',
+                  backgroundColor: proveedor.estado ? 'var(--success-soft-bg)' : 'var(--danger-soft-bg)',
+                  color: proveedor.estado ? 'var(--brand-success)' : 'var(--brand-danger)',
                   borderRadius: '12px'
                 }}
               >
-                {proveedor.estado}
+                {proveedor.estado ? 'Activo' : 'Inactivo'}
               </span>
             </div>
 
@@ -98,7 +93,7 @@ export const ProveedorDetailModal = ({ show, onClose, proveedor }) => {
                   <Person size={18} style={{ color: styles.mutedColor }} />
                   <div>
                     <span className="d-block small text-muted" style={{ fontSize: '0.75rem' }}>NIT</span>
-                    <span className="fw-semibold" style={{ color: styles.textColor }}>{proveedor.nit || 'No especificado'}</span>
+                    <span className="fw-semibold" style={{ color: styles.textColor }}>{proveedor.id_proveedor}</span>
                   </div>
                 </div>
               </div>
@@ -189,7 +184,6 @@ export const ProveedorDetailModal = ({ show, onClose, proveedor }) => {
                       <div className="fw-semibold small d-flex align-items-center gap-2">
                         {c.nombres} {c.apellidos}
                         {c.es_principal && <span className="badge" style={{ backgroundColor: 'var(--amber-soft-bg)', color: 'var(--amber-action)', fontSize: '0.65rem' }}>Principal</span>}
-                        {c.estado !== 'Activo' && <span className="badge" style={{ backgroundColor: 'var(--border-color)', color: styles.mutedColor, fontSize: '0.65rem' }}>Inactivo</span>}
                       </div>
                       <div className="small" style={{ color: styles.mutedColor }}>{c.cargo || 'Sin cargo'} • {c.telefono}{c.correo ? ` • ${c.correo}` : ''}</div>
                     </div>

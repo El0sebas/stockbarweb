@@ -1,5 +1,7 @@
 # Casos de uso — StockBar (Web + Móvil)
 
+> **Documento histórico (etapa con datos simulados).** Desde octubre de 2026 la web ya no usa `localStorage` ni datos de ejemplo: todo pasa por la API (`/backend`, ver `backend/README.md`), y las reglas de negocio viven en el backend y en los triggers de `scripts/sch.sql` (ver `docs/DATABASE.md`). Los flujos desde el punto de vista del actor siguen sirviendo como referencia; los detalles técnicos de abajo (mocks, `localStorage`, tokens simulados, ids numéricos) ya no aplican a la web. La app móvil (Flutter) debe migrarse a la misma API.
+
 Describe el flujo real de cada subproceso tal como está implementado hoy en `stockbar-web` (React) y `stockbar_mobile` (Flutter). Es una foto del comportamiento actual del frontend mock, no un diseño aspiracional — cuando exista el backend, la lógica de negocio aquí descrita (validaciones, generación de ids, descuento de stock, transiciones de estado) migra a la capa de negocio (Node/Express) según `CLAUDE.md`, pero el flujo desde el punto de vista del actor se mantiene igual.
 
 Ver también `CONTEXTO_FRONTEND.md` (inventario de pantallas/componentes) y `SISTEMA_DE_DISENO.md` (tokens visuales).

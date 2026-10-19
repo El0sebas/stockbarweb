@@ -6,17 +6,15 @@ import { StatusToggle } from '../../components/common/StatusToggle';
 import { EstadoFilter } from '../../components/common/EstadoFilter';
 import { UsuarioDetailModal } from './UsuarioDetailModal';
 import { UsuarioFormModal } from './UsuarioFormModal';
-import { showToast, showAlert } from '../../utils/alerts';
-import { generateNextIdentifier } from '../../utils/identifiers';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { useAuth } from '../../context/AuthContext';
-import { defaultUsers } from '../../data/defaultUsers';
+import { showAlert } from '../../utils/alerts';
+import { useApi } from '../../hooks/useApi';
+import { api } from '../../services/api';
+import { ejecutar } from '../../utils/accion';
+import { nombreUsuario, useAuth } from '../../context/AuthContext';
 import { getRoleBadgeColors } from '../../utils/roleColors';
 
 export const UsuariosPage = () => {
-  // Misma clave de localStorage que Login ('stockbar_users'): un usuario creado
-  // aquí puede iniciar sesión, y el admin semilla de Login aparece aquí.
-  const [usuarios, setUsuarios] = usePersistentState('stockbar_users', defaultUsers);
+  const { data: usuarios, recargar } = useApi('/usuarios', []);
   const { currentUser } = useAuth();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -48,17 +46,15 @@ export const UsuariosPage = () => {
     setShowDeleteModal(true);
   };
 
-  // Alternar Estado Activo / Inactivo. Tres reglas, en este orden:
-  // 1) espejo de trg_proteger_admin_principal (BD): nunca se desactiva, ni
-  //    siquiera él mismo.
-  // 2) capa de aplicación: solo un ADMINISTRADOR puede desactivar usuarios.
-  // 3) capa de aplicación: nadie puede desactivarse a sí mismo.
-  const handleToggleEstado = (user) => {
+  // Alternar Estado Activo / Inactivo. Las reglas las aplica el backend
+  // (admin principal protegido, solo un ADMINISTRADOR desactiva, nadie se
+  // desactiva a sí mismo); aquí solo se avisa antes de llamar.
+  const handleToggleEstado = async (user) => {
     if (user.es_admin_principal) {
       showAlert.error('No permitido', 'El administrador principal del sistema no puede desactivarse.');
       return;
     }
-    if (currentUser?.rol !== 'ADMINISTRADOR') {
+    if (user.estado && currentUser?.rol !== 'ADMINISTRADOR') {
       showAlert.error('No permitido', 'Solo un administrador puede desactivar usuarios.');
       return;
     }
@@ -67,39 +63,28 @@ export const UsuariosPage = () => {
       return;
     }
 
-    const nuevoEstado = user.estado === 'Activo' ? 'Inactivo' : 'Activo';
-    setUsuarios(usuarios.map(u => u.id_usuario === user.id_usuario ? { ...u, estado: nuevoEstado } : u));
-    showToast('success', `Usuario ${nuevoEstado === 'Activo' ? 'activado' : 'inactivado'} exitosamente`);
+    if (await ejecutar(() => api.patch(`/usuarios/${user.id_usuario}/estado`, { estado: !user.estado }), (r) => r.mensaje)) recargar();
   };
 
-  const handleSaveUsuario = (formData) => {
-    if (selectedUsuario) {
-      setUsuarios(usuarios.map(u => u.id_usuario === selectedUsuario.id_usuario
-        ? { ...u, ...formData, id_usuario: selectedUsuario.id_usuario, estado: selectedUsuario.estado }
-        : u));
-      showToast('success', 'Usuario actualizado exitosamente');
-    } else {
-      const nuevoId = generateNextIdentifier({ items: usuarios, key: 'id_usuario', prefix: 'USR', pad: 4, separator: '-' });
-      const fechaActual = new Date().toISOString().split('T')[0];
-      setUsuarios([...usuarios, { ...formData, id_usuario: nuevoId, estado: 'Activo', fechaRegistro: fechaActual }]);
-      showToast('success', `Usuario ${formData.nombre} creado exitosamente`);
-    }
+  const handleSaveUsuario = async (formData) => {
+    const ok = selectedUsuario
+      ? await ejecutar(() => api.put(`/usuarios/${selectedUsuario.id_usuario}`, formData), 'Usuario actualizado exitosamente')
+      : await ejecutar(() => api.post('/usuarios', formData), (u) => `Usuario ${nombreUsuario(u)} creado exitosamente`);
+    if (!ok) return;
     setShowFormModal(false);
     setSelectedUsuario(null);
+    recargar();
   };
 
-  const handleConfirmDelete = () => {
-    if (selectedUsuario) {
-      setUsuarios(usuarios.filter(u => u.id_usuario !== selectedUsuario.id_usuario));
-      showToast('success', 'Usuario eliminado exitosamente');
-    }
+  const handleConfirmDelete = async () => {
     setShowDeleteModal(false);
+    if (await ejecutar(() => api.del(`/usuarios/${selectedUsuario.id_usuario}`), 'Usuario eliminado exitosamente')) recargar();
     setSelectedUsuario(null);
   };
 
   const filteredUsuarios = usuarios.filter(u =>
-    ((u.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (u.documento || '').includes(searchTerm) ||
+    (nombreUsuario(u).toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (u.numero_documento || '').includes(searchTerm) ||
       (u.correo || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (u.rol || '').toLowerCase().includes(searchTerm.toLowerCase())) &&
     (!filtroRol || u.rol === filtroRol)
@@ -116,8 +101,8 @@ export const UsuariosPage = () => {
   };
 
   const totalUsuarios = usuarios.length;
-  const activos = usuarios.filter(u => u.estado === 'Activo').length;
-  const inactivos = usuarios.filter(u => u.estado === 'Inactivo').length;
+  const activos = usuarios.filter(u => u.estado).length;
+  const inactivos = totalUsuarios - activos;
 
   return (
     <div className="container-fluid p-0">
@@ -221,10 +206,10 @@ export const UsuariosPage = () => {
                   return (
                     <tr key={usr.id_usuario} style={{ borderColor: styles.borderCol }}>
                       <td className="py-3 px-4 fw-bold" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>
-                        {usr.documento}
+                        {usr.tipo_documento} {usr.numero_documento}
                       </td>
                       <td className="py-3 px-4" style={{ backgroundColor: 'transparent' }}>
-                        <div className="fw-semibold" style={{ color: styles.textColor }}>{usr.nombre}</div>
+                        <div className="fw-semibold" style={{ color: styles.textColor }}>{nombreUsuario(usr)}</div>
                         <div className="small" style={{ color: styles.mutedColor }}>{usr.correo}</div>
                       </td>
                       <td className="py-3 px-4 small" style={{ color: styles.textColor, backgroundColor: 'transparent' }}>
@@ -244,7 +229,7 @@ export const UsuariosPage = () => {
                           </span>
                         ) : (
                           <StatusToggle
-                            active={usr.estado === 'Activo'}
+                            active={usr.estado}
                             onToggle={() => handleToggleEstado(usr)}
                             disabled={!puedeDesactivar}
                           />
@@ -256,7 +241,7 @@ export const UsuariosPage = () => {
                           onView={() => handleOpenDetail(usr)}
                           onEdit={() => handleOpenEdit(usr)}
                           onDelete={() => handleOpenDelete(usr)}
-                          disabledReason={usr.es_admin_principal ? 'El administrador principal no se puede modificar' : undefined}
+                          hideDelete={usr.es_admin_principal || usr.id_usuario === currentUser?.id_usuario}
                         />
                       </td>
                     </tr>
@@ -270,7 +255,7 @@ export const UsuariosPage = () => {
 
       <UsuarioFormModal show={showFormModal} onClose={() => setShowFormModal(false)} onSave={handleSaveUsuario} usuario={selectedUsuario} />
       <UsuarioDetailModal show={showDetailModal} onClose={() => setShowDetailModal(false)} usuario={selectedUsuario} />
-      <ConfirmDeleteModal show={showDeleteModal} onClose={() => setShowDeleteModal(false)} onConfirm={handleConfirmDelete} itemName={selectedUsuario?.nombre} />
+      <ConfirmDeleteModal show={showDeleteModal} onClose={() => setShowDeleteModal(false)} onConfirm={handleConfirmDelete} itemName={nombreUsuario(selectedUsuario)} />
     </div>
   );
 };

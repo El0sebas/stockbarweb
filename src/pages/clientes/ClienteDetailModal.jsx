@@ -1,6 +1,15 @@
 import React from 'react';
 import { Person } from 'react-bootstrap-icons';
 
+const InfoItem = ({ label, value }) => (
+  <div className="col-6">
+    <p className="small fw-semibold mb-1" style={{ color: 'var(--text-muted)' }}>{label}</p>
+    <p className="fw-medium m-0" style={{ color: 'var(--text-main)' }}>{value || '—'}</p>
+  </div>
+);
+
+const GENERO_LABELS = { M: 'Masculino', F: 'Femenino', OTRO: 'Otro' };
+
 export const ClienteDetailModal = ({ show, onClose, cliente }) => {
   if (!show || !cliente) return null;
 
@@ -11,15 +20,6 @@ export const ClienteDetailModal = ({ show, onClose, cliente }) => {
     borderCol: 'var(--border-color)',
     inputBg: 'var(--bg-main)',
   };
-
-  const InfoItem = ({ label, value }) => (
-    <div className="col-6">
-      <p className="small fw-semibold mb-1" style={{ color: styles.mutedColor }}>{label}</p>
-      <p className="fw-medium m-0" style={{ color: styles.textColor }}>{value || '—'}</p>
-    </div>
-  );
-
-  const GENERO_LABELS = { M: 'Masculino', F: 'Femenino', OTRO: 'Otro' };
 
   return (
     <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'var(--overlay-scrim)', backdropFilter: 'blur(3px)', zIndex: 1050 }}>
@@ -35,7 +35,7 @@ export const ClienteDetailModal = ({ show, onClose, cliente }) => {
           <div className="modal-body p-4">
             <div className="row g-3">
               <InfoItem label="Documento" value={`${cliente.tipo_documento || ''} ${cliente.numero_documento || ''}`} />
-              <InfoItem label="Nombre Completo" value={cliente.nombre_completo} />
+              <InfoItem label="Nombre Completo" value={`${cliente.nombres} ${cliente.apellidos}`} />
               <InfoItem label="Teléfono" value={cliente.telefono} />
               <InfoItem label="Correo" value={cliente.correo} />
               <InfoItem label="Fecha de nacimiento" value={cliente.fecha_nacimiento} />
@@ -44,9 +44,9 @@ export const ClienteDetailModal = ({ show, onClose, cliente }) => {
               <div className="col-6">
                 <p className="small fw-semibold mb-1" style={{ color: styles.mutedColor }}>Estado</p>
                 <span className="badge px-3 py-2 fw-medium" style={{
-                  backgroundColor: cliente.estado === 'Activo' ? ('var(--success-soft-bg)') : ('var(--danger-soft-bg)'),
-                  color: cliente.estado === 'Activo' ? 'var(--brand-success)' : 'var(--brand-danger)', borderRadius: '8px'
-                }}>{cliente.estado}</span>
+                  backgroundColor: cliente.estado ? ('var(--success-soft-bg)') : ('var(--danger-soft-bg)'),
+                  color: cliente.estado ? 'var(--brand-success)' : 'var(--brand-danger)', borderRadius: '8px'
+                }}>{cliente.estado ? 'Activo' : 'Inactivo'}</span>
               </div>
             </div>
           </div>

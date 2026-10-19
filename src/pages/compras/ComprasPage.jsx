@@ -5,31 +5,22 @@ import { CompraDetailModal } from './CompraDetailModal';
 import { RowActions } from '../../components/common/RowActions';
 import { FechaRangoFilter } from '../../components/common/FechaRangoFilter';
 import { estaEnRangoFecha } from '../../utils/fechas';
-import { generateNextIdentifier } from '../../utils/identifiers';
-import { showToast, showAlert } from '../../utils/alerts';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { defaultCompras } from '../../data/defaultCompras';
-import { defaultLotes } from '../../data/defaultLotes';
-import { defaultDetalleCompra } from '../../data/defaultDetalleCompra';
-import { defaultMetodosPago } from '../../data/defaultMetodosPago';
-import { useAuth } from '../../context/AuthContext';
+import { showAlert } from '../../utils/alerts';
+import { useApi } from '../../hooks/useApi';
+import { api } from '../../services/api';
+import { ejecutar } from '../../utils/accion';
 
 export const ComprasPage = () => {
-  const { currentUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroDesde, setFiltroDesde] = useState('');
   const [filtroHasta, setFiltroHasta] = useState('');
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedCompra, setSelectedCompra] = useState(null);
-  const [compras, setCompras] = usePersistentState('stockbar_compras', defaultCompras);
-  // Un lote ES (producto, fecha_vencimiento) — v3. Varias compras del mismo
-  // producto con el mismo vencimiento suman al MISMO lote (cantidad_disponible),
-  // nunca crean lotes duplicados. detalle_compra es el historial inmutable
-  // de qué trajo cada compra y a qué precio (ver docs/DATABASE.md).
-  const [lotes, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
-  const [detalleCompra, setDetalleCompra] = usePersistentState('stockbar_detalle_compra', defaultDetalleCompra);
-  const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
+  // Lotes, detalle_compra y stock los resuelve el backend (sp_agregar_detalle_compra,
+  // sp_completar_compra): el lote es (producto, vencimiento) y solo suma stock
+  // cuando la compra queda REGISTRADA.
+  const { data: compras, recargar } = useApi('/compras', []);
 
   const styles = {
     cardBg: 'var(--bg-card)',
@@ -45,116 +36,41 @@ export const ComprasPage = () => {
     estaEnRangoFecha(c.fecha_compra, filtroDesde, filtroHasta)
   );
 
-  const nextFactura = generateNextIdentifier({
-    items: compras,
-    key: 'numero_factura_proveedor',
-    prefix: 'FAC',
-    pad: 4,
-    separator: '-'
-  });
-
-  const resolverNombreMetodoPago = (idMetodoPago) =>
-    metodosPago.find((m) => m.id_metodo_pago === idMetodoPago)?.nombre || 'N/A';
-
-  // v3: un lote ES (producto, fecha_vencimiento). Busca un lote existente
-  // con esa identidad (nunca crea uno duplicado); si no existe, lo crea.
-  // Cada línea también queda registrada en detalle_compra (historial
-  // inmutable de qué trajo esta compra y a qué precio) — mirror de
-  // sp_agregar_detalle_compra. v6: NO toca cantidad_disponible — eso solo
-  // ocurre al completar la compra (fn_stock_lote solo suma REGISTRADA).
-  const crearDetalleCompraPendiente = (idCompra, items) => {
-    let siguienteNumero = lotes.reduce((max, l) => Math.max(max, Number(l.id_lote.split('-')[1]) || 0), 0);
-    const lotesActualizados = lotes.map((l) => ({ ...l }));
-    const nuevasEntradas = [];
-
-    (items || []).forEach((item) => {
-      let lote = lotesActualizados.find(
-        (l) => l.id_producto === item.producto_codigo && (l.fecha_vencimiento || null) === (item.fecha_vencimiento || null)
-      );
-      if (!lote) {
-        siguienteNumero += 1;
-        lote = {
-          id_lote: `LOT-${String(siguienteNumero).padStart(6, '0')}`,
-          id_producto: item.producto_codigo,
-          fecha_vencimiento: item.fecha_vencimiento || null,
-          cantidad_disponible: 0
-        };
-        lotesActualizados.push(lote);
-      }
-      nuevasEntradas.push({
-        id_compra: idCompra,
-        id_lote: lote.id_lote,
-        cantidad: Number(item.cantidad),
-        precio_unitario_compra: Number(item.costoUnitario)
-      });
-    });
-
-    setLotes(lotesActualizados);
-    setDetalleCompra((prevDetalle) => [...prevDetalle, ...nuevasEntradas]);
-  };
-
-  // Espejo de sp_completar_compra: PENDIENTE -> REGISTRADA. Solo ahora el
-  // stock de sus líneas cuenta (fn_stock_lote solo suma compras REGISTRADA).
-  const completarCompra = (idCompra) => {
-    const entradas = detalleCompra.filter((dc) => dc.id_compra === idCompra);
-    setLotes((prev) => prev.map((l) => {
-      const aportes = entradas.filter((dc) => dc.id_lote === l.id_lote);
-      if (aportes.length === 0) return l;
-      const totalAportado = aportes.reduce((acc, dc) => acc + Number(dc.cantidad), 0);
-      return { ...l, cantidad_disponible: Number(l.cantidad_disponible) + totalAportado };
-    }));
-    setCompras((prev) => prev.map((c) => (c.id_compra === idCompra ? { ...c, estado: 'REGISTRADA' } : c)));
-  };
-
-  const crearCompra = (compra, estadoInicial) => {
-    const facturaGenerada = (compra.numero_factura_proveedor || nextFactura).trim();
-    const idCompra = generateNextIdentifier({ items: compras, key: 'id_compra', prefix: 'CMP', pad: 6, separator: '-' });
-    setCompras(prev => [{
-      ...compra,
-      id_compra: idCompra,
-      numero_factura_proveedor: facturaGenerada,
-      estado: estadoInicial,
-      id_usuario: currentUser?.id_usuario || null,
-      usuario: currentUser?.nombre || 'N/A',
-      fecha_registro: new Date().toISOString()
-    }, ...prev]);
-    crearDetalleCompraPendiente(idCompra, compra.items);
-    return { idCompra, facturaGenerada };
-  };
-
-  // v6: toda compra nace PENDIENTE (espejo de venta); "Registrar Compra" la
-  // crea y la completa en el mismo paso (su stock cuenta de inmediato).
-  const handleSaveCompra = (compra) => {
-    const { idCompra, facturaGenerada } = crearCompra(compra, 'PENDIENTE');
-    completarCompra(idCompra);
-    showToast('success', `Compra ${facturaGenerada} registrada`);
+  // Toda compra nace PENDIENTE; "Registrar Compra" la crea y la completa en
+  // la misma transacción (completar=true) y su stock cuenta de inmediato.
+  // La factura digitalizada se adjunta después, ya con el id de la compra.
+  const handleSaveCompra = async ({ archivoFactura, ...compra }, completar) => {
+    const creada = await ejecutar(
+      () => api.post('/compras', { ...compra, completar }),
+      (c) => `Compra ${c.numero_factura_proveedor || c.id_compra} ${completar ? 'registrada' : 'guardada como pendiente'}`
+    );
+    if (!creada) return;
+    if (archivoFactura) {
+      const datos = new FormData();
+      datos.append('factura', archivoFactura);
+      await ejecutar(() => api.post(`/compras/${creada.id_compra}/factura`, datos));
+    }
     setShowFormModal(false);
     setSelectedCompra(null);
+    recargar();
   };
 
-  const handleGuardarCompraPendiente = (compra) => {
-    const { facturaGenerada } = crearCompra(compra, 'PENDIENTE');
-    showToast('success', `Compra ${facturaGenerada} guardada como pendiente`);
-    setShowFormModal(false);
-    setSelectedCompra(null);
-  };
-
-  const handleCompletarCompra = (compra) => {
-    completarCompra(compra.id_compra);
-    showToast('success', `Compra ${compra.numero_factura_proveedor} registrada`);
+  const handleCompletarCompra = async (compra) => {
+    const ok = await ejecutar(() => api.post(`/compras/${compra.id_compra}/completar`), `Compra ${compra.numero_factura_proveedor || compra.id_compra} registrada`);
+    if (!ok) return;
     setShowDetailModal(false);
+    recargar();
   };
 
-  // Espejo de trg_validar_anulacion_compra (v6): solo se puede anular
-  // mientras está PENDIENTE. Su stock nunca contó, así que no hay nada que
-  // revertir en los lotes.
+  // Solo mientras está PENDIENTE (una compra REGISTRADA nunca se anula): su
+  // stock nunca contó, así que no hay nada que revertir.
   const handleAnularCompra = async (compra) => {
     const confirmado = await showAlert.confirm('¿Anular esta compra pendiente?', 'Esta acción no se puede deshacer.');
     if (!confirmado) return;
-
-    setCompras(prev => prev.map(item => item.id_compra === compra.id_compra ? { ...item, estado: 'ANULADA' } : item));
-    showToast('success', `Compra ${compra.numero_factura_proveedor} anulada`);
+    const ok = await ejecutar(() => api.post(`/compras/${compra.id_compra}/anular`), `Compra ${compra.numero_factura_proveedor || compra.id_compra} anulada`);
+    if (!ok) return;
     setShowDetailModal(false);
+    recargar();
   };
 
   return (
@@ -165,7 +81,7 @@ export const ComprasPage = () => {
           <p className="small m-0" style={{ color: styles.mutedColor }}>Facturas de ingreso de mercancía para reabastecer stock</p>
         </div>
 
-        <div className="d-flex align-items-center gap-2">
+        <div className="d-flex flex-wrap justify-content-md-end align-items-center gap-2">
           <div className="input-group" style={{ maxWidth: '260px' }}>
             <span className="input-group-text border-end-0" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.mutedColor }}>
               <Search size={16} />
@@ -181,7 +97,7 @@ export const ComprasPage = () => {
           </div>
           <FechaRangoFilter desde={filtroDesde} hasta={filtroHasta} onDesdeChange={setFiltroDesde} onHastaChange={setFiltroHasta} />
           <button
-            className="btn fw-semibold text-white d-flex align-items-center gap-2 px-3"
+            className="btn fw-semibold text-white d-flex align-items-center gap-2 px-3 text-nowrap"
             style={{ backgroundColor: 'var(--amber-action)', border: 'none', borderRadius: '8px' }}
             onClick={() => { setSelectedCompra(null); setShowFormModal(true); }}
           >
@@ -216,14 +132,14 @@ export const ComprasPage = () => {
               }[c.estado] || { bg: 'var(--bg-main)', color: 'var(--text-muted)' };
               return (
               <tr key={c.id_compra} style={{ borderBottom: `1px solid ${styles.borderCol}` }}>
-                <td className="py-3 fw-bold" style={{ color: 'var(--amber-action)' }}>{c.numero_factura_proveedor}</td>
+                <td className="py-3 fw-bold" style={{ color: 'var(--amber-action)' }}>{c.numero_factura_proveedor || c.id_compra}</td>
                 <td className="py-3 fw-semibold">
                   <BagCheck className="me-2" color="var(--brand-blue)" />
                   {c.proveedor}
                 </td>
-                <td className="py-3 small" style={{ color: styles.mutedColor }}>{resolverNombreMetodoPago(c.id_metodo_pago)}</td>
+                <td className="py-3 small" style={{ color: styles.mutedColor }}>{c.metodo_pago}</td>
                 <td className="py-3" style={{ color: styles.mutedColor }}>{c.fecha_compra}</td>
-                <td className="py-3 fw-bold">$ {Number(c.total).toLocaleString()}</td>
+                <td className="py-3 fw-bold">$ {Number(c.total_compra).toLocaleString('es-CO')}</td>
                 <td className="py-3">
                   <span className="badge px-3 py-2" style={{ backgroundColor: estadoColores.bg, color: estadoColores.color }}>
                     {c.estado}
@@ -259,9 +175,7 @@ export const ComprasPage = () => {
         show={showFormModal}
         onClose={() => setShowFormModal(false)}
         onSave={handleSaveCompra}
-        onGuardarPendiente={handleGuardarCompraPendiente}
-        compra={selectedCompra}
-        nextFactura={nextFactura}
+        compra={null}
       />
 
       <CompraDetailModal

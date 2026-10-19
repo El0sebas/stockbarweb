@@ -1,7 +1,8 @@
 import React from 'react';
 import { BagCheck, Truck, Calendar3, CreditCard, FileEarmarkText, Hash, XCircle, CheckCircle, Person } from 'react-bootstrap-icons';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { defaultMetodosPago } from '../../data/defaultMetodosPago';
+import { useApi } from '../../hooks/useApi';
+import { api } from '../../services/api';
+import { showToast } from '../../utils/alerts';
 
 const ESTADO_COLORES = {
   PENDIENTE: { bg: 'var(--amber-soft-bg)', color: 'var(--amber-action)' },
@@ -9,12 +10,16 @@ const ESTADO_COLORES = {
   ANULADA: { bg: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' }
 };
 
-export const CompraDetailModal = ({ show, onClose, compra, onAnular, onCompletar }) => {
-  const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
+// Detalle (CU de compras): líneas de vw_detalle_compra y total de vw_totales_compra.
+export const CompraDetailModal = ({ show, onClose, compra: resumen, onAnular, onCompletar }) => {
+  const { data: detalle } = useApi(show && resumen ? `/compras/${resumen.id_compra}` : null);
 
-  if (!show || !compra) return null;
+  if (!show || !resumen) return null;
 
-  const nombreMetodoPago = metodosPago.find((m) => m.id_metodo_pago === compra.id_metodo_pago)?.nombre || 'N/A';
+  const compra = detalle?.id_compra === resumen.id_compra ? detalle : resumen;
+  const nombreMetodoPago = compra.metodo_pago;
+  const descargarFactura = () =>
+    api.descargar(`/compras/${compra.id_compra}/factura`, compra.ruta_factura).catch((e) => showToast('error', e.message));
 
   const styles = {
     modalBg: 'var(--bg-card)',
@@ -70,7 +75,7 @@ export const CompraDetailModal = ({ show, onClose, compra, onAnular, onCompletar
                     <Calendar3 size={16} />
                     <span className="small">Fecha</span>
                   </div>
-                  <span className="fw-semibold">{compra.fecha_compra || compra.fecha}</span>
+                  <span className="fw-semibold">{compra.fecha_compra}</span>
                 </div>
               </div>
               <div className="col-6">
@@ -116,13 +121,9 @@ export const CompraDetailModal = ({ show, onClose, compra, onAnular, onCompletar
                     <span className="small">Factura digitalizada</span>
                   </div>
                   {compra.ruta_factura ? (
-                    compra.ruta_factura_url ? (
-                      <a href={compra.ruta_factura_url} target="_blank" rel="noreferrer" className="fw-semibold" style={{ color: 'var(--amber-action)' }}>
-                        Ver factura ({compra.ruta_factura})
-                      </a>
-                    ) : (
-                      <span className="fw-semibold">{compra.ruta_factura}</span>
-                    )
+                    <button type="button" className="btn btn-link p-0 fw-semibold" style={{ color: 'var(--amber-action)' }} onClick={descargarFactura}>
+                      Descargar factura ({compra.ruta_factura})
+                    </button>
                   ) : (
                     <span className="fw-semibold" style={{ color: styles.mutedColor }}>Sin factura adjunta</span>
                   )}
@@ -130,7 +131,7 @@ export const CompraDetailModal = ({ show, onClose, compra, onAnular, onCompletar
               </div>
             </div>
 
-            {compra.items && compra.items.length > 0 ? (
+            {compra.detalles && compra.detalles.length > 0 ? (
               <div className="table-responsive">
                 <table className="table align-middle mb-0" style={{ color: styles.textColor }}>
                   <thead>
@@ -142,11 +143,11 @@ export const CompraDetailModal = ({ show, onClose, compra, onAnular, onCompletar
                     </tr>
                   </thead>
                   <tbody>
-                    {compra.items.map((item) => (
-                      <tr key={item.id_detalle} style={{ borderColor: styles.borderCol }}>
+                    {compra.detalles.map((item) => (
+                      <tr key={item.id_lote} style={{ borderColor: styles.borderCol }}>
                         <td className="fw-semibold">{item.producto}</td>
                         <td className="text-center">{item.cantidad} un.</td>
-                        <td className="text-end">$ {Number(item.costoUnitario).toLocaleString()}</td>
+                        <td className="text-end">$ {Number(item.precio_unitario_compra).toLocaleString('es-CO')}</td>
                         <td className="small" style={{ color: styles.mutedColor }}>
                           {item.fecha_vencimiento || 'Sin vencimiento'}
                         </td>
@@ -170,7 +171,7 @@ export const CompraDetailModal = ({ show, onClose, compra, onAnular, onCompletar
 
             <div className="d-flex justify-content-end align-items-center gap-3 pt-2 border-top" style={{ borderColor: styles.borderCol }}>
               <span className="fw-bold fs-6">Total:</span>
-              <span className="fw-bold fs-5" style={{ color: 'var(--amber-action)' }}>$ {Number(compra.total).toLocaleString()}</span>
+              <span className="fw-bold fs-5" style={{ color: 'var(--amber-action)' }}>$ {Number(compra.total_compra).toLocaleString('es-CO')}</span>
             </div>
           </div>
 

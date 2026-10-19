@@ -7,12 +7,15 @@ import { EstadoFilter } from '../../components/common/EstadoFilter';
 import { RolFormModal } from './RolFormModal';
 import { RolDetailModal } from './RolDetailModal';
 import { showToast, showAlert } from '../../utils/alerts';
-import { generateNextIdentifier } from '../../utils/identifiers';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { defaultRoles } from '../../data/defaultRoles';
+import { useApi } from '../../hooks/useApi';
+import { api } from '../../services/api';
+import { ejecutar } from '../../utils/accion';
+
+// El rol ADMINISTRADOR está protegido (no se edita, elimina ni desactiva).
+const esAdmin = (rol) => rol?.nombre === 'ADMINISTRADOR';
 
 export const RolesPage = () => {
-  const [roles, setRoles] = usePersistentState('stockbar_roles', defaultRoles);
+  const { data: roles, recargar } = useApi('/roles', []);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
@@ -27,7 +30,7 @@ export const RolesPage = () => {
   };
 
   const handleOpenEdit = (rol) => {
-    if (rol.isSystem) {
+    if (esAdmin(rol)) {
       showToast('error', 'El rol de Administrador no se puede modificar');
       return;
     }
@@ -41,7 +44,7 @@ export const RolesPage = () => {
   };
 
   const handleOpenDelete = (rol) => {
-    if (rol.isSystem) {
+    if (esAdmin(rol)) {
       showToast('error', 'El rol de Administrador no se puede eliminar');
       return;
     }
@@ -49,41 +52,35 @@ export const RolesPage = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSaveRol = (rolData) => {
-    if (selectedRol) {
-      setRoles(roles.map(r => r.codigo === rolData.codigo ? { ...r, ...rolData } : r));
-      showToast('success', 'Rol actualizado exitosamente');
-    } else {
-      const nuevoCodigo = generateNextIdentifier({ items: roles, key: 'codigo', prefix: 'ROL', pad: 2, separator: '-' });
-      setRoles([...roles, { ...rolData, codigo: nuevoCodigo, estado: 'Activo', isSystem: false }]);
-      showToast('success', `Rol ${nuevoCodigo} creado exitosamente`);
-    }
+  const handleSaveRol = async ({ nombre, permisos }) => {
+    const ok = selectedRol
+      ? await ejecutar(() => api.put(`/roles/${selectedRol.id_rol}`, { nombre, permisos }), 'Rol actualizado exitosamente')
+      : await ejecutar(() => api.post('/roles', { nombre, permisos }), (r) => `Rol ${r.id_rol} creado exitosamente`);
+    if (!ok) return;
     setShowFormModal(false);
+    recargar();
   };
 
   // Espejo de trg_proteger_rol_administrador: el rol ADMINISTRADOR nunca se
   // desactiva. Cualquier otro rol (incluido EMPLEADO) sí puede.
-  const handleToggleEstado = (rol) => {
-    if (rol.isSystem) {
+  const handleToggleEstado = async (rol) => {
+    if (esAdmin(rol)) {
       showAlert.error('No permitido', 'El rol ADMINISTRADOR no puede desactivarse.');
       return;
     }
-    const nuevoEstado = rol.estado === 'Activo' ? 'Inactivo' : 'Activo';
-    setRoles(roles.map(r => r.codigo === rol.codigo ? { ...r, estado: nuevoEstado } : r));
-    showToast('success', `Rol actualizado a ${nuevoEstado}`);
+    if (await ejecutar(() => api.patch(`/roles/${rol.id_rol}/estado`, { estado: !rol.estado }), (r) => r.mensaje)) recargar();
   };
 
-  const handleConfirmDelete = () => {
-    if (selectedRol?.isSystem) return;
-    setRoles(roles.filter(r => r.codigo !== selectedRol.codigo));
-    showToast('success', 'Rol eliminado exitosamente');
+  const handleConfirmDelete = async () => {
+    if (esAdmin(selectedRol)) return;
     setShowDeleteModal(false);
+    if (await ejecutar(() => api.del(`/roles/${selectedRol.id_rol}`), 'Rol eliminado exitosamente')) recargar();
   };
 
   const filteredRoles = roles.filter(r =>
     (r.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.codigo.toLowerCase().includes(searchTerm.toLowerCase())) &&
-    (!filtroEstado || r.estado === filtroEstado)
+      r.id_rol.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (!filtroEstado || (r.estado ? 'Activo' : 'Inactivo') === filtroEstado)
   );
 
   const styles = {
@@ -140,11 +137,11 @@ export const RolesPage = () => {
             </thead>
             <tbody>
               {filteredRoles.map((rol) => (
-                <tr key={rol.codigo} style={{ borderColor: styles.borderCol }}>
-                  <td className="py-3 px-4 fw-bold" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>{rol.codigo}</td>
+                <tr key={rol.id_rol} style={{ borderColor: styles.borderCol }}>
+                  <td className="py-3 px-4 fw-bold" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>{rol.id_rol}</td>
                   <td className="py-3 px-4 fw-semibold" style={{ backgroundColor: 'transparent', color: styles.textColor }}>
                     <div className="d-flex align-items-center gap-2">
-                      {rol.isSystem ? <LockFill size={16} color="var(--brand-danger)" title="Rol protegido" /> : <ShieldCheck size={16} color="var(--amber-action)" />}
+                      {esAdmin(rol) ? <LockFill size={16} color="var(--brand-danger)" title="Rol protegido" /> : <ShieldCheck size={16} color="var(--amber-action)" />}
                       {rol.nombre}
                     </div>
                   </td>
@@ -154,12 +151,12 @@ export const RolesPage = () => {
                     </span>
                   </td>
                   <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
-                    {rol.isSystem ? (
+                    {esAdmin(rol) ? (
                       <span className="badge px-3 py-2 fw-medium" style={{ backgroundColor: 'var(--success-soft-bg)', color: 'var(--brand-success)', borderRadius: '12px' }} title="El rol ADMINISTRADOR no puede desactivarse">
                         Activo
                       </span>
                     ) : (
-                      <StatusToggle active={rol.estado === 'Activo'} onToggle={() => handleToggleEstado(rol)} />
+                      <StatusToggle active={rol.estado} onToggle={() => handleToggleEstado(rol)} />
                     )}
                   </td>
                   <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
@@ -167,7 +164,7 @@ export const RolesPage = () => {
                       onView={() => handleOpenDetail(rol)}
                       onEdit={() => handleOpenEdit(rol)}
                       onDelete={() => handleOpenDelete(rol)}
-                      disabledReason={rol.isSystem ? 'El rol de Administrador no se puede modificar' : undefined}
+                      disabledReason={esAdmin(rol) ? 'El rol de Administrador no se puede modificar' : undefined}
                     />
                   </td>
                 </tr>

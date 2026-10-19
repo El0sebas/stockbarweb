@@ -2,50 +2,32 @@ import React, { useState } from 'react';
 import { ClockHistory, DoorOpen, DoorClosed, Search, Eye } from 'react-bootstrap-icons';
 import { FechaRangoFilter } from '../../components/common/FechaRangoFilter';
 import { estaEnRangoFecha } from '../../utils/fechas';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { useAuth } from '../../context/AuthContext';
-import { defaultJornadas } from '../../data/defaultJornadas';
-import { defaultVentas } from '../../data/defaultVentas';
-import { defaultMetodosPago } from '../../data/defaultMetodosPago';
-import { getJornadaAbierta } from '../../utils/jornada';
-import { generateNextIdentifier } from '../../utils/identifiers';
-import { showToast, showAlert } from '../../utils/alerts';
+import { useApi } from '../../hooks/useApi';
+import { notificarCambioJornada } from '../../hooks/useJornadaActual';
+import { api } from '../../services/api';
+import { ejecutar } from '../../utils/accion';
 import { JornadaDetailModal } from './JornadaDetailModal';
 import Swal from 'sweetalert2';
 
 export const JornadaPage = () => {
-  const [jornadas, setJornadas] = usePersistentState('stockbar_jornadas', defaultJornadas);
-  const [ventas] = usePersistentState('stockbar_ventas', defaultVentas);
-  const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
-  const { currentUser } = useAuth();
+  // Historial con totales (vw_totales_jornada); la abierta va primero.
+  const { data: jornadas, recargar } = useApi('/jornadas', []);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedJornada, setSelectedJornada] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroDesde, setFiltroDesde] = useState('');
   const [filtroHasta, setFiltroHasta] = useState('');
 
-  const jornadaAbierta = getJornadaAbierta(jornadas);
+  const jornadaAbierta = jornadas.find((j) => j.estado === 'ABIERTA');
 
-  const handleAbrirJornada = () => {
-    // Espejo de uq_una_jornada_abierta: no debería poder pasar (el botón ya
-    // se deshabilita si hay una abierta), pero se revalida igual.
-    if (getJornadaAbierta(jornadas)) {
-      showAlert.error('Ya hay una jornada abierta', 'Debes cerrar la jornada actual antes de abrir una nueva.');
-      return;
-    }
-    const nuevaJornada = {
-      id_jornada: generateNextIdentifier({ items: jornadas, key: 'id_jornada', prefix: 'JOR', pad: 6, separator: '-' }),
-      id_usuario_apertura: currentUser?.id_usuario || null,
-      usuario_apertura: currentUser?.nombre || 'N/A',
-      fecha_hora_apertura: new Date().toISOString(),
-      id_usuario_cierre: null,
-      usuario_cierre: null,
-      fecha_hora_cierre: null,
-      estado: 'ABIERTA',
-      observaciones: ''
-    };
-    setJornadas((prev) => [nuevaJornada, ...prev]);
-    showToast('success', 'Jornada abierta. Ya puedes registrar ventas.');
+  const actualizar = () => {
+    recargar();
+    notificarCambioJornada();
+  };
+
+  // uq_una_jornada_abierta: si otro equipo ya abrió una, el backend lo rechaza.
+  const handleAbrirJornada = async () => {
+    if (await ejecutar(() => api.post('/jornadas/abrir'), (r) => r.mensaje)) actualizar();
   };
 
   // Antes esto abría un modal con el desglose completo de la jornada y
@@ -70,19 +52,9 @@ export const JornadaPage = () => {
     });
     if (!isConfirmed) return;
 
-    setJornadas((prev) => prev.map((j) =>
-      j.id_jornada === jornadaAbierta.id_jornada
-        ? {
-            ...j,
-            estado: 'CERRADA',
-            id_usuario_cierre: currentUser?.id_usuario || null,
-            usuario_cierre: currentUser?.nombre || 'N/A',
-            fecha_hora_cierre: new Date().toISOString(),
-            observaciones: (observaciones || '').trim()
-          }
-        : j
-    ));
-    showToast('success', 'Jornada cerrada correctamente');
+    // El backend rechaza el cierre si quedan ventas PENDIENTES en la jornada.
+    const ok = await ejecutar(() => api.post('/jornadas/cerrar', { observaciones: (observaciones || '').trim() }), (r) => r.mensaje);
+    if (ok) actualizar();
   };
 
   const filteredJornadas = jornadas.filter((j) =>
@@ -222,8 +194,6 @@ export const JornadaPage = () => {
         show={showDetailModal}
         onClose={() => { setShowDetailModal(false); setSelectedJornada(null); }}
         jornada={selectedJornada}
-        ventas={ventas}
-        metodosPago={metodosPago}
       />
     </div>
   );

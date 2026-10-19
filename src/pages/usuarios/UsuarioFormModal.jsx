@@ -1,21 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { defaultRoles } from '../../data/defaultRoles';
+import { useApi } from '../../hooks/useApi';
 import { Field, useFormValidation } from '../../components/common/Field';
 
 const emptyForm = {
-  documento: '',
-  nombre: '',
+  tipo_documento: 'CC',
+  numero_documento: '',
+  nombres: '',
+  apellidos: '',
   correo: '',
   telefono: '',
-  rol: '',
-  password: ''
+  id_rol: '',
+  contrasena: ''
 };
 
 export const UsuarioFormModal = ({ show, onClose, onSave, usuario }) => {
-  // Mismo storage que RolesPage: el selector de rol siempre refleja los roles
-  // que realmente existen en el catálogo, no una lista fija desconectada de él.
-  const [roles] = usePersistentState('stockbar_roles', defaultRoles);
+  // Solo roles activos: un usuario no se asigna a un rol desactivado.
+  const { data: todosRoles } = useApi(show ? '/roles' : null, []);
+  const roles = todosRoles.filter((r) => r.estado || r.id_rol === usuario?.id_rol);
 
   const [formData, setFormData] = useState(emptyForm);
   const { errors, formProps, resetErrors } = useFormValidation();
@@ -23,15 +24,17 @@ export const UsuarioFormModal = ({ show, onClose, onSave, usuario }) => {
   useEffect(() => {
     if (usuario) {
       setFormData({
-        documento: usuario.documento || '',
-        nombre: usuario.nombre || '',
-        correo: usuario.correo || '',
+        tipo_documento: usuario.tipo_documento,
+        numero_documento: usuario.numero_documento,
+        nombres: usuario.nombres,
+        apellidos: usuario.apellidos,
+        correo: usuario.correo,
         telefono: usuario.telefono || '',
-        rol: usuario.rol || roles[0]?.nombre || '',
-        password: ''
+        id_rol: usuario.id_rol,
+        contrasena: ''
       });
     } else {
-      setFormData({ ...emptyForm, rol: roles[0]?.nombre || '' });
+      setFormData(emptyForm);
     }
     resetErrors();
   }, [usuario, show]);
@@ -47,8 +50,8 @@ export const UsuarioFormModal = ({ show, onClose, onSave, usuario }) => {
     e.preventDefault();
     const payload = { ...formData };
     // En edición, dejar la contraseña vacía conserva la actual (no se sobrescribe).
-    if (usuario && !payload.password) {
-      delete payload.password;
+    if (usuario && !payload.contrasena) {
+      delete payload.contrasena;
     }
     onSave(payload);
   };
@@ -90,11 +93,19 @@ export const UsuarioFormModal = ({ show, onClose, onSave, usuario }) => {
             <div className="modal-body p-4 d-flex flex-column gap-3">
               <div className="small fw-bold text-uppercase" style={{ color: styles.mutedColor }}>Información personal</div>
               <div className="row g-3">
-                <Field className="col-12 col-md-6" label="Documento de Identidad" required error={errors.documento}>
-                  <input type="text" className="form-control shadow-none" name="documento" required value={formData.documento} onChange={handleChange} placeholder="Ej. 1098765432" style={inputStyle} />
+                <Field className="col-12 col-md-4" label="Tipo de Documento" required error={errors.tipo_documento}>
+                  <select className="form-select shadow-none" name="tipo_documento" required value={formData.tipo_documento} onChange={handleChange} style={inputStyle}>
+                    {['CC', 'CE', 'TI', 'PAS', 'NIT'].map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
                 </Field>
-                <Field className="col-12 col-md-6" label="Nombre Completo" required error={errors.nombre}>
-                  <input type="text" className="form-control shadow-none" name="nombre" required value={formData.nombre} onChange={handleChange} placeholder="Ej. Carlos Andrés Gómez" style={inputStyle} />
+                <Field className="col-12 col-md-8" label="Número de Documento" required error={errors.numero_documento}>
+                  <input type="text" className="form-control shadow-none" name="numero_documento" required maxLength={20} value={formData.numero_documento} onChange={handleChange} placeholder="Ej. 1098765432" style={inputStyle} />
+                </Field>
+                <Field className="col-12 col-md-6" label="Nombres" required error={errors.nombres}>
+                  <input type="text" className="form-control shadow-none" name="nombres" required maxLength={60} value={formData.nombres} onChange={handleChange} placeholder="Ej. Carlos Andrés" style={inputStyle} />
+                </Field>
+                <Field className="col-12 col-md-6" label="Apellidos" required error={errors.apellidos}>
+                  <input type="text" className="form-control shadow-none" name="apellidos" required maxLength={60} value={formData.apellidos} onChange={handleChange} placeholder="Ej. Gómez" style={inputStyle} />
                 </Field>
               </div>
 
@@ -103,22 +114,23 @@ export const UsuarioFormModal = ({ show, onClose, onSave, usuario }) => {
                 <Field className="col-12 col-md-6" label="Correo Electrónico" required error={errors.correo}>
                   <input type="email" className="form-control shadow-none" name="correo" required value={formData.correo} onChange={handleChange} placeholder="carlos@stockbar.com" style={inputStyle} />
                 </Field>
-                <Field className="col-12 col-md-6" label="Teléfono" required error={errors.telefono}>
-                  <input type="text" className="form-control shadow-none" name="telefono" required value={formData.telefono} onChange={handleChange} placeholder="Ej. 3101234567" style={inputStyle} />
+                <Field className="col-12 col-md-6" label="Teléfono" error={errors.telefono}>
+                  <input type="text" className="form-control shadow-none" name="telefono" maxLength={20} value={formData.telefono} onChange={handleChange} placeholder="Ej. 3101234567" style={inputStyle} />
                 </Field>
               </div>
 
               <div className="small fw-bold text-uppercase mt-2" style={{ color: styles.mutedColor }}>Acceso al sistema</div>
               <div className="row g-3">
-                <Field className="col-12 col-md-6" label="Rol de Sistema" required error={errors.rol}>
-                  <select className="form-select shadow-none" name="rol" required value={formData.rol} onChange={handleChange} style={inputStyle}>
+                <Field className="col-12 col-md-6" label="Rol de Sistema" required error={errors.id_rol}>
+                  <select className="form-select shadow-none" name="id_rol" required value={formData.id_rol} onChange={handleChange} disabled={usuario?.es_admin_principal} style={inputStyle}>
+                    <option value="">Seleccione...</option>
                     {roles.map((rol) => (
-                      <option key={rol.codigo} value={rol.nombre}>{rol.nombre}</option>
+                      <option key={rol.id_rol} value={rol.id_rol}>{rol.nombre}</option>
                     ))}
                   </select>
                 </Field>
-                <Field className="col-12 col-md-6" label={usuario ? 'Contraseña (vacía = conservar)' : 'Contraseña'} required={!usuario} error={errors.password}>
-                  <input type="password" className="form-control shadow-none" name="password" required={!usuario} value={formData.password} onChange={handleChange} placeholder="••••••••" style={inputStyle} />
+                <Field className="col-12 col-md-6" label={usuario ? 'Contraseña (vacía = conservar)' : 'Contraseña'} required={!usuario} error={errors.contrasena}>
+                  <input type="password" className="form-control shadow-none" name="contrasena" required={!usuario} minLength={8} autoComplete="new-password" title="Mínimo 8 caracteres, con al menos una letra y un número" value={formData.contrasena} onChange={handleChange} placeholder="••••••••" style={inputStyle} />
                 </Field>
               </div>
             </div>

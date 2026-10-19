@@ -30,7 +30,7 @@ export const RolDetailModal = ({ show, onClose, rol }) => {
           <div className="modal-body p-4 d-flex flex-column gap-3">
             <div className="pb-3 border-bottom" style={{ borderColor: styles.borderCol }}>
               <span className="badge px-2 py-1 mb-2 fw-bold" style={{ backgroundColor: 'var(--amber-action)', color: '#FFFFFF' }}>
-                {rol.codigo}
+                {rol.id_rol}
               </span>
               <h4 className="fw-bold m-0">{rol.nombre}</h4>
             </div>
@@ -38,12 +38,12 @@ export const RolDetailModal = ({ show, onClose, rol }) => {
             <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
               <span className="small fw-semibold d-block mb-1" style={{ color: styles.mutedColor }}>Estado</span>
               <span className="badge px-3 py-1 fw-medium" style={{
-                backgroundColor: rol.estado === 'Activo' ? 'var(--success-soft-bg)' : 'var(--danger-soft-bg)',
-                color: rol.estado === 'Activo' ? 'var(--brand-success)' : 'var(--brand-danger)'
+                backgroundColor: rol.estado ? 'var(--success-soft-bg)' : 'var(--danger-soft-bg)',
+                color: rol.estado ? 'var(--brand-success)' : 'var(--brand-danger)'
               }}>
-                {rol.estado}
+                {rol.estado ? 'Activo' : 'Inactivo'}
               </span>
-              {rol.isSystem && (
+              {rol.nombre === 'ADMINISTRADOR' && (
                 <span className="small ms-2" style={{ color: styles.mutedColor }}>(protegido, no puede desactivarse)</span>
               )}
             </div>

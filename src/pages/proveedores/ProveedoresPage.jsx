@@ -6,19 +6,15 @@ import { StatusToggle } from '../../components/common/StatusToggle';
 import { EstadoFilter } from '../../components/common/EstadoFilter';
 import { ProveedorDetailModal } from './ProveedorDetailModal.jsx';
 import { ProveedorFormModal } from './ProveedorFormModal.jsx';
-import { showToast, showAlert } from '../../utils/alerts';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { defaultProveedores } from '../../data/defaultProveedores';
-import { defaultContactosProveedor } from '../../data/defaultContactosProveedor';
+import { showAlert } from '../../utils/alerts';
+import { useApi } from '../../hooks/useApi';
+import { api } from '../../services/api';
+import { ejecutar } from '../../utils/accion';
 
 const NIT_REGEX = /^[0-9]{5,15}(-[0-9])?$/;
 
 export const ProveedoresPage = () => {
-  const [proveedores, setProveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
-  const [contactos] = usePersistentState('stockbar_contactos_proveedor', defaultContactosProveedor);
-
-  const getContactoPrincipal = (nitProveedor) =>
-    contactos.find((c) => c.id_proveedor === nitProveedor && c.es_principal && c.estado === 'Activo');
+  const { data: proveedores, recargar } = useApi('/proveedores', []);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
@@ -49,48 +45,37 @@ export const ProveedoresPage = () => {
     setShowDeleteModal(true);
   };
 
-  const handleToggleEstado = (prov) => {
-    const nuevoEstado = prov.estado === 'Activo' ? 'Inactivo' : 'Activo';
-    setProveedores(proveedores.map(p => p.nit === prov.nit ? { ...p, estado: nuevoEstado } : p));
-    showToast('success', `Estado actualizado a ${nuevoEstado}`);
+  const handleToggleEstado = async (prov) => {
+    if (await ejecutar(() => api.patch(`/proveedores/${prov.id_proveedor}/estado`, { estado: !prov.estado }), (r) => r.mensaje)) recargar();
   };
 
   // v3: id_proveedor ES el NIT — lo escribe el usuario, la app no lo inventa.
-  const handleSaveProveedor = (formData) => {
-    const nit = (formData.nit || '').trim();
+  const handleSaveProveedor = async ({ nit: nitForm, ...datos }) => {
+    const nit = (nitForm || '').trim();
     if (!NIT_REGEX.test(nit)) {
       showAlert.error('NIT inválido', 'El NIT debe tener entre 5 y 15 dígitos, con dígito de verificación opcional (ej: 900123456-1).');
       return;
     }
-    if (selectedProveedor) {
-      setProveedores(proveedores.map(p => p.nit === selectedProveedor.nit ? { ...formData, nit } : p));
-      showToast('success', 'Proveedor actualizado exitosamente');
-    } else {
-      const yaExiste = proveedores.some((p) => p.nit === nit);
-      if (yaExiste) {
-        showAlert.error('NIT duplicado', 'Ya existe un proveedor registrado con ese NIT.');
-        return;
-      }
-      setProveedores([...proveedores, { ...formData, nit, fecha_registro: new Date().toISOString() }]);
-      showToast('success', `Proveedor ${nit} creado exitosamente`);
-    }
+    const ok = selectedProveedor
+      ? await ejecutar(() => api.put(`/proveedores/${selectedProveedor.id_proveedor}`, datos), 'Proveedor actualizado exitosamente')
+      : await ejecutar(() => api.post('/proveedores', { ...datos, id_proveedor: nit }), `Proveedor ${nit} creado exitosamente`);
+    if (!ok) return;
     setShowFormModal(false);
     setSelectedProveedor(null);
+    recargar();
   };
 
-  const handleConfirmDelete = () => {
-    if (selectedProveedor) {
-      setProveedores(proveedores.filter(p => p.nit !== selectedProveedor.nit));
-      showToast('success', 'Proveedor eliminado exitosamente');
-    }
+  // Con productos o compras asociados el backend lo impide (409).
+  const handleConfirmDelete = async () => {
     setShowDeleteModal(false);
+    if (await ejecutar(() => api.del(`/proveedores/${selectedProveedor.id_proveedor}`), 'Proveedor eliminado exitosamente')) recargar();
     setSelectedProveedor(null);
   };
 
   const filteredProveedores = proveedores.filter(p =>
     (p.razon_social.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (p.nit || '').toLowerCase().includes(searchTerm.toLowerCase())) &&
-    (!filtroEstado || p.estado === filtroEstado)
+      p.id_proveedor.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (!filtroEstado || (p.estado ? 'Activo' : 'Inactivo') === filtroEstado)
   );
 
   const styles = {
@@ -171,24 +156,21 @@ export const ProveedoresPage = () => {
                 </tr>
               ) : (
                 filteredProveedores.map((prov) => (
-                  <tr key={prov.nit} style={{ borderColor: styles.borderCol }}>
+                  <tr key={prov.id_proveedor} style={{ borderColor: styles.borderCol }}>
                     <td className="py-3 px-4 fw-bold" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>
-                      {prov.nit}
+                      {prov.id_proveedor}
                     </td>
                     <td className="py-3 px-4 fw-semibold" style={{ backgroundColor: 'transparent', color: styles.textColor }}>
                       {prov.razon_social}
                     </td>
                     <td className="py-3 px-4 small" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>
-                      {(() => {
-                        const principal = getContactoPrincipal(prov.nit);
-                        return principal ? `${principal.nombres} ${principal.apellidos}` : 'Sin contacto';
-                      })()}
+                      {prov.contacto_principal || 'Sin contacto'}
                     </td>
                     <td className="py-3 px-4 small" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>
                       {prov.telefono_principal}
                     </td>
                     <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
-                      <StatusToggle active={prov.estado === 'Activo'} onToggle={() => handleToggleEstado(prov)} />
+                      <StatusToggle active={prov.estado} onToggle={() => handleToggleEstado(prov)} />
                     </td>
                     <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
                       <RowActions
@@ -216,6 +198,7 @@ export const ProveedoresPage = () => {
         show={showDetailModal}
         onClose={() => setShowDetailModal(false)}
         proveedor={selectedProveedor}
+        onCambio={recargar}
       />
 
       <ConfirmDeleteModal

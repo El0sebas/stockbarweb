@@ -1,39 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { Eye, EyeSlash, Sun, Moon, ShieldLock, CheckCircle } from 'react-bootstrap-icons';
 import { showToast } from '../../utils/alerts';
-import { defaultUsers } from '../../data/defaultUsers';
-import { defaultLotes } from '../../data/defaultLotes';
-import { defaultBajas } from '../../data/defaultBajas';
-import { generarBajasPorVencimiento } from '../../utils/bajas';
-
-const getStoredUsers = () => {
-  try {
-    const stored = localStorage.getItem('stockbar_users');
-    if (!stored) {
-      localStorage.setItem('stockbar_users', JSON.stringify(defaultUsers));
-      return defaultUsers;
-    }
-    const parsed = JSON.parse(stored);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      localStorage.setItem('stockbar_users', JSON.stringify(defaultUsers));
-      return defaultUsers;
-    }
-    return parsed;
-  } catch {
-    return defaultUsers;
-  }
-};
-
-const getRecoveryRecords = () => {
-  try {
-    const stored = localStorage.getItem('stockbar_recovery_records');
-    return stored ? JSON.parse(stored) : [];
-  } catch {
-    return [];
-  }
-};
+import { api } from '../../services/api';
 
 // Componente SVG para el isotipo oficial de barras de StockBar
 const StockBarLogoIcon = ({ size = 32 }) => (
@@ -44,165 +14,69 @@ const StockBarLogoIcon = ({ size = 32 }) => (
   </svg>
 );
 
-export const Login = ({ onLogin }) => {
+// Acceso (CU_10_01..02). Credenciales, baja automática de vencidos y token
+// de recuperación los resuelve el backend; aquí solo se capturan los datos.
+export const Login = () => {
   const { isDarkMode, toggleTheme } = useTheme();
-  const { setCurrentUser } = useAuth();
+  const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
-  const [email, setEmail] = useState('administrador@stockbar.com');
-  const [password, setPassword] = useState('123456');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [recordar, setRecordar] = useState(true);
+  const [enviando, setEnviando] = useState(false);
   const [recoverEmail, setRecoverEmail] = useState('');
   const [resetToken, setResetToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [recoveryMode, setRecoveryMode] = useState('request');
   const [recoveryMessage, setRecoveryMessage] = useState('');
 
-  useEffect(() => {
-    const users = getStoredUsers();
-    if (!users.some((u) => u.correo === 'administrador@stockbar.com')) {
-      localStorage.setItem('stockbar_users', JSON.stringify(defaultUsers));
-    }
-  }, []);
-
-  const createRecoveryToken = (usuario) => {
-    const token = `SB-${Date.now().toString(36).toUpperCase()}-${Math.random()
-      .toString(36)
-      .slice(2, 8)
-      .toUpperCase()}`;
-
-    const now = new Date();
-    const record = {
-      id_recuperacion: Date.now(),
-      id_usuario: usuario.id_usuario,
-      token,
-      fecha_solicitud: now.toISOString(),
-      fecha_expiracion: new Date(now.getTime() + 30 * 60000).toISOString(),
-      fecha_uso: null
-    };
-
-    const records = getRecoveryRecords();
-    const sanitized = records.filter((r) => r.id_usuario !== usuario.id_usuario);
-    sanitized.push(record);
-    localStorage.setItem('stockbar_recovery_records', JSON.stringify(sanitized));
-    return record;
-  };
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const users = getStoredUsers();
-    const user = users.find(
-      (u) => u.correo.toLowerCase() === email.toLowerCase() && u.password === password
-    );
-
-    if (!user) {
-      showToast('error', 'Credenciales inválidas o usuario inactivo');
-      return;
-    }
-
-    if (user.estado !== 'Activo') {
-      showToast('error', 'Este usuario se encuentra inactivo');
-      return;
-    }
-
-    ejecutarBajasPorVencimiento(user);
-    setCurrentUser(user);
-    onLogin();
-  };
-
-  // ponytail: sp_dar_baja_lotes_vencidos lo dispararía un cron diario en el
-  // backend real (no existe en este mock); como sustituto pragmático se
-  // ejecuta una vez por login. Debe reemplazarse por el cron cuando exista backend.
-  const ejecutarBajasPorVencimiento = (user) => {
+    setEnviando(true);
     try {
-      const lotes = JSON.parse(localStorage.getItem('stockbar_lotes')) || defaultLotes;
-      const bajas = JSON.parse(localStorage.getItem('stockbar_bajas')) || defaultBajas;
-      const { nuevosLotes, nuevasBajas, cantidadGenerada } = generarBajasPorVencimiento({
-        lotes,
-        bajas,
-        idUsuario: user.id_usuario,
-        usuario: user.nombre
-      });
-      if (cantidadGenerada > 0) {
-        localStorage.setItem('stockbar_lotes', JSON.stringify(nuevosLotes));
-        localStorage.setItem('stockbar_bajas', JSON.stringify(nuevasBajas));
-        showToast('info', `Se dieron de baja automáticamente ${cantidadGenerada} lote(s) vencido(s).`);
-      }
-    } catch {
-      // Si el localStorage está corrupto, no bloquea el login: la próxima
-      // sesión que sí pueda leerlo aplicará las bajas pendientes.
+      await login(email.trim(), password, recordar);
+    } catch (err) {
+      showToast('error', err.message);
+    } finally {
+      setEnviando(false);
     }
   };
 
-  const handleRecoveryRequest = (e) => {
+  // Cada envío genera un token nuevo e invalida el anterior: sin el bloqueo,
+  // un doble clic deja inservible el primer correo.
+  const handleRecoveryRequest = async (e) => {
     e.preventDefault();
-    const users = getStoredUsers();
-    const usuario = users.find((u) => u.correo.toLowerCase() === recoverEmail.toLowerCase());
-
-    if (!usuario) {
-      setRecoveryMessage('No existe una cuenta registrada con ese correo.');
-      return;
+    if (enviando) return;
+    setEnviando(true);
+    try {
+      const { mensaje } = await api.post('/auth/recuperar', { correo: recoverEmail.trim() });
+      setRecoveryMode('reset');
+      setRecoveryMessage(`${mensaje} Ingrésalo junto con tu nueva contraseña.`);
+    } catch (err) {
+      showToast('error', err.message);
+    } finally {
+      setEnviando(false);
     }
-
-    const record = createRecoveryToken(usuario);
-    setRecoveryMode('reset');
-    setResetToken(record.token);
-    setRecoveryMessage(
-      `Se generó un token de recuperación para ${usuario.nombre}. Usa este código para restablecer la contraseña.`
-    );
-    showToast('success', 'Token de recuperación generado');
   };
 
-  const handlePasswordReset = (e) => {
+  const handlePasswordReset = async (e) => {
     e.preventDefault();
-
-    if (!resetToken.trim() || !newPassword.trim()) {
-      setRecoveryMessage('Debes ingresar el token y la nueva contraseña.');
+    if (!resetToken.trim() || !newPassword) {
+      showToast('error', 'Debes ingresar el token y la nueva contraseña.');
       return;
     }
-
-    const records = getRecoveryRecords();
-    const record = records.find((r) => r.token === resetToken.trim());
-
-    if (!record) {
-      setRecoveryMessage('El token no existe o ya fue usado.');
-      return;
+    try {
+      const { mensaje } = await api.post('/auth/restablecer', { token: resetToken.trim(), contrasena: newPassword });
+      setRecoveryMessage(mensaje);
+      setRecoverEmail('');
+      setResetToken('');
+      setNewPassword('');
+      setRecoveryMode('request');
+      showToast('success', 'Contraseña actualizada');
+    } catch (err) {
+      showToast('error', err.message);
     }
-
-    // Espejo de recuperacion_contrasena.usado: un token de un solo uso nunca
-    // se reutiliza, aunque siga dentro de su ventana de expiración.
-    if (record.fecha_uso) {
-      setRecoveryMessage('Este token ya fue usado. Solicita uno nuevo.');
-      return;
-    }
-
-    const expiresAt = new Date(record.fecha_expiracion);
-    if (new Date() > expiresAt) {
-      setRecoveryMessage('El token ha expirado. Solicita uno nuevo.');
-      return;
-    }
-
-    const users = getStoredUsers();
-    const userIndex = users.findIndex((u) => u.id_usuario === record.id_usuario);
-
-    if (userIndex === -1) {
-      setRecoveryMessage('No se encontró el usuario asociado al token.');
-      return;
-    }
-
-    users[userIndex].password = newPassword.trim();
-    localStorage.setItem('stockbar_users', JSON.stringify(users));
-
-    const updatedRecords = records.map((r) =>
-      r.id_recuperacion === record.id_recuperacion ? { ...r, fecha_uso: new Date().toISOString() } : r
-    );
-    localStorage.setItem('stockbar_recovery_records', JSON.stringify(updatedRecords));
-
-    setRecoveryMessage('Contraseña actualizada correctamente. Ya puedes iniciar sesión.');
-    setRecoverEmail('');
-    setResetToken('');
-    setNewPassword('');
-    setRecoveryMode('request');
-    showToast('success', 'Contraseña actualizada');
   };
 
   const styles = {
@@ -301,7 +175,7 @@ export const Login = ({ onLogin }) => {
               <input 
                 type="email" 
                 className="form-control"
-                placeholder="administrador@stockbar.com"
+                placeholder="tu-correo@empresa.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -353,7 +227,7 @@ export const Login = ({ onLogin }) => {
 
             <div className="d-flex justify-content-between align-items-center mb-4 small">
               <div className="form-check d-flex align-items-center gap-2">
-                <input className="form-check-input mt-0" type="checkbox" id="rememberMe" style={{ accentColor: 'var(--amber-action)' }} defaultChecked />
+                <input className="form-check-input mt-0" type="checkbox" id="rememberMe" style={{ accentColor: 'var(--amber-action)' }} checked={recordar} onChange={(e) => setRecordar(e.target.checked)} />
                 <label className="form-check-label" htmlFor="rememberMe" style={{ color: styles.muted, fontSize: '0.85rem' }}>
                   Recordar usuario
                 </label>
@@ -370,6 +244,7 @@ export const Login = ({ onLogin }) => {
 
             <button 
               type="submit" 
+              disabled={enviando}
               className="btn w-100 fw-bold py-2 text-white shadow-sm"
               style={{ backgroundColor: 'var(--amber-action)', border: 'none', borderRadius: '8px', fontSize: '0.95rem' }}
             >
@@ -400,6 +275,7 @@ export const Login = ({ onLogin }) => {
                       className="form-control mb-3"
                       value={recoverEmail}
                       onChange={(e) => setRecoverEmail(e.target.value)}
+                      required
                       placeholder="usuario@stockbar.com"
                       style={{ backgroundColor: styles.inputBg, borderColor: styles.border, color: styles.text }}
                     />

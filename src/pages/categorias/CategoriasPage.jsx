@@ -4,13 +4,12 @@ import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
 import { RowActions } from '../../components/common/RowActions';
 import { CategoriaFormModal } from './CategoriaFormModal';
 import { CategoriaDetailModal } from './CategoriaDetailModal';
-import { showToast } from '../../utils/alerts';
-import { generateNextIdentifier } from '../../utils/identifiers';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { defaultCategorias } from '../../data/defaultCategorias';
+import { useApi } from '../../hooks/useApi';
+import { api } from '../../services/api';
+import { ejecutar } from '../../utils/accion';
 
 export const CategoriasPage = () => {
-  const [categorias, setCategorias] = usePersistentState('stockbar_categorias', defaultCategorias);
+  const { data: categorias, recargar } = useApi('/categorias', []);
 
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -40,27 +39,24 @@ export const CategoriasPage = () => {
     setShowDeleteModal(true);
   };
 
-  const handleSaveCategoria = (categoriaData) => {
-    if (selectedCategoria) {
-      setCategorias(categorias.map(c => c.codigo === categoriaData.codigo ? categoriaData : c));
-      showToast('success', 'Categoría actualizada exitosamente');
-    } else {
-      const nuevoCodigo = generateNextIdentifier({ items: categorias, key: 'codigo', prefix: 'CAT', pad: 3, separator: '-' });
-      setCategorias([...categorias, { ...categoriaData, codigo: nuevoCodigo }]);
-      showToast('success', `Categoría ${nuevoCodigo} creada exitosamente`);
-    }
+  const handleSaveCategoria = async (categoriaData) => {
+    const ok = selectedCategoria
+      ? await ejecutar(() => api.put(`/categorias/${selectedCategoria.id_categoria}`, categoriaData), 'Categoría actualizada exitosamente')
+      : await ejecutar(() => api.post('/categorias', categoriaData), (c) => `Categoría ${c.id_categoria} creada exitosamente`);
+    if (!ok) return;
     setShowFormModal(false);
+    recargar();
   };
 
-  const handleConfirmDelete = () => {
-    setCategorias(categorias.filter(c => c.codigo !== selectedCategoria.codigo));
-    showToast('success', 'Categoría eliminada exitosamente');
+  // Con productos asociados el backend lo impide (409).
+  const handleConfirmDelete = async () => {
     setShowDeleteModal(false);
+    if (await ejecutar(() => api.del(`/categorias/${selectedCategoria.id_categoria}`), 'Categoría eliminada exitosamente')) recargar();
   };
 
   const filteredCategorias = categorias.filter(c =>
     c.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.codigo.toLowerCase().includes(searchTerm.toLowerCase())
+    c.id_categoria.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const styles = {
@@ -116,8 +112,8 @@ export const CategoriasPage = () => {
             </thead>
             <tbody>
               {filteredCategorias.map((cat) => (
-                <tr key={cat.codigo} style={{ borderColor: styles.borderCol }}>
-                  <td className="py-3 px-4 fw-bold" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>{cat.codigo}</td>
+                <tr key={cat.id_categoria} style={{ borderColor: styles.borderCol }}>
+                  <td className="py-3 px-4 fw-bold" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>{cat.id_categoria}</td>
                   <td className="py-3 px-4 fw-semibold" style={{ backgroundColor: 'transparent', color: styles.textColor }}>{cat.nombre}</td>
                   <td className="py-3 px-4 small" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>{cat.descripcion}</td>
                   <td className="py-3 px-4 text-center fw-semibold" style={{ backgroundColor: 'transparent', color: styles.textColor }}>{cat.porcentaje_iva ?? 19}%</td>

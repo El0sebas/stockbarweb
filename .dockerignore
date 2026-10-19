@@ -1,0 +1,9 @@
+node_modules
+dist
+backend
+scripts
+docs
+.git
+.claude
+.env
+.env.*

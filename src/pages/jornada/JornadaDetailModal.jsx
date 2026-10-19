@@ -1,27 +1,22 @@
 import React from 'react';
 import { ClockHistory, CashCoin, Person, Calendar3 } from 'react-bootstrap-icons';
-import { calcularTotalesVenta } from '../../utils/impuestos';
+import { useApi } from '../../hooks/useApi';
 
 // Desglose de una jornada (abierta o ya cerrada): ventas completadas, total
 // vendido, base/IVA y forma de pago. Antes esto solo se mostraba una vez, al
 // momento de cerrar la jornada abierta; ahora es "ver detalle" desde el
 // historial, disponible para cualquier jornada en cualquier momento.
-export const JornadaDetailModal = ({ show, onClose, jornada, ventas, metodosPago }) => {
-  if (!show || !jornada) return null;
+// Totales, base gravable, IVA y desglose por método de pago los calcula el
+// backend (vw_totales_venta); aquí solo se muestran.
+export const JornadaDetailModal = ({ show, onClose, jornada: resumen }) => {
+  const { data: detalle } = useApi(show && resumen ? `/jornadas/${resumen.id_jornada}` : null);
+  if (!show || !resumen) return null;
 
-  const ventasDeLaJornada = ventas.filter((v) => v.id_jornada === jornada.id_jornada && v.estado === 'COMPLETADA');
-
-  const totales = calcularTotalesVenta(
-    ventasDeLaJornada.flatMap((v) => (v.productos || []).map((p) => ({ precio: p.precio, cantidad: p.cantidad, porcentajeIva: p.porcentajeIva })))
-  );
-
-  // v3: venta.id_metodo_pago es único (ya no hay venta_pago/pago dividido).
-  const totalesPorMetodo = metodosPago.map((m) => ({
-    nombre: m.nombre,
-    total: ventasDeLaJornada
-      .filter((v) => v.id_metodo_pago === m.id_metodo_pago)
-      .reduce((acc, v) => acc + Number(v.total), 0)
-  })).filter((m) => m.total > 0);
+  const jornada = detalle?.id_jornada === resumen.id_jornada ? detalle : resumen;
+  const r = jornada.resumen ?? { ventas_completadas: 0, total_vendido: 0, base_gravable: 0, iva: 0, por_metodo_pago: [] };
+  const ventasCompletadas = r.ventas_completadas;
+  const totales = { total: r.total_vendido, baseGravable: r.base_gravable, iva: r.iva };
+  const totalesPorMetodo = r.por_metodo_pago.map((m) => ({ nombre: m.metodo_pago, total: m.total }));
 
   const styles = {
     modalBg: 'var(--bg-card)',
@@ -104,7 +99,7 @@ export const JornadaDetailModal = ({ show, onClose, jornada, ventas, metodosPago
               <div className="col-6">
                 <div className="p-3 rounded-3" style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}` }}>
                   <div className="small" style={{ color: styles.mutedColor }}>Ventas completadas</div>
-                  <div className="fw-bold fs-5">{ventasDeLaJornada.length}</div>
+                  <div className="fw-bold fs-5">{ventasCompletadas}</div>
                 </div>
               </div>
               <div className="col-6">

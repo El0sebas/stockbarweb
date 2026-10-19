@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Secretos locales (docker compose / Vite). Solo .env.example va al repositorio.
+.env
+.env.*
+!.env.example

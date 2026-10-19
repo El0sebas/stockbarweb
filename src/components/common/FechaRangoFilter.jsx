@@ -5,7 +5,7 @@ import React from 'react';
 // estado). El estilo de fondo/borde ya lo resuelve la regla global de
 // .form-control en index.css.
 export const FechaRangoFilter = ({ desde, hasta, onDesdeChange, onHastaChange }) => (
-  <div className="d-flex align-items-center gap-2">
+  <div className="d-flex flex-wrap flex-md-nowrap align-items-center gap-2">
     <input
       type="date"
       className="form-control"

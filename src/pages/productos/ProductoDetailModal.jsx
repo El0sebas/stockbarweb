@@ -1,32 +1,23 @@
 import React from 'react';
 import { BoxSeam, Tag, CurrencyDollar, Layers, ShieldExclamation, ExclamationTriangle } from 'react-bootstrap-icons';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { defaultCategorias } from '../../data/defaultCategorias';
-import { defaultLotes } from '../../data/defaultLotes';
-import { defaultProveedores } from '../../data/defaultProveedores';
-import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
-import { getLotesProducto, getStockDisponible, getEstadoVencimiento } from '../../utils/stock';
+import { getEstadoVencimiento } from '../../utils/stock';
+import { useApi } from '../../hooks/useApi';
 
-export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) => {
-  const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
-  const [lotes] = usePersistentState('stockbar_lotes', defaultLotes);
-  const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
-  const [productoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
+// Detalle (CU_03_04): stock de vw_stock_producto, lotes de vw_stock_lotes
+// (solo lectura, nacen en Compras) y proveedores del catálogo.
+export const ProductoDetailModal = ({ show, onClose, producto: resumen, onDarDeBaja }) => {
+  const { data: detalle } = useApi(show && resumen ? `/productos/${resumen.id_producto}` : null);
 
-  if (!show || !producto) return null;
+  if (!show || !resumen) return null;
 
-  const proveedoresProducto = productoProveedor
-    .filter((pp) => pp.id_producto === producto.codigo)
-    .map((pp) => proveedores.find((p) => p.nit === pp.nit_proveedor))
-    .filter(Boolean);
-
-  const porcentajeIva = categorias.find((c) => c.nombre === producto.categoria)?.porcentaje_iva ?? 19;
-  const margenCategoria = categorias.find((c) => c.nombre === producto.categoria)?.margen_defecto_porcentaje;
-  const margenEfectivo = producto.margenPersonalizado || producto.margenPersonalizado === 0
-    ? { valor: producto.margenPersonalizado, origen: 'personalizado' }
-    : { valor: margenCategoria, origen: 'de la categoría' };
-  const lotesProducto = getLotesProducto(lotes, producto.codigo);
-  const stockActual = getStockDisponible(lotes, producto.codigo);
+  const producto = detalle?.id_producto === resumen.id_producto ? detalle : resumen;
+  const proveedoresProducto = producto.proveedores ?? [];
+  const porcentajeIva = producto.porcentaje_iva;
+  const margenEfectivo = producto.margen_personalizado_porcentaje != null
+    ? { valor: producto.margen_personalizado_porcentaje, origen: 'personalizado' }
+    : { valor: producto.margen_defecto_porcentaje, origen: 'de la categoría' };
+  const lotesProducto = producto.lotes ?? [];
+  const stockActual = producto.stock_actual;
 
   const styles = {
     modalBg: 'var(--bg-card)',
@@ -65,28 +56,28 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
             <div className="d-flex justify-content-between align-items-center pb-2 border-bottom" style={{ borderColor: styles.borderCol }}>
               <div>
                 <span className="badge px-2 py-1 mb-1 fw-bold" style={{ backgroundColor: 'var(--amber-action)', color: '#FFFFFF' }}>
-                  {producto.codigo}
+                  {producto.id_producto}
                 </span>
                 <h4 className="fw-bold m-0">{producto.nombre}</h4>
-                {producto.fechaCreacion && (
+                {producto.fecha_creacion && (
                   <div className="small mt-1" style={{ color: styles.mutedColor }}>
-                    Creado el {new Date(producto.fechaCreacion).toLocaleDateString('es-CO')}
+                    Creado el {new Date(producto.fecha_creacion).toLocaleDateString('es-CO')}
                   </div>
                 )}
               </div>
               <span
                 className="badge px-3 py-2 fw-medium"
                 style={{
-                  backgroundColor: producto.estado === 'Activo'
+                  backgroundColor: producto.estado
                     ? ('var(--success-soft-bg)')
                     : ('var(--danger-soft-bg)'),
-                  color: producto.estado === 'Activo'
+                  color: producto.estado
                     ? ('var(--brand-success)')
                     : ('var(--brand-danger)'),
                   borderRadius: '12px'
                 }}
               >
-                {producto.estado}
+                {producto.estado ? 'Activo' : 'Inactivo'}
               </span>
             </div>
 
@@ -110,7 +101,7 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
                     <span className="small">Precio de Venta</span>
                   </div>
                   <span className="fw-bold" style={{ color: 'var(--amber-action)' }}>
-                    $ {Number(producto.precioVenta || 0).toLocaleString()}
+                    $ {Number(producto.precio_venta_actual).toLocaleString('es-CO')}
                   </span>
                 </div>
               </div>
@@ -122,7 +113,7 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
                     <Layers size={16} />
                     <span className="small">Stock Actual (calculado)</span>
                   </div>
-                  <span className="fw-semibold fs-5">{stockActual} un.</span>
+                  <span className="fw-semibold fs-5">{stockActual} {producto.unidad_medida}</span>
                 </div>
               </div>
 
@@ -133,7 +124,7 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
                     <ShieldExclamation size={16} />
                     <span className="small">Stock Mínimo</span>
                   </div>
-                  <span className="fw-semibold fs-5">{producto.stockMinimo} un.</span>
+                  <span className="fw-semibold fs-5">{producto.stock_minimo} {producto.unidad_medida}</span>
                 </div>
               </div>
 
@@ -161,7 +152,7 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
               <div className="col-6">
                 <div className="p-3 rounded-3" style={{ backgroundColor: styles.detailBoxBg, border: `1px solid ${styles.borderCol}` }}>
                   <div className="small" style={{ color: styles.mutedColor }}>Maneja vencimiento / lote</div>
-                  <div className="fw-semibold mt-1">{producto.maneja_vencimiento || producto.manejaVencimiento ? 'Sí' : 'No'}</div>
+                  <div className="fw-semibold mt-1">{producto.maneja_vencimiento ? 'Sí' : 'No'}</div>
                 </div>
               </div>
 
@@ -174,11 +165,11 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
                     <div className="d-flex flex-wrap gap-2 mt-1">
                       {proveedoresProducto.map((prov) => (
                         <span
-                          key={prov.nit}
+                          key={prov.id_proveedor}
                           className="badge px-2 py-1"
                           style={{ backgroundColor: 'var(--border-color)', color: styles.textColor }}
                         >
-                          {prov.razon_social}
+                          {prov.proveedor}
                         </span>
                       ))}
                     </div>
@@ -227,7 +218,7 @@ export const ProductoDetailModal = ({ show, onClose, producto, onDarDeBaja }) =>
                                     className="btn btn-sm p-1 border-0"
                                     style={{ color: 'var(--brand-danger)' }}
                                     title="Dar de baja este lote"
-                                    onClick={() => onDarDeBaja(lote)}
+                                    onClick={() => onDarDeBaja({ ...lote, id_producto: producto.id_producto, producto: producto.nombre })}
                                   >
                                     <ExclamationTriangle size={15} />
                                   </button>

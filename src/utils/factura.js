@@ -1,28 +1,18 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { calcularTotalesVenta } from './impuestos';
 import { empresaEmisora } from '../data/defaultEmpresa';
-import { defaultMetodosPago } from '../data/defaultMetodosPago';
+import { api } from '../services/api';
+import { showToast } from './alerts';
 
 const money = (n) => `$ ${Math.round(Number(n) || 0).toLocaleString('es-CO')}`;
 
 // Genera y descarga la representación de la factura de venta (ver
 // data/defaultEmpresa.js para el disclaimer de qué es y qué no es este
-// documento). El desglose de IVA por tarifa es obligatorio en una factura
-// colombiana cuando el carrito mezcla productos con distinta tarifa (aquí,
-// Licores al 5% junto a Cerveza/Cigarrillos/Snacks al 19%).
-export const generarFacturaPDF = (venta, clientes = []) => {
+// documento). `venta` es el detalle de GET /ventas/:id: líneas, totales
+// (vw_totales_venta) y desglose de IVA por tarifa ya calculados por el
+// backend; aquí solo se maqueta el documento.
+export const generarFacturaPDF = (venta) => {
   const doc = new jsPDF();
-  const clienteInfo = venta.id_cliente
-    ? clientes.find((c) => c.id_cliente === venta.id_cliente)
-    : null;
-  // v3: venta.id_metodo_pago es único (ya no hay venta_pago/pago dividido).
-  let metodosPago = defaultMetodosPago;
-  try {
-    const guardados = JSON.parse(localStorage.getItem('stockbar_metodos_pago'));
-    if (Array.isArray(guardados)) metodosPago = guardados;
-  } catch { /* usa el catálogo por defecto */ }
-  const nombreMetodoPago = metodosPago.find((m) => m.id_metodo_pago === venta.id_metodo_pago)?.nombre || 'N/A';
 
   // Encabezado — emisor
   doc.setFont('helvetica', 'bold');
@@ -52,49 +42,36 @@ export const generarFacturaPDF = (venta, clientes = []) => {
   doc.setFontSize(9);
   doc.text(`Fecha: ${new Date(venta.fecha_hora_venta).toLocaleString('es-CO')}`, 14, 51);
   doc.text(`Vendedor: ${venta.usuario || 'N/A'}`, 14, 56);
-  doc.text(`Cliente: ${venta.cliente}`, 120, 51);
+  doc.text(`Cliente: ${venta.cliente || 'Consumidor final'}`, 120, 51);
   doc.text(
-    `Documento: ${clienteInfo ? `${clienteInfo.tipo_documento} ${clienteInfo.numero_documento}` : 'Consumidor final'}`,
+    `Documento: ${venta.cliente_numero_documento ? `${venta.cliente_tipo_documento} ${venta.cliente_numero_documento}` : 'Consumidor final'}`,
     120,
     56
   );
 
   // Detalle de productos. "Precio unit." ya trae el IVA incluido (como se
   // exhibe en el mostrador); "Precio unit. sin IVA" es ese mismo valor
-  // desglosado línea por línea, para que quede explícito cuánto de cada
-  // unidad es base gravable.
+  // desglosado, para que quede explícito cuánto de cada unidad es base gravable.
   autoTable(doc, {
     startY: 63,
     head: [['Cant.', 'Descripción', 'Precio unit. sin IVA', 'IVA', 'Precio unit.', 'Subtotal']],
-    body: (venta.productos || []).map((p) => {
-      const tasa = Number(p.porcentajeIva || 0);
-      const precioSinIva = Number(p.precio) / (1 + tasa / 100);
-      return [
-        p.cantidad,
-        p.nombre,
-        money(precioSinIva),
-        `${tasa}%`,
-        money(p.precio),
-        money(p.precio * p.cantidad)
-      ];
-    }),
+    body: (venta.detalles || []).map((p) => [
+      p.cantidad,
+      p.producto,
+      money(p.precio_sin_iva),
+      `${Number(p.porcentaje_impuesto_aplicado)}%`,
+      money(p.precio_unitario_venta),
+      money(p.subtotal)
+    ]),
     headStyles: { fillColor: [26, 54, 93] },
     styles: { fontSize: 8 }
   });
 
   // Desglose de IVA por tarifa (obligatorio cuando hay más de una tarifa)
-  const tarifas = [...new Set((venta.productos || []).map((p) => Number(p.porcentajeIva || 0)))].sort(
-    (a, b) => a - b
-  );
-  const desgloseIva = tarifas.map((tasa) => {
-    const t = calcularTotalesVenta((venta.productos || []).filter((p) => Number(p.porcentajeIva || 0) === tasa));
-    return [`${tasa}%`, money(t.baseGravable), money(t.iva)];
-  });
-
   autoTable(doc, {
     startY: doc.lastAutoTable.finalY + 6,
     head: [['Tarifa IVA', 'Base gravable', 'IVA']],
-    body: desgloseIva,
+    body: (venta.desglose_iva || []).map((t) => [`${Number(t.tarifa)}%`, money(t.base_gravable), money(t.iva)]),
     headStyles: { fillColor: [245, 158, 11] },
     styles: { fontSize: 8 },
     margin: { left: 14 },
@@ -102,15 +79,20 @@ export const generarFacturaPDF = (venta, clientes = []) => {
   });
 
   let y = doc.lastAutoTable.finalY + 9;
+  // Total, forma de pago y pie ocupan ~35 mm: con muchas líneas no caben.
+  if (y > doc.internal.pageSize.getHeight() - 40) {
+    doc.addPage();
+    y = 20;
+  }
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text(`TOTAL A PAGAR: ${money(venta.total)}`, 196, y, { align: 'right' });
+  doc.text(`TOTAL A PAGAR: ${money(venta.total_venta)}`, 196, y, { align: 'right' });
 
-  // Forma de pago
+  // Forma de pago (una sola por venta, HU_58)
   y += 8;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text(`Forma de pago: ${nombreMetodoPago}`, 14, y);
+  doc.text(`Forma de pago: ${venta.metodo_pago}`, 14, y);
 
   // Pie legal
   y += 12;
@@ -130,4 +112,13 @@ export const generarFacturaPDF = (venta, clientes = []) => {
   );
 
   doc.save(`factura-${venta.id_venta}.pdf`);
+};
+
+// Pide el detalle completo al backend y genera la factura (CU_06_04).
+export const descargarFactura = async (idVenta) => {
+  try {
+    generarFacturaPDF(await api.get(`/ventas/${idVenta}`));
+  } catch (e) {
+    showToast('error', e.message || 'No fue posible generar la factura, intente nuevamente.');
+  }
 };

@@ -138,7 +138,7 @@ contacto_proveedor:
 ```
 
 #### `cliente`
-Compradores. Puede no existir en una venta de mostrador (`venta.id_cliente` es NULLABLE), pero si el producto exige verificación de edad, la venta rechaza clientes sin `fecha_nacimiento` válida.
+Compradores. Puede no existir en una venta de mostrador (`venta.id_cliente` es NULLABLE). Si el producto exige verificación de edad, la venta rechaza a un cliente **registrado** sin `fecha_nacimiento` válida o menor de 18 años. **Consumidor Final (`CLI-00000`) y la venta sin cliente están exentos** (decisión de negocio, 2026-10-15): se les puede vender cualquier producto.
 
 ```
 Campos:
@@ -211,6 +211,8 @@ CHECK:
 **`usuario` NO tiene `fecha_nacimiento`.** Nunca tuvo un uso real en la aplicación: la verificación de edad para productos restringidos siempre lee `cliente.fecha_nacimiento` (la del comprador), nunca la del usuario que atiende la venta.
 
 **Protección del admin principal:** `trg_proteger_admin_principal` rechaza desactivar a ese usuario (ni siquiera él mismo puede) y rechaza cambiar la marca una vez puesta. Dos reglas más viven en la capa de aplicación, no en la BD: solo un `ADMINISTRADOR` puede desactivar a otro usuario, y nadie puede desactivarse a sí mismo — el backend compara el `id_usuario` del JWT contra el `id_usuario` objetivo.
+
+**Sesiones sin tabla ni columna propia.** El JWT no se guarda en la BD. Lleva una huella derivada de `contrasena_hash`, así que cambiar la contraseña invalida todos los tokens anteriores. Cerrar sesión revoca ese token en una lista en memoria del backend (ver `backend/README.md`).
 
 **Recuperación de contraseña sin tabla propia.** El flujo de "olvidé mi contraseña" (Subproceso de Acceso, HU_77) solo necesita un token vigente por usuario, no un historial — por eso son dos columnas de `usuario`, no una tabla de auditoría. La app genera un token aleatorio, guarda solo su **hash** y su vencimiento, envía el enlace por correo (SMTP) y, al usarse o vencer, pone ambas columnas en `NULL`.
 
@@ -341,15 +343,22 @@ El backend consulta estas vistas para todo lo que sea agregación o cálculo rep
 ### `vw_stock_lotes`
 Cada lote con su cantidad ingresada y disponible ya calculadas. Filtrar por `id_producto` para mostrar, en el detalle de un producto, la lista de lotes de solo lectura que explica de dónde sale el stock.
 
+Aplica la misma regla que `fn_stock_lote` (entradas REGISTRADA − ventas PENDIENTE/COMPLETADA − bajas), pero de una sola pasada agrupada en vez de llamar la función lote por lote: con un año de ventas (≈62 mil) la versión por función tardaba ~0,8 s y esta ~0,25 s, con resultados idénticos. `fn_stock_lote` se mantiene para validar un lote puntual en los triggers.
+
 ```sql
-SELECT l.id_lote, l.id_producto, p.nombre AS producto, l.fecha_vencimiento,
-       p.maneja_vencimiento,
-       (SELECT COALESCE(SUM(dc.cantidad), 0) FROM detalle_compra dc
-          JOIN compra c ON c.id_compra = dc.id_compra
-         WHERE dc.id_lote = l.id_lote AND c.estado = 'REGISTRADA') AS cantidad_ingresada,
-       fn_stock_lote(l.id_lote) AS cantidad_disponible
+SELECT l.id_lote, l.id_producto, p.nombre AS producto, l.fecha_vencimiento, p.maneja_vencimiento,
+       COALESCE(ci.cantidad, 0) AS cantidad_ingresada,
+       COALESCE(ci.cantidad, 0) - COALESCE(vv.cantidad, 0) - COALESCE(bb.cantidad, 0) AS cantidad_disponible
 FROM lote l
-JOIN producto p ON p.id_producto = l.id_producto;
+JOIN producto p ON p.id_producto = l.id_producto
+LEFT JOIN (SELECT dc.id_lote, SUM(dc.cantidad) AS cantidad FROM detalle_compra dc
+             JOIN compra c ON c.id_compra = dc.id_compra
+            WHERE c.estado = 'REGISTRADA' GROUP BY dc.id_lote) ci ON ci.id_lote = l.id_lote
+LEFT JOIN (SELECT dv.id_lote, SUM(dv.cantidad) AS cantidad FROM detalle_venta dv
+             JOIN venta v ON v.id_venta = dv.id_venta
+            WHERE v.estado IN ('PENDIENTE', 'COMPLETADA') GROUP BY dv.id_lote) vv ON vv.id_lote = l.id_lote
+LEFT JOIN (SELECT id_lote, SUM(cantidad) AS cantidad FROM baja_inventario GROUP BY id_lote) bb
+       ON bb.id_lote = l.id_lote;
 ```
 
 ### `vw_stock_producto`
@@ -374,6 +383,22 @@ SELECT dc.id_compra, l.id_producto, p.nombre AS producto, l.id_lote, l.fecha_ven
 FROM detalle_compra dc
 JOIN lote l ON l.id_lote = dc.id_lote
 JOIN producto p ON p.id_producto = l.id_producto;
+```
+
+### `vw_detalle_venta`
+Espejo de `vw_detalle_compra` para ventas: cada línea con producto, categoría, lote, IVA congelado y subtotal, más `estado`, `fecha_hora_venta` e `id_jornada` de la cabecera para poder filtrar sin otro `JOIN`. La usa el backend para el recibo/factura, el listado de ventas y los agregados del dashboard (producto más vendido, ventas por categoría).
+
+```sql
+SELECT dv.id_venta, v.estado, v.fecha_hora_venta, v.id_jornada,
+       l.id_producto, p.nombre AS producto, p.id_categoria, c.nombre AS categoria,
+       dv.id_lote, l.fecha_vencimiento, dv.cantidad, dv.precio_unitario_venta,
+       dv.porcentaje_impuesto_aplicado,
+       dv.cantidad * dv.precio_unitario_venta AS subtotal
+FROM detalle_venta dv
+JOIN venta v ON v.id_venta = dv.id_venta
+JOIN lote l ON l.id_lote = dv.id_lote
+JOIN producto p ON p.id_producto = l.id_producto
+JOIN categoria c ON c.id_categoria = p.id_categoria;
 ```
 
 ### `vw_totales_compra`
@@ -407,13 +432,16 @@ Historial de jornadas con sus totales de venta — la Ficha de Proyecto lo pide 
 ```sql
 SELECT j.id_jornada, j.estado, j.fecha_hora_apertura, j.id_usuario_apertura,
        j.fecha_hora_cierre, j.id_usuario_cierre,
-       COUNT(v.id_venta) AS ventas_completadas,
-       COALESCE(SUM(fn_total_venta(v.id_venta)), 0) AS total_ventas
-FROM jornada j
-LEFT JOIN venta v ON v.id_jornada = j.id_jornada AND v.estado = 'COMPLETADA'
-GROUP BY j.id_jornada, j.estado, j.fecha_hora_apertura, j.id_usuario_apertura,
-         j.fecha_hora_cierre, j.id_usuario_cierre;
+       (SELECT COUNT(*) FROM venta v WHERE v.id_jornada = j.id_jornada AND v.estado = 'COMPLETADA') AS ventas_completadas,
+       (SELECT COALESCE(SUM(t.total_venta), 0) FROM (
+           SELECT ROUND(SUM(dv.cantidad * dv.precio_unitario_venta), 2) AS total_venta
+           FROM venta v JOIN detalle_venta dv ON dv.id_venta = v.id_venta
+           WHERE v.id_jornada = j.id_jornada AND v.estado = 'COMPLETADA'
+           GROUP BY v.id_venta) t) AS total_ventas
+FROM jornada j;
 ```
+
+El total por venta se agrupa sobre las líneas (redondeado por venta, igual que `fn_total_venta`) en vez de llamar la función venta por venta, y sin `GROUP BY` externo para que la vista se fusione con el `WHERE`. Con un año de datos (≈62 mil ventas): el historial completo pasó de ~7 s a ~0,7 s y una sola jornada (indicador "Jornada abierta", detalle) tarda ~3 ms.
 
 ### `vw_productos_por_proveedor`
 Qué proveedores surten cada producto (y viceversa), con nombre/categoría/proveedor ya resueltos. Solo lectura — no reemplaza `detalle_compra` para precio o cantidad.
@@ -443,12 +471,13 @@ JOIN proveedor pv ON pv.id_proveedor = pp.id_proveedor;
 | `trg_validar_detalle_compra_upd` | BEFORE UPDATE `detalle_compra` | Misma validación (vencimiento + compra PENDIENTE). |
 | `trg_validar_detalle_compra_del` | BEFORE DELETE `detalle_compra` | Rechaza eliminar una entrada si la compra no está PENDIENTE (ANULADA o ya REGISTRADA). |
 | `trg_validar_baja_ins` / `_upd` | BEFORE INSERT/UPDATE `baja_inventario` | Rechaza una baja mayor al disponible del lote. |
-| `trg_validar_detalle_venta_ins` / `_upd` | BEFORE INSERT/UPDATE `detalle_venta` | Valida jornada abierta, venta no ANULADA/COMPLETADA, stock disponible, vencimiento del lote y edad mínima (18) si la categoría lo exige; **rellena `porcentaje_impuesto_aplicado`** desde `categoria.porcentaje_iva`. |
+| `trg_validar_detalle_venta_ins` / `_upd` | BEFORE INSERT/UPDATE `detalle_venta` | Valida jornada abierta, venta no ANULADA/COMPLETADA, stock disponible, vencimiento del lote y edad mínima (18) si la categoría lo exige (excepto Consumidor Final `CLI-00000` y venta sin cliente); **rellena `porcentaje_impuesto_aplicado`** desde `categoria.porcentaje_iva`. |
 | `trg_validar_venta_ins` / `_upd` | BEFORE INSERT/UPDATE `venta` | Si `estado = 'COMPLETADA'`: exige jornada ABIERTA, cliente activo (si hay) y usuario activo. |
 | `trg_validar_cierre_venta_ins` / `_upd` | AFTER INSERT/UPDATE `venta` | Cuando `estado` pasa a `COMPLETADA`: exige al menos un detalle y total > 0. |
 | `trg_validar_cierre_compra_ins` / `_upd` | AFTER INSERT/UPDATE `compra` | Cuando `estado` pasa a `REGISTRADA`: exige al menos un detalle (espejo del cierre de venta). |
-| `trg_validar_anulacion_venta` | BEFORE UPDATE `venta` | Impide reactivar una venta ANULADA, y **solo permite anular mientras está PENDIENTE** (una venta COMPLETADA ya no se puede anular). |
-| `trg_validar_anulacion_compra` | BEFORE UPDATE `compra` | Impide reactivar una compra ANULADA, y **solo permite anular mientras está PENDIENTE** (una compra REGISTRADA ya no se puede anular). |
+| `trg_validar_anulacion_venta` | BEFORE UPDATE `venta` | Impide reactivar una venta ANULADA, **solo permite anular mientras está PENDIENTE** y rechaza cualquier cambio a una venta COMPLETADA (tampoco puede volver a PENDIENTE). |
+| `trg_validar_detalle_venta_del` | BEFORE DELETE `detalle_venta` | Solo permite quitar líneas de una venta PENDIENTE (carrito). |
+| `trg_validar_anulacion_compra` | BEFORE UPDATE `compra` | Impide reactivar una compra ANULADA, **solo permite anular mientras está PENDIENTE** y no deja que una compra REGISTRADA cambie de estado. |
 | `trg_validar_jornada_ins` / `_upd` | BEFORE INSERT/UPDATE `jornada` | Exige/prohíbe datos de cierre según el estado. |
 
 **Funciones auxiliares** (usadas por triggers y vistas, no expuestas al frontend): `fn_stock_lote`, `fn_total_venta`, `fn_base_gravable_venta`, `fn_iva_venta`.
@@ -521,12 +550,24 @@ Cascadas / reglas de borrado:
 - Manuales Técnico y de Usuario (v1‑v4).
 - Matriz de historias de usuario con criterios de aceptación — este script referencia HU_04, HU_39, HU_50, HU_58 y HU_77 por número; el documento con el texto completo de cada HU no está en este repositorio.
 - Tarifas de IVA de negocio: la tabla trae 5.00 % (Licores) / 19.00 % (resto) como referencia pública de la normativa colombiana; deben confirmarse con el contador del negocio antes de producción (son datos, editables sin migración, no lógica de código).
-- No hay todavía un backend Node/Express real que consuma este script — mientras eso no exista, el frontend web opera en modo mock (localStorage) reflejando estos mismos nombres de campo para que la futura integración sea un cambio de fuente de datos, no de forma.
-- **Migración v3 pendiente en el mock (web y móvil):** el frontend todavía usa ids numéricos autoincrementales (`id_producto: 1, 2, 3…`) en vez de los formatos semánticos de esta versión (SKU, NIT, `CMP-000001`, etc.), y `VentasPage`/`ComprasPage` todavía permiten pago dividido en varios métodos (`venta.pagos: []`), que ya no existe en el modelo v3 (un solo `id_metodo_pago`). Esto se está migrando — ver el estado real del código en `src/pages/` antes de asumir que ya coincide con este documento.
+- El backend Node/Express (`/backend`, ver `backend/README.md`) consume este script y el frontend web ya opera solo contra la API: no guarda datos de negocio en el navegador (solo el token de sesión). Los formularios usan los nombres de campo y los códigos semánticos de este documento (SKU, NIT, `CMP-000001`, etc.) y un solo `id_metodo_pago` por venta o compra.
+- La app móvil (Flutter) debe consumir la misma API; cualquier dato simulado que aún tenga sigue el modelo anterior y no es fuente de verdad.
 
 ---
 
-## 8. Cómo actualizar este documento
+## 8. Migración de una base ya creada
+
+`sch.sql` borra y recrea las tablas, así que no sirve sobre una base con datos reales. Para llevar una base V6 existente a la versión actual, sin perder datos, se ejecutan de `sch.sql` solo estos bloques (ninguno toca tablas; cargar con `mysql --default-character-set=utf8mb4`):
+
+- Vistas: los `CREATE OR REPLACE VIEW` de `vw_stock_lotes` y `vw_totales_jornada` (rendimiento con historial grande).
+- Triggers: los bloques de `trg_validar_anulacion_venta`, `trg_validar_detalle_venta_del` (nuevo) y `trg_validar_anulacion_compra` (venta COMPLETADA y compra REGISTRADA definitivas).
+- Consumidor Final exento de verificación de edad: ejecutar de `sch.sql` solo el bloque `DROP PROCEDURE IF EXISTS sp_validar_detalle_venta; ... CREATE PROCEDURE sp_validar_detalle_venta ...` (los triggers lo llaman por nombre, no hace falta recrearlos). Cargar con `mysql --default-character-set=utf8mb4`.
+
+Al desplegar el backend nuevo, todas las sesiones abiertas se cierran una vez (los tokens anteriores no tienen la huella nueva).
+
+---
+
+## 9. Cómo actualizar este documento
 
 1. **Si cambia el modelo de datos:** editar `scripts/sch.sql` primero, luego la sección 2 aquí.
 2. **Si se agregan vistas:** igual orden — script primero, sección 3 después.

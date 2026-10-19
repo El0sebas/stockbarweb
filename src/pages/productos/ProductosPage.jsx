@@ -6,27 +6,17 @@ import { StatusToggle } from '../../components/common/StatusToggle';
 import { EstadoFilter } from '../../components/common/EstadoFilter';
 import { ProductoDetailModal } from './ProductoDetailModal';
 import { ProductoFormModal } from './ProductoFormModal';
-import { showToast } from '../../utils/alerts';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { defaultProductos } from '../../data/defaultProductos';
-import { defaultCategorias } from '../../data/defaultCategorias';
-import { defaultLotes } from '../../data/defaultLotes';
-import { defaultMotivosBaja } from '../../data/defaultMotivosBaja';
-import { defaultBajas } from '../../data/defaultBajas';
-import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
-import { getStockDisponible } from '../../utils/stock';
-import { aplicarBaja } from '../../utils/bajas';
+import { useApi } from '../../hooks/useApi';
+import { api } from '../../services/api';
+import { ejecutar } from '../../utils/accion';
 import { useAuth } from '../../context/AuthContext';
 import { BajaFormModal } from '../bajas/BajaFormModal';
 
+// El stock de cada producto viene de vw_stock_producto (nunca se edita aquí).
 export const ProductosPage = () => {
-  const [productos, setProductos] = usePersistentState('stockbar_productos', defaultProductos);
-  const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
-  const [lotes, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
-  const [motivos] = usePersistentState('stockbar_motivos_baja', defaultMotivosBaja);
-  const [bajas, setBajas] = usePersistentState('stockbar_bajas', defaultBajas);
-  const [productoProveedor, setProductoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
-  const { currentUser } = useAuth();
+  const { data: productos, recargar } = useApi('/productos', []);
+  const { data: categorias } = useApi('/categorias', []);
+  const { tienePermiso } = useAuth();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroCategoria, setFiltroCategoria] = useState('');
@@ -45,21 +35,10 @@ export const ProductosPage = () => {
     setShowBajaModal(true);
   };
 
-  const handleSaveBaja = (bajaParcial) => {
-    const { nuevosLotes, nuevasBajas } = aplicarBaja({
-      lotes,
-      bajas,
-      baja: {
-        ...bajaParcial,
-        id_usuario: currentUser?.id_usuario || null,
-        usuario: currentUser?.nombre || 'N/A'
-      }
-    });
-    setLotes(nuevosLotes);
-    setBajas(nuevasBajas);
+  const handleBajaGuardada = () => {
     setShowBajaModal(false);
     setLoteParaBaja(null);
-    showToast('success', 'Baja registrada y stock del lote actualizado');
+    recargar();
   };
 
   const handleOpenCreate = () => {
@@ -82,46 +61,31 @@ export const ProductosPage = () => {
     setShowDeleteModal(true);
   };
 
-  const handleToggleEstado = (prod) => {
-    const nuevoEstado = prod.estado === 'Activo' ? 'Inactivo' : 'Activo';
-    setProductos(productos.map(p => p.codigo === prod.codigo ? { ...p, estado: nuevoEstado } : p));
-    showToast('success', `Estado actualizado a ${nuevoEstado}`);
+  const handleToggleEstado = async (prod) => {
+    if (await ejecutar(() => api.patch(`/productos/${prod.id_producto}/estado`, { estado: !prod.estado }), (r) => r.mensaje)) recargar();
   };
 
-  const handleSaveProducto = (productoData) => {
-    // v3: id_producto ES el código (SKU) que escribió el usuario en el
-    // formulario — ProductoFormModal ya validó formato y unicidad.
-    // nitsProveedores es transitorio: no es columna de producto, sincroniza
-    // la tabla producto_proveedor aparte.
-    const { nitsProveedores = [], ...producto } = productoData;
-    if (selectedProducto) {
-      setProductos(productos.map(p => p.codigo === producto.codigo ? producto : p));
-      showToast('success', 'Producto actualizado exitosamente');
-    } else {
-      setProductos([...productos, { ...producto, fechaCreacion: new Date().toISOString() }]);
-      showToast('success', `Producto ${producto.codigo} creado exitosamente`);
-    }
-    setProductoProveedor([
-      ...productoProveedor.filter((pp) => pp.id_producto !== producto.codigo),
-      ...nitsProveedores.map((nit) => ({ id_producto: producto.codigo, nit_proveedor: nit }))
-    ]);
+  // Producto + producto_proveedor se guardan juntos en una transacción del backend.
+  const handleSaveProducto = async (productoData) => {
+    const ok = selectedProducto
+      ? await ejecutar(() => api.put(`/productos/${selectedProducto.id_producto}`, productoData), 'Producto actualizado exitosamente')
+      : await ejecutar(() => api.post('/productos', productoData), (p) => `Producto ${p.id_producto} creado exitosamente`);
+    if (!ok) return;
     setShowFormModal(false);
     setSelectedProducto(null);
+    recargar();
   };
 
-  const handleConfirmDelete = () => {
-    if (selectedProducto) {
-      setProductos(productos.filter(p => p.codigo !== selectedProducto.codigo));
-      setProductoProveedor(productoProveedor.filter((pp) => pp.id_producto !== selectedProducto.codigo));
-      showToast('success', 'Producto eliminado exitosamente');
-    }
+  // Con lotes (compras/ventas) el backend lo impide: se desactiva en su lugar.
+  const handleConfirmDelete = async () => {
     setShowDeleteModal(false);
+    if (await ejecutar(() => api.del(`/productos/${selectedProducto.id_producto}`), 'Producto eliminado exitosamente')) recargar();
     setSelectedProducto(null);
   };
 
   const filteredProductos = productos.filter(p =>
     (p.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.id_producto.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.categoria.toLowerCase().includes(searchTerm.toLowerCase())) &&
     (!filtroCategoria || p.categoria === filtroCategoria)
   );
@@ -205,18 +169,16 @@ export const ProductosPage = () => {
             <tbody>
               {filteredProductos.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-4" style={{ color: styles.mutedColor }}>
+                  <td colSpan="8" className="text-center py-4" style={{ color: styles.mutedColor }}>
                     No se encontraron productos registrados
                   </td>
                 </tr>
               ) : (
                 filteredProductos.map((prod) => {
-                  const stockActual = getStockDisponible(lotes, prod.codigo);
-                  const porcentajeIva = categorias.find((c) => c.nombre === prod.categoria)?.porcentaje_iva ?? 19;
                   return (
-                  <tr key={prod.codigo} style={{ borderColor: styles.borderCol }}>
+                  <tr key={prod.id_producto} style={{ borderColor: styles.borderCol }}>
                     <td className="py-3 px-4 fw-bold" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>
-                      {prod.codigo}
+                      {prod.id_producto}
                     </td>
                     <td className="py-3 px-4 fw-semibold" style={{ backgroundColor: 'transparent', color: styles.textColor }}>
                       {prod.nombre}
@@ -225,28 +187,28 @@ export const ProductosPage = () => {
                       {prod.categoria}
                     </td>
                     <td className="py-3 px-4 text-end fw-bold" style={{ backgroundColor: 'transparent', color: styles.textColor }}>
-                      $ {Number(prod.precioVenta).toLocaleString()}
+                      $ {Number(prod.precio_venta_actual).toLocaleString('es-CO')}
                     </td>
                     <td className="py-3 px-4 text-center small" style={{ backgroundColor: 'transparent', color: styles.mutedColor }}>
-                      {porcentajeIva}%
+                      {prod.porcentaje_iva}%
                     </td>
                     <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
                       <span
                         className="badge px-2 py-1"
                         style={{
-                          backgroundColor: stockActual <= prod.stockMinimo
+                          backgroundColor: prod.bajo_stock
                             ? ('var(--danger-soft-bg)')
                             : ('var(--border-color)'),
-                          color: stockActual <= prod.stockMinimo
+                          color: prod.bajo_stock
                             ? 'var(--brand-danger)'
                             : styles.textColor
                         }}
                       >
-                        {stockActual} un.
+                        {prod.stock_actual} un.
                       </span>
                     </td>
                     <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
-                      <StatusToggle active={prod.estado === 'Activo'} onToggle={() => handleToggleEstado(prod)} />
+                      <StatusToggle active={prod.estado} onToggle={() => handleToggleEstado(prod)} />
                     </td>
                     <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
                       <RowActions
@@ -269,23 +231,19 @@ export const ProductosPage = () => {
         onClose={() => setShowFormModal(false)}
         onSave={handleSaveProducto}
         producto={selectedProducto}
-        productos={productos}
       />
 
       <ProductoDetailModal
         show={showDetailModal}
         onClose={() => setShowDetailModal(false)}
         producto={selectedProducto}
-        onDarDeBaja={handleDarDeBaja}
+        onDarDeBaja={tienePermiso('GESTIONAR_BAJAS') ? handleDarDeBaja : undefined}
       />
 
       <BajaFormModal
         show={showBajaModal}
         onClose={() => { setShowBajaModal(false); setLoteParaBaja(null); }}
-        onSave={handleSaveBaja}
-        lotes={lotes}
-        productos={productos}
-        motivos={motivos}
+        onGuardada={handleBajaGuardada}
         loteInicial={loteParaBaja}
       />
 

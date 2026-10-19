@@ -1,99 +1,102 @@
 import React, { useState, useEffect } from 'react';
 import { BoxSeam } from 'react-bootstrap-icons';
 import { Field, useFormValidation } from '../../components/common/Field';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { defaultCategorias } from '../../data/defaultCategorias';
-import { defaultUnidadesMedida } from '../../data/defaultUnidadesMedida';
-import { defaultLotes } from '../../data/defaultLotes';
-import { defaultCompras } from '../../data/defaultCompras';
-import { defaultDetalleCompra } from '../../data/defaultDetalleCompra';
-import { defaultProveedores } from '../../data/defaultProveedores';
-import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
+import { useApi } from '../../hooks/useApi';
 import { MoneyInput } from '../../components/common/MoneyInput';
 import { showAlert } from '../../utils/alerts';
 
 const CODIGO_REGEX = /^[A-Z0-9-]{3,30}$/;
 
-export const ProductoFormModal = ({ show, onClose, onSave, producto, productos = [] }) => {
-  // Mismo catálogo que CategoriasPage: crear una categoría nueva la hace
-  // aparecer aquí de inmediato, en vez de mantener una lista fija aparte.
-  const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
-  const [unidadesMedida] = usePersistentState('stockbar_unidades_medida', defaultUnidadesMedida);
-
-  const [lotes] = usePersistentState('stockbar_lotes', defaultLotes);
-  const [compras] = usePersistentState('stockbar_compras', defaultCompras);
-  const [detalleCompra] = usePersistentState('stockbar_detalle_compra', defaultDetalleCompra);
-  const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
-  const proveedoresActivos = proveedores.filter((p) => p.estado === 'Activo');
-  const [productoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
+export const ProductoFormModal = ({ show, onClose, onSave, producto }) => {
+  // Catálogos desde la API; en edición también el detalle del producto
+  // (proveedores asociados y costo de la última compra registrada).
+  const { data: categorias } = useApi(show ? '/categorias' : null, []);
+  const { data: unidadesMedida } = useApi(show ? '/unidades-medida' : null, []);
+  const { data: proveedores } = useApi(show ? '/proveedores?estado=true' : null, []);
+  const { data: detalle } = useApi(show && producto ? `/productos/${producto.id_producto}` : null);
   const [nitsSeleccionados, setNitsSeleccionados] = useState([]);
 
   const initialState = {
     codigo: '',
     nombre: '',
     descripcion: '',
-    categoria: '',
-    unidad_medida: '',
+    id_categoria: '',
+    id_unidad_medida: '',
     precioVenta: '',
     margenPersonalizado: '',
-    maneja_vencimiento: false,
-    stockMinimo: '',
-    estado: 'Activo'
+    maneja_vencimiento: true,
+    stockMinimo: ''
   };
 
   const [formData, setFormData] = useState(initialState);
   const { errors, formProps, resetErrors } = useFormValidation();
 
   useEffect(() => {
-    setFormData(producto ? producto : { ...initialState, estado: 'Activo' });
-    setNitsSeleccionados(
-      producto
-        ? productoProveedor.filter((pp) => pp.id_producto === producto.codigo).map((pp) => pp.nit_proveedor)
-        : []
-    );
+    setFormData(producto ? {
+      codigo: producto.id_producto,
+      nombre: producto.nombre,
+      descripcion: producto.descripcion || '',
+      id_categoria: producto.id_categoria,
+      id_unidad_medida: producto.id_unidad_medida,
+      precioVenta: producto.precio_venta_actual,
+      margenPersonalizado: producto.margen_personalizado_porcentaje ?? '',
+      maneja_vencimiento: producto.maneja_vencimiento,
+      stockMinimo: producto.stock_minimo
+    } : initialState);
+    setNitsSeleccionados([]);
     resetErrors();
   }, [producto, show]);
+
+  // Los proveedores asociados llegan con el detalle del producto.
+  useEffect(() => {
+    if (detalle && detalle.id_producto === producto?.id_producto) {
+      setNitsSeleccionados(detalle.proveedores.map((p) => p.id_proveedor));
+    }
+  }, [detalle, producto]);
 
   if (!show) return null;
 
   // Precio sugerido = costo de referencia (última compra REGISTRADA del
   // producto) + margen (personalizado o de la categoría) + IVA de la categoría,
   // porque precio_venta_actual es el precio final al cliente. Solo sugiere.
-  const cat = categorias.find((c) => c.nombre === formData.categoria);
+  const cat = categorias.find((c) => c.id_categoria === formData.id_categoria);
   const margen = formData.margenPersonalizado !== '' && formData.margenPersonalizado != null
     ? Number(formData.margenPersonalizado)
     : cat?.margen_defecto_porcentaje;
-  const lotesProd = new Set(lotes.filter((l) => l.id_producto === producto?.codigo).map((l) => l.id_lote));
-  const registradas = new Set(compras.filter((c) => c.estado === 'REGISTRADA').map((c) => c.id_compra));
-  const ultimaCompra = detalleCompra
-    .filter((d) => lotesProd.has(d.id_lote) && registradas.has(d.id_compra))
-    .map((d) => ({ ...d, fecha: compras.find((c) => c.id_compra === d.id_compra)?.fecha_compra || '' }))
-    .sort((a, b) => b.fecha.localeCompare(a.fecha))[0];
-  const costoRef = ultimaCompra ? Number(ultimaCompra.precio_unitario_compra) : null;
+  const costoRef = producto && detalle?.costo_referencia != null ? Number(detalle.costo_referencia) : null;
   const precioSugerido = costoRef != null && margen != null
     ? Math.round(costoRef * (1 + margen / 100) * (1 + (cat?.porcentaje_iva ?? 19) / 100))
     : null;
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // v3: id_producto ES el código (SKU) del negocio — lo asigna el usuario,
-    // la app no lo inventa. Formato validado igual que ck_producto_codigo.
+    // id_producto ES el código (SKU) del negocio. Vacío = el backend genera
+    // PROD-NN (CU_03_02). Formato igual a ck_producto_codigo.
     const codigo = (formData.codigo || '').trim().toUpperCase();
-    if (!CODIGO_REGEX.test(codigo)) {
+    if (!producto && codigo && !CODIGO_REGEX.test(codigo)) {
       showAlert.error('Código inválido', 'El código (SKU) debe tener entre 3 y 30 caracteres: solo letras mayúsculas, números y guiones.');
       return;
     }
-    const yaExiste = productos.some((p) => p.codigo === codigo && p.codigo !== producto?.codigo);
-    if (yaExiste) {
-      showAlert.error('Código duplicado', 'Ya existe un producto registrado con ese código.');
-      return;
-    }
-    if (!(Number(formData.precioVenta) >= 0) || formData.precioVenta === '') {
+    if (formData.precioVenta === '' || !(Number(formData.precioVenta) >= 0)) {
       showAlert.error('Precio inválido', 'El precio de venta debe ser un número mayor o igual a 0.');
       return;
     }
-    const dataToSave = producto ? { ...formData, codigo } : { ...formData, codigo, estado: 'Activo' };
-    onSave({ ...dataToSave, nitsProveedores: nitsSeleccionados });
+    if (nitsSeleccionados.length === 0) {
+      showAlert.error('Faltan proveedores', 'Un producto debe estar asociado a al menos un proveedor.');
+      return;
+    }
+    onSave({
+      ...(producto || !codigo ? {} : { id_producto: codigo }),
+      nombre: formData.nombre,
+      descripcion: formData.descripcion,
+      id_categoria: formData.id_categoria,
+      id_unidad_medida: formData.id_unidad_medida,
+      precio_venta_actual: Number(formData.precioVenta),
+      margen_personalizado_porcentaje: formData.margenPersonalizado === '' ? null : Number(formData.margenPersonalizado),
+      maneja_vencimiento: Boolean(formData.maneja_vencimiento),
+      stock_minimo: Number(formData.stockMinimo || 0),
+      proveedores: nitsSeleccionados
+    });
   };
 
   const handleToggleProveedor = (nit) => {
@@ -134,8 +137,8 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
           <form {...formProps(handleSubmit)}>
             <div className="modal-body p-4 d-flex flex-column gap-3">
               <div className="row g-3">
-                <Field className="col-5" label="Código (SKU)" required error={errors.codigo}>
-                  <input type="text" name="codigo" required disabled={Boolean(producto)} className="form-control shadow-none text-uppercase" placeholder="Ej: TEQ-DJ-750"
+                <Field className="col-5" label="Código (SKU)" error={errors.codigo}>
+                  <input type="text" name="codigo" disabled={Boolean(producto)} className="form-control shadow-none text-uppercase" placeholder="Automático"
                     style={{ ...inputStyle, color: producto ? styles.mutedColor : styles.textColor }} value={formData.codigo || ''} onChange={handleChange} />
                 </Field>
                 <Field className="col-7" label="Nombre del Producto" required error={errors.nombre}>
@@ -148,19 +151,19 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
               </Field>
 
               <div className="row g-3">
-                <Field className="col-6" label="Categoría" required error={errors.categoria}>
-                  <select name="categoria" className="form-select shadow-none" required style={inputStyle} value={formData.categoria} onChange={handleChange}>
+                <Field className="col-6" label="Categoría" required error={errors.id_categoria}>
+                  <select name="id_categoria" className="form-select shadow-none" required style={inputStyle} value={formData.id_categoria} onChange={handleChange}>
                     <option value="">Seleccione...</option>
-                    {categorias.map((cat) => (
-                      <option key={cat.codigo} value={cat.nombre}>{cat.nombre}</option>
+                    {categorias.map((c) => (
+                      <option key={c.id_categoria} value={c.id_categoria}>{c.nombre}</option>
                     ))}
                   </select>
                 </Field>
-                <Field className="col-6" label="Unidad de Medida" required error={errors.unidad_medida}>
-                  <select name="unidad_medida" className="form-select shadow-none" required style={inputStyle} value={formData.unidad_medida} onChange={handleChange}>
+                <Field className="col-6" label="Unidad de Medida" required error={errors.id_unidad_medida}>
+                  <select name="id_unidad_medida" className="form-select shadow-none" required style={inputStyle} value={formData.id_unidad_medida} onChange={handleChange}>
                     <option value="">Seleccione...</option>
                     {unidadesMedida.map((um) => (
-                      <option key={um.id_unidad_medida} value={um.nombre}>{um.nombre}</option>
+                      <option key={um.id_unidad_medida} value={um.id_unidad_medida}>{um.nombre}</option>
                     ))}
                   </select>
                 </Field>
@@ -198,7 +201,7 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
                     min="0"
                     step="0.01"
                     className="form-control shadow-none"
-                    placeholder={formData.categoria ? `Categoría: ${categorias.find((c) => c.nombre === formData.categoria)?.margen_defecto_porcentaje ?? 0}%` : 'Seleccione categoría'}
+                    placeholder={cat ? `Categoría: ${cat.margen_defecto_porcentaje}%` : 'Seleccione categoría'}
                     style={inputStyle}
                     value={formData.margenPersonalizado}
                     onChange={handleChange}
@@ -210,7 +213,7 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
                     type="text"
                     disabled
                     className="form-control"
-                    value={formData.categoria ? `${categorias.find((c) => c.nombre === formData.categoria)?.porcentaje_iva ?? 19}%` : '—'}
+                    value={cat ? `${cat.porcentaje_iva}%` : '—'}
                     style={{ ...inputStyle, color: styles.mutedColor }}
                   />
                 </div>
@@ -236,25 +239,25 @@ export const ProductoFormModal = ({ show, onClose, onSave, producto, productos =
 
               <div>
                 <label className="form-label small fw-semibold">
-                  Proveedores que surten este producto <span className="fw-normal" style={{ color: styles.mutedColor }}>(opcional)</span>
+                  Proveedores que surten este producto <span style={{ color: 'var(--brand-danger)' }}>*</span> <span className="fw-normal" style={{ color: styles.mutedColor }}>(mínimo uno)</span>
                 </label>
                 <div
                   className="rounded-3 p-2"
                   style={{ border: `1px solid ${styles.borderCol}`, backgroundColor: styles.inputBg, maxHeight: '160px', overflowY: 'auto' }}
                 >
-                  {proveedoresActivos.length === 0 ? (
+                  {proveedores.length === 0 ? (
                     <div className="small" style={{ color: styles.mutedColor }}>No hay proveedores activos registrados.</div>
                   ) : (
-                    proveedoresActivos.map((prov) => (
-                      <div className="form-check small" key={prov.nit}>
+                    proveedores.map((prov) => (
+                      <div className="form-check small" key={prov.id_proveedor}>
                         <input
-                          id={`prov-${prov.nit}`}
+                          id={`prov-${prov.id_proveedor}`}
                           type="checkbox"
                           className="form-check-input"
-                          checked={nitsSeleccionados.includes(prov.nit)}
-                          onChange={() => handleToggleProveedor(prov.nit)}
+                          checked={nitsSeleccionados.includes(prov.id_proveedor)}
+                          onChange={() => handleToggleProveedor(prov.id_proveedor)}
                         />
-                        <label htmlFor={`prov-${prov.nit}`} className="form-check-label">{prov.razon_social}</label>
+                        <label htmlFor={`prov-${prov.id_proveedor}`} className="form-check-label">{prov.razon_social}</label>
                       </div>
                     ))
                   )}

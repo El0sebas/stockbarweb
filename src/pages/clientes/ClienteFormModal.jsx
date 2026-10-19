@@ -3,7 +3,7 @@ import { Person } from 'react-bootstrap-icons';
 import { Field, useFormValidation } from '../../components/common/Field';
 
 export const ClienteFormModal = ({ show, onClose, onSave, cliente }) => {
-  const initialState = { tipo_documento: 'CC', numero_documento: '', nombre_completo: '', telefono: '', correo: '', fecha_nacimiento: '', genero: '' };
+  const initialState = { tipo_documento: 'CC', numero_documento: '', nombres: '', apellidos: '', telefono: '', correo: '', fecha_nacimiento: '', genero: '' };
   const [formData, setFormData] = useState(initialState);
   const { errors, formProps, resetErrors } = useFormValidation();
 
@@ -12,7 +12,8 @@ export const ClienteFormModal = ({ show, onClose, onSave, cliente }) => {
       setFormData({
         tipo_documento: cliente.tipo_documento || 'CC',
         numero_documento: cliente.numero_documento,
-        nombre_completo: cliente.nombre_completo,
+        nombres: cliente.nombres,
+        apellidos: cliente.apellidos,
         telefono: cliente.telefono || '',
         correo: cliente.correo || '',
         fecha_nacimiento: cliente.fecha_nacimiento || '',
@@ -66,12 +67,17 @@ export const ClienteFormModal = ({ show, onClose, onSave, cliente }) => {
                   <input type="text" name="numero_documento" required className="form-control shadow-none" placeholder="Ej: 1017223344" style={inputStyle} value={formData.numero_documento} onChange={handleChange} />
                 </Field>
               </div>
-              <Field label="Nombre Completo" required error={errors.nombre_completo}>
-                <input type="text" name="nombre_completo" required className="form-control shadow-none" placeholder="Ej: Andrés Pérez" style={inputStyle} value={formData.nombre_completo} onChange={handleChange} />
-              </Field>
+              <div className="row g-3">
+                <Field className="col-6" label="Nombres" required error={errors.nombres}>
+                  <input type="text" name="nombres" required maxLength={60} className="form-control shadow-none" placeholder="Ej: Andrés" style={inputStyle} value={formData.nombres} onChange={handleChange} />
+                </Field>
+                <Field className="col-6" label="Apellidos" required error={errors.apellidos}>
+                  <input type="text" name="apellidos" required maxLength={60} className="form-control shadow-none" placeholder="Ej: Pérez" style={inputStyle} value={formData.apellidos} onChange={handleChange} />
+                </Field>
+              </div>
               <div className="row g-3">
                 <Field className="col-7" label="Fecha de nacimiento" error={errors.fecha_nacimiento}>
-                  <input type="date" name="fecha_nacimiento" className="form-control shadow-none" style={inputStyle} value={formData.fecha_nacimiento} onChange={handleChange} />
+                  <input type="date" name="fecha_nacimiento" max={new Date().toLocaleDateString('sv-SE')} className="form-control shadow-none" style={inputStyle} value={formData.fecha_nacimiento} onChange={handleChange} />
                 </Field>
                 <Field className="col-5" label="Género" error={errors.genero}>
                   <select name="genero" className="form-select shadow-none" style={inputStyle} value={formData.genero} onChange={handleChange}>

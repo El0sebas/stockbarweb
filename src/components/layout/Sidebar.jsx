@@ -13,26 +13,27 @@ import {
   DoorOpen
 } from 'react-bootstrap-icons';
 
-export const Sidebar = ({ activeTab, setActiveTab }) => {
-  const menuItems = [
-    { id: 'inicio', label: 'Inicio', icon: House },
-    { id: 'roles', label: 'Roles', icon: ShieldCheck },
-    { id: 'usuarios', label: 'Usuarios', icon: People },
-    { id: 'categorias', label: 'Categorías', icon: Tag },
-    { id: 'productos', label: 'Productos', icon: BoxSeam },
-    { id: 'proveedores', label: 'Proveedores', icon: Truck },
-    { id: 'compras', label: 'Compras', icon: Bag },
-    { id: 'bajas', label: 'Bajas', icon: ExclamationTriangle },
-    { id: 'jornada', label: 'Jornada', icon: DoorOpen },
-    { id: 'clientes', label: 'Clientes', icon: Person },
-    { id: 'ventas', label: 'Ventas', icon: Cart },
-  ];
+// Cada módulo con el permiso que exige el backend. Ocultar un módulo es solo
+// comodidad visual: la autorización real la hace el middleware RBAC de la API.
+export const MENU = [
+  { id: 'inicio', label: 'Inicio', icon: House, permiso: 'VER_REPORTES' },
+  { id: 'roles', label: 'Roles', icon: ShieldCheck, permiso: 'GESTIONAR_ROLES' },
+  { id: 'usuarios', label: 'Usuarios', icon: People, permiso: 'GESTIONAR_USUARIOS' },
+  { id: 'categorias', label: 'Categorías', icon: Tag, permiso: 'GESTIONAR_CATEGORIAS' },
+  { id: 'productos', label: 'Productos', icon: BoxSeam, permiso: 'GESTIONAR_PRODUCTOS' },
+  { id: 'proveedores', label: 'Proveedores', icon: Truck, permiso: 'GESTIONAR_PROVEEDORES' },
+  { id: 'compras', label: 'Compras', icon: Bag, permiso: 'GESTIONAR_COMPRAS' },
+  { id: 'bajas', label: 'Bajas', icon: ExclamationTriangle, permiso: 'GESTIONAR_BAJAS' },
+  { id: 'jornada', label: 'Jornada', icon: DoorOpen, permiso: 'GESTIONAR_JORNADAS' },
+  { id: 'clientes', label: 'Clientes', icon: Person, permiso: 'GESTIONAR_CLIENTES' },
+  { id: 'ventas', label: 'Ventas', icon: Cart, permiso: 'GESTIONAR_VENTAS' },
+];
 
+export const Sidebar = ({ activeTab, setActiveTab, menuItems }) => {
   return (
     <aside
-      className="d-flex flex-column p-3 border-end flex-shrink-0"
+      className="sidebar d-flex flex-column p-3 border-end flex-shrink-0"
       style={{
-        width: '220px',
         minHeight: '100vh',
         backgroundColor: 'var(--bg-card)',
         borderColor: 'var(--border-color)',
@@ -52,7 +53,7 @@ export const Sidebar = ({ activeTab, setActiveTab }) => {
               <line x1="18" y1="20" x2="18" y2="6" />
             </svg>
           </div>
-          <span className="fs-5 fw-bold" style={{ color: 'var(--text-main)', letterSpacing: '-0.3px' }}>
+          <span className="sidebar-label fs-5 fw-bold" style={{ color: 'var(--text-main)', letterSpacing: '-0.3px' }}>
             StockBar
           </span>
         </div>
@@ -68,6 +69,8 @@ export const Sidebar = ({ activeTab, setActiveTab }) => {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
+                title={item.label}
+                aria-label={item.label}
                 className="nav-link d-flex align-items-center gap-3 px-3 py-2 text-start border-0 w-100"
                 style={{
                   backgroundColor: isActive ? 'var(--sidebar-active-bg)' : 'transparent',
@@ -79,7 +82,7 @@ export const Sidebar = ({ activeTab, setActiveTab }) => {
                 }}
               >
                 <Icon size={16} color={itemColor} />
-                <span>{item.label}</span>
+                <span className="sidebar-label">{item.label}</span>
               </button>
             );
           })}

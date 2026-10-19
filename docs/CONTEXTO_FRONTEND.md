@@ -1,5 +1,7 @@
 # Contexto de frontend — StockBar (para rediseño en Figma)
 
+> **Documento histórico (etapa con datos simulados).** Desde octubre de 2026 la web ya no usa `localStorage` ni datos de ejemplo: todo pasa por la API (`/backend`, ver `backend/README.md`), y las reglas de negocio viven en el backend y en los triggers de `scripts/sch.sql` (ver `docs/DATABASE.md`). Los flujos desde el punto de vista del actor siguen sirviendo como referencia; los detalles técnicos de abajo (mocks, `localStorage`, tokens simulados, ids numéricos) ya no aplican a la web. La app móvil (Flutter) debe migrarse a la misma API.
+
 Este documento resume el estado **actual e implementado** del frontend (web + móvil), para usarlo como referencia al editar la plantilla de Figma. No es un plan a futuro: todo lo aquí descrito ya funciona en código. Ver también `SISTEMA_DE_DISENO.md` para colores/tokens exactos.
 
 Repos: `stockbar-web` (React + Bootstrap 5) y `stockbar_mobile` (Flutter). Ambos son **mock-only**: no hay backend todavía, los datos viven en `localStorage` (web) o en memoria (móvil), con catálogos semilla compartidos entre pantallas para que todo esté correlacionado.

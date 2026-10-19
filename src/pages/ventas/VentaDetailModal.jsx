@@ -1,19 +1,19 @@
 import React from 'react';
 import { CartCheck, Person, CreditCard, Calendar3, Printer } from 'react-bootstrap-icons';
-import { calcularTotalesVenta } from '../../utils/impuestos';
 import { generarFacturaPDF } from '../../utils/factura';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { defaultMetodosPago } from '../../data/defaultMetodosPago';
+import { useApi } from '../../hooks/useApi';
 
-export const VentaDetailModal = ({ show, onClose, venta, clientes = [] }) => {
-  const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
+// CU_06_08 — solo lectura. Una venta COMPLETADA NUNCA se anula: aquí solo
+// se consulta y se descarga su factura. Base gravable, IVA y total vienen de
+// vw_totales_venta (backend).
+export const VentaDetailModal = ({ show, onClose, venta: resumen }) => {
+  const { data: detalle } = useApi(show && resumen ? `/ventas/${resumen.id_venta}` : null);
 
-  if (!show || !venta) return null;
+  if (!show || !resumen) return null;
 
-  // Espejo de vw_totales_venta: base gravable + IVA a partir de la tasa
-  // que quedó congelada por línea al momento de la venta.
-  const totales = calcularTotalesVenta(venta.productos || []);
-  const nombreMetodoPago = metodosPago.find((m) => m.id_metodo_pago === venta.id_metodo_pago)?.nombre || 'N/A';
+  const venta = detalle?.id_venta === resumen.id_venta ? detalle : resumen;
+  const totales = { baseGravable: venta.base_gravable, iva: venta.iva };
+  const nombreMetodoPago = venta.metodo_pago;
 
   const styles = {
     modalBg: 'var(--bg-card)',
@@ -54,7 +54,7 @@ export const VentaDetailModal = ({ show, onClose, venta, clientes = [] }) => {
                 <span className="badge px-2 py-1 mb-1 fw-bold" style={{ backgroundColor: 'var(--amber-action)', color: '#FFFFFF' }}>
                   {venta.id_venta}
                 </span>
-                <h4 className="fw-bold m-0">{venta.cliente}</h4>
+                <h4 className="fw-bold m-0">{venta.cliente || 'Venta de mostrador'}</h4>
               </div>
               <span className="badge px-3 py-2 fw-medium" style={{ ...estadoBadgeStyle(), borderRadius: '12px' }}>
                 {venta.estado}
@@ -94,13 +94,13 @@ export const VentaDetailModal = ({ show, onClose, venta, clientes = [] }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {(venta.productos || []).map((p, idx) => (
-                    <tr key={idx} style={{ borderColor: styles.borderCol }}>
-                      <td className="fw-semibold">{p.nombre}</td>
+                  {(venta.detalles || []).map((p) => (
+                    <tr key={p.id_lote} style={{ borderColor: styles.borderCol }}>
+                      <td className="fw-semibold">{p.producto}</td>
                       <td className="text-center">{p.cantidad}</td>
-                      <td className="text-end">$ {Number(p.precio).toLocaleString()}</td>
-                      <td className="text-end fw-semibold">$ {Number(p.precio * p.cantidad).toLocaleString()}</td>
-                      <td className="small" style={{ color: styles.mutedColor }}>{p.lote || 'Sin lote'}</td>
+                      <td className="text-end">$ {Number(p.precio_unitario_venta).toLocaleString('es-CO')}</td>
+                      <td className="text-end fw-semibold">$ {Number(p.subtotal).toLocaleString('es-CO')}</td>
+                      <td className="small" style={{ color: styles.mutedColor }}>{p.id_lote}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -133,7 +133,7 @@ export const VentaDetailModal = ({ show, onClose, venta, clientes = [] }) => {
               </div>
               <div className="d-flex justify-content-between align-items-center gap-3" style={{ minWidth: '220px' }}>
                 <span className="fw-bold fs-6">Total:</span>
-                <span className="fw-bold fs-5" style={{ color: 'var(--amber-action)' }}>$ {Number(venta.total).toLocaleString()}</span>
+                <span className="fw-bold fs-5" style={{ color: 'var(--amber-action)' }}>$ {Number(venta.total_venta).toLocaleString('es-CO')}</span>
               </div>
             </div>
           </div>
@@ -147,12 +147,12 @@ export const VentaDetailModal = ({ show, onClose, venta, clientes = [] }) => {
             >
               Cerrar
             </button>
-            {venta.estado === 'COMPLETADA' && (
+            {venta.estado === 'COMPLETADA' && detalle && (
               <button
                 type="button"
                 className="btn btn-sm px-4 fw-bold text-white d-flex align-items-center gap-2 border-0"
                 style={{ backgroundColor: 'var(--amber-action)' }}
-                onClick={() => generarFacturaPDF(venta, clientes)}
+                onClick={() => generarFacturaPDF(venta)}
               >
                 <Printer size={16} /> Descargar factura
               </button>

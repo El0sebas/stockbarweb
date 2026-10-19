@@ -223,6 +223,35 @@ textarea::placeholder {
   filter: invert(1);
 }
 
+/* Menú lateral: completo en escritorio; en teléfono queda solo con iconos
+   para no tapar el contenido (el nombre sale en el title del botón). */
+.sidebar {
+  width: 220px;
+}
+@media (max-width: 767.98px) {
+  .sidebar {
+    width: 64px;
+    padding: 0.75rem 0.5rem !important;
+  }
+  .sidebar .sidebar-label {
+    display: none;
+  }
+  .sidebar .nav-link {
+    justify-content: center;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+}
+
+/* Controles nativos (calendario de los input date) y flecha de los select:
+   claros en modo oscuro, si no quedan casi invisibles. */
+[data-theme='dark'] {
+  color-scheme: dark;
+}
+[data-theme='dark'] .form-select {
+  --bs-form-select-bg-img: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23cbd5e1' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+}
+
 /* Dropdown del menú de usuario: sin la flecha por defecto de Bootstrap, y
    coloreado con las variables del tema en vez del blanco fijo de Bootstrap. */
 .icon-dropdown-toggle::after {

@@ -1,7 +1,8 @@
 import React from 'react';
 import { ExclamationTriangle, Calendar3, Person, BoxSeam, Tag } from 'react-bootstrap-icons';
 
-export const BajaDetailModal = ({ show, onClose, baja, lote, producto, motivoNombre }) => {
+// La baja llega de la API con producto, lote, motivo y usuario ya resueltos.
+export const BajaDetailModal = ({ show, onClose, baja }) => {
   if (!show || !baja) return null;
 
   const styles = {
@@ -37,14 +38,14 @@ export const BajaDetailModal = ({ show, onClose, baja, lote, producto, motivoNom
                 <span className="badge px-2 py-1 mb-1 fw-bold" style={{ backgroundColor: 'var(--brand-danger)', color: '#FFFFFF' }}>
                   Baja #{baja.id_baja}
                 </span>
-                <h4 className="fw-bold m-0">{producto?.nombre || 'Producto eliminado'}</h4>
+                <h4 className="fw-bold m-0">{baja.producto}</h4>
               </div>
               <span
                 className="badge px-3 py-2 fw-medium d-flex align-items-center gap-1"
                 style={{ backgroundColor: 'var(--danger-soft-bg)', color: 'var(--brand-danger)', borderRadius: '12px' }}
               >
                 <ExclamationTriangle size={12} />
-                {motivoNombre}
+                {baja.motivo}
               </span>
             </div>
 
@@ -74,8 +75,8 @@ export const BajaDetailModal = ({ show, onClose, baja, lote, producto, motivoNom
                     <span className="small">Lote afectado</span>
                   </div>
                   <span className="fw-semibold">{baja.id_lote}</span>
-                  {lote?.fecha_vencimiento && (
-                    <div className="small" style={{ color: styles.mutedColor }}>Vence: {lote.fecha_vencimiento}</div>
+                  {baja.fecha_vencimiento && (
+                    <div className="small" style={{ color: styles.mutedColor }}>Vence: {baja.fecha_vencimiento}</div>
                   )}
                 </div>
               </div>
@@ -85,7 +86,7 @@ export const BajaDetailModal = ({ show, onClose, baja, lote, producto, motivoNom
                     <Tag size={16} />
                     <span className="small">Producto</span>
                   </div>
-                  <span className="fw-semibold">{producto?.codigo || 'N/A'}{producto?.categoria ? ` • ${producto.categoria}` : ''}</span>
+                  <span className="fw-semibold">{baja.id_producto} • {baja.categoria}</span>
                 </div>
               </div>
               <div className="col-12">

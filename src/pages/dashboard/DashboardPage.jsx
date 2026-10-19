@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   CurrencyDollar, BoxSeam, Trophy, Tags, FileEarmarkExcel, FileEarmarkPdf
 } from 'react-bootstrap-icons';
@@ -9,24 +9,22 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { showToast } from '../../utils/alerts';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { defaultProductos } from '../../data/defaultProductos';
-import { defaultLotes } from '../../data/defaultLotes';
-import { defaultVentas } from '../../data/defaultVentas';
-import { defaultMetodosPago } from '../../data/defaultMetodosPago';
-import { getStockDisponible } from '../../utils/stock';
-import { calcularTotalesVenta } from '../../utils/impuestos';
+import { useApi } from '../../hooks/useApi';
+import { consulta } from '../../services/api';
+import { FechaRangoFilter } from '../../components/common/FechaRangoFilter';
 
 ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
 const money = (v) => `$ ${Number(v || 0).toLocaleString('es-CO')}`;
 
-// Semáforo: ALERTA cuando ya tocó el mínimo, BAJO cuando está cerca de tocarlo.
-const semaforo = (actual, minimo) => {
-  if (actual <= minimo) return { label: 'ALERTA', color: 'var(--brand-danger)', soft: 'var(--danger-soft-bg)' };
-  if (actual <= minimo * 2) return { label: 'BAJO', color: 'var(--amber-action)', soft: 'var(--amber-soft-bg)' };
-  return { label: 'OK', color: 'var(--brand-success)', soft: 'var(--success-soft-bg)' };
+// Semáforo (lo calcula el backend): ALERTA al tocar el mínimo, BAJO cerca de tocarlo.
+const SEMAFORO = {
+  ALERTA: { label: 'ALERTA', color: 'var(--brand-danger)', soft: 'var(--danger-soft-bg)' },
+  BAJO: { label: 'BAJO', color: 'var(--amber-action)', soft: 'var(--amber-soft-bg)' },
+  OK: { label: 'OK', color: 'var(--brand-success)', soft: 'var(--success-soft-bg)' }
 };
+const semaforo = (estado) => SEMAFORO[estado] || SEMAFORO.OK;
+const porcentaje = (parte, total) => (total > 0 ? Number(((parte / total) * 100).toFixed(2)) : 0);
 
 // Chart.js no lee CSS vars: se resuelven contra el tema activo al renderizar.
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -39,70 +37,35 @@ const card = {
   border: '1px solid var(--border-color)'
 };
 
+// CU_11_01: todos los indicadores salen de GET /dashboard (vistas SQL:
+// vw_totales_venta, vw_detalle_venta, vw_stock_producto). Aquí solo se
+// grafican y se exportan (CU_11_02).
 export const DashboardPage = () => {
-  // Mismas fuentes que el resto de la app (stockbar_productos, _lotes,
-  // _ventas) — nada aquí se recalcula con datos inventados: espejo de
-  // vw_stock_producto (stock) y vw_totales_venta (ingresos/IVA/método de pago).
-  const [productos] = usePersistentState('stockbar_productos', defaultProductos);
-  const [lotes] = usePersistentState('stockbar_lotes', defaultLotes);
-  const [ventas] = usePersistentState('stockbar_ventas', defaultVentas);
-  const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
+  const [desde, setDesde] = useState('');
+  const [hasta, setHasta] = useState('');
+  const { data: d } = useApi(`/dashboard${consulta({ desde, hasta })}`);
 
   const tick = cssVar('--text-muted');
 
-  const stockPorProducto = productos
-    .filter((p) => p.estado === 'Activo')
-    .map((p) => ({ codigo: p.codigo, nombre: p.nombre, stockMinimo: p.stockMinimo, stockActual: getStockDisponible(lotes, p.codigo) }));
-
-  const ventasCompletadas = ventas.filter((v) => v.estado === 'COMPLETADA');
-  const lineasCompletadas = ventasCompletadas.flatMap((v) => v.productos);
-  const totalesGlobales = calcularTotalesVenta(lineasCompletadas);
+  if (!d) {
+    return <div className="text-center py-5" style={{ color: 'var(--text-muted)' }}>Cargando dashboard...</div>;
+  }
 
   const ventasTotales = {
-    total: totalesGlobales.total,
-    subtotal: totalesGlobales.baseGravable,
-    iva: totalesGlobales.iva,
-    cantidad: ventasCompletadas.length
+    total: Number(d.ventas.total),
+    subtotal: Number(d.ventas.base_gravable),
+    iva: Number(d.ventas.iva),
+    cantidad: d.ventas.ventas_completadas
   };
-
-  const stock = {
-    unidades: stockPorProducto.reduce((acc, p) => acc + p.stockActual, 0),
-    enAlerta: stockPorProducto.filter((p) => p.stockActual <= p.stockMinimo).length
-  };
-
-  // Agregados por producto/categoría/método de pago a partir de las líneas
-  // y pagos reales de las ventas COMPLETADA — mismo criterio que agruparía
-  // una consulta sobre vw_totales_venta + detalle_venta + venta_pago.
-  const porProducto = {};
-  lineasCompletadas.forEach((linea) => {
-    if (!porProducto[linea.nombre]) porProducto[linea.nombre] = { nombre: linea.nombre, unidades: 0, ingresos: 0 };
-    porProducto[linea.nombre].unidades += Number(linea.cantidad);
-    porProducto[linea.nombre].ingresos += Number(linea.precio) * Number(linea.cantidad);
-  });
-  const topProductosLista = Object.values(porProducto).sort((a, b) => b.unidades - a.unidades).slice(0, 5);
+  const stock = { unidades: Number(d.stock.unidades), enAlerta: d.stock.productos_en_alerta };
+  const stockPorProducto = d.stock_por_producto.map((s) => ({
+    codigo: s.id_producto, nombre: s.nombre, stockMinimo: Number(s.stock_minimo), stockActual: Number(s.stock_actual), estado: s.semaforo
+  }));
+  const topProductosLista = d.top_productos.map((p) => ({ nombre: p.producto, unidades: Number(p.unidades), ingresos: Number(p.total) }));
   const masVendido = topProductosLista[0] || { nombre: 'Sin ventas todavía', unidades: 0, ingresos: 0 };
-
-  const porCategoria = {};
-  lineasCompletadas.forEach((linea) => {
-    const nombreCategoria = linea.categoria || 'Sin categoría';
-    if (!porCategoria[nombreCategoria]) porCategoria[nombreCategoria] = { nombre: nombreCategoria, total: 0 };
-    porCategoria[nombreCategoria].total += Number(linea.precio) * Number(linea.cantidad);
-  });
-  const categoriasLista = Object.values(porCategoria)
-    .map((c) => ({ ...c, porcentaje: ventasTotales.total > 0 ? Number(((c.total / ventasTotales.total) * 100).toFixed(2)) : 0 }))
-    .sort((a, b) => b.total - a.total);
+  const categoriasLista = d.ventas_por_categoria.map((c) => ({ nombre: c.categoria, total: Number(c.total), porcentaje: porcentaje(Number(c.total), ventasTotales.total) }));
   const categoriaLider = categoriasLista[0] || { nombre: 'Sin ventas todavía', total: 0, porcentaje: 0 };
-
-  // v3: venta.id_metodo_pago es único (ya no hay venta_pago/pago dividido).
-  const porMetodo = {};
-  ventasCompletadas.forEach((v) => {
-    const nombre = metodosPago.find((m) => m.id_metodo_pago === v.id_metodo_pago)?.nombre || 'N/A';
-    if (!porMetodo[nombre]) porMetodo[nombre] = { nombre, total: 0 };
-    porMetodo[nombre].total += Number(v.total);
-  });
-  const metodosPagoLista = Object.values(porMetodo)
-    .map((m) => ({ ...m, porcentaje: ventasTotales.total > 0 ? Number(((m.total / ventasTotales.total) * 100).toFixed(2)) : 0 }))
-    .sort((a, b) => b.total - a.total);
+  const metodosPagoLista = d.ventas_por_metodo_pago.map((m) => ({ nombre: m.metodo_pago, total: Number(m.total), porcentaje: porcentaje(Number(m.total), ventasTotales.total) }));
 
   const kpis = [
     {
@@ -172,9 +135,13 @@ export const DashboardPage = () => {
     }
   };
 
+  // El reporte dice qué periodo cubre (si no, un filtro por fechas no se nota en el archivo).
+  const periodo = desde || hasta ? `Periodo: ${desde || 'inicio'} a ${hasta || 'hoy'}` : 'Periodo: todo el historial';
+
   const exportarExcel = () => {
     const filas = [
       ['Reporte Dashboard StockBar'],
+      [periodo],
       [],
       ['KPI', 'Valor', 'Detalle'],
       ['Ventas Totales', ventasTotales.total, `Subtotal ${ventasTotales.subtotal} / IVA ${ventasTotales.iva}`],
@@ -189,15 +156,22 @@ export const DashboardPage = () => {
       ...categoriasLista.map((c) => [c.nombre, c.total, c.porcentaje]),
       [],
       ['Código', 'Producto', 'Stock mínimo', 'Stock actual', 'Estado'],
-      ...stockPorProducto.map((p) => [p.codigo, p.nombre, p.stockMinimo, p.stockActual, semaforo(p.stockActual, p.stockMinimo).label])
+      ...stockPorProducto.map((p) => [p.codigo, p.nombre, p.stockMinimo, p.stockActual, semaforo(p.estado).label])
     ];
-    const csv = filas.map((f) => f.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    // Un texto que empieza por = + - @ Excel lo ejecuta como fórmula: se
+    // antepone ' (los números se dejan tal cual).
+    const celda = (v) => {
+      const texto = String(v ?? '');
+      const seguro = typeof v !== 'number' && /^[=+\-@\t\r]/.test(texto) ? `'${texto}` : texto;
+      return `"${seguro.replace(/"/g, '""')}"`;
+    };
+    const csv = filas.map((f) => f.map(celda).join(',')).join('\n');
     const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = `dashboard-stockbar-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `dashboard-stockbar-${new Date().toLocaleDateString('sv-SE')}.csv`;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000); // revocar en el acto cancela la descarga en algunos navegadores
     showToast('success', 'Dashboard exportado a Excel (CSV)');
   };
 
@@ -205,8 +179,10 @@ export const DashboardPage = () => {
     const doc = new jsPDF();
     doc.setFontSize(16);
     doc.text('Dashboard StockBar', 14, 18);
+    doc.setFontSize(9);
+    doc.text(periodo, 14, 24);
     autoTable(doc, {
-      startY: 26,
+      startY: 29,
       head: [['KPI', 'Valor', 'Detalle']],
       body: [
         ['Ventas Totales', money(ventasTotales.total), `Subtotal ${money(ventasTotales.subtotal)} / IVA ${money(ventasTotales.iva)}`],
@@ -218,10 +194,10 @@ export const DashboardPage = () => {
     });
     autoTable(doc, {
       head: [['Código', 'Producto', 'Stock mínimo', 'Stock actual', 'Estado']],
-      body: stockPorProducto.map((p) => [p.codigo, p.nombre, p.stockMinimo, p.stockActual, semaforo(p.stockActual, p.stockMinimo).label]),
+      body: stockPorProducto.map((p) => [p.codigo, p.nombre, p.stockMinimo, p.stockActual, semaforo(p.estado).label]),
       headStyles: { fillColor: [26, 54, 93] }
     });
-    doc.save(`dashboard-stockbar-${new Date().toISOString().slice(0, 10)}.pdf`);
+    doc.save(`dashboard-stockbar-${new Date().toLocaleDateString('sv-SE')}.pdf`);
     showToast('success', 'Dashboard exportado a PDF');
   };
 
@@ -232,7 +208,8 @@ export const DashboardPage = () => {
           <h4 className="fw-bold m-0" style={{ color: 'var(--text-main)' }}>Dashboard</h4>
           <p className="small m-0" style={{ color: 'var(--text-muted)' }}>Resumen operativo de ventas e inventario</p>
         </div>
-        <div className="d-flex gap-2">
+        <div className="d-flex flex-wrap align-items-center gap-2">
+          <FechaRangoFilter desde={desde} hasta={hasta} onDesdeChange={setDesde} onHastaChange={setHasta} />
           <button
             className="btn btn-sm fw-semibold d-flex align-items-center gap-2"
             onClick={exportarExcel}
@@ -336,7 +313,7 @@ export const DashboardPage = () => {
                 </thead>
                 <tbody>
                   {stockPorProducto.map((p) => {
-                    const s = semaforo(p.stockActual, p.stockMinimo);
+                    const s = semaforo(p.estado);
                     return (
                       <tr key={p.codigo} style={{ borderColor: 'var(--border-color)' }}>
                         <td className="fw-bold small" style={{ color: 'var(--amber-action)' }}>{p.codigo}</td>

@@ -1,0 +1,65 @@
+# StockBar completo en un solo equipo: MySQL + API + web.
+# Para pruebas y la sustentación; NO es el despliegue de producción, que va
+# en la nube (CLAUDE.md regla 11, docs/DESPLIEGUE.md).
+#
+#   1. Copiar .env.example a .env y completar la sección "Docker local".
+#   2. docker compose up -d --build
+#   3. Abrir http://localhost:8080
+#
+# La primera vez MySQL carga scripts/sch.sql y la API crea el administrador
+# principal con ADMIN_CORREO / ADMIN_CONTRASENA.
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Defina MYSQL_ROOT_PASSWORD en .env}
+      MYSQL_DATABASE: stockbar
+      MYSQL_USER: stockbar_app
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Defina DB_PASSWORD en .env}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - ./scripts/sch.sql:/docker-entrypoint-initdb.d/01-sch.sql:ro
+      - stockbar-mysql:/var/lib/mysql
+    healthcheck:
+      # Durante la carga inicial MySQL no escucha por red: solo queda "sano"
+      # cuando sch.sql terminó.
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_USER: stockbar_app
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: stockbar
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET en .env (32 caracteres o más)}
+      CORS_ORIGINS: http://localhost:8080
+      ADMIN_CORREO: ${ADMIN_CORREO:-administrador@stockbar.com}
+      ADMIN_CONTRASENA: ${ADMIN_CONTRASENA:?Defina ADMIN_CONTRASENA en .env}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-StockBar <no-reply@stockbar.com>}
+    volumes:
+      - stockbar-facturas:/data/uploads
+    restart: unless-stopped
+
+  web:
+    build: .
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  stockbar-mysql:
+  stockbar-facturas:

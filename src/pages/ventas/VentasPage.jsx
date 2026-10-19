@@ -1,334 +1,226 @@
 import React, { useState } from 'react';
+import Swal from 'sweetalert2';
 import { Search, Plus, Trash, CartCheck, ClockHistory, ShieldExclamation, CashCoin, PlayFill, XCircle, Eye, Printer } from 'react-bootstrap-icons';
-import { showToast, showAlert } from '../../utils/alerts';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { useAuth } from '../../context/AuthContext';
-import { defaultMetodosPago } from '../../data/defaultMetodosPago';
-import { defaultVentas } from '../../data/defaultVentas';
-import { defaultCategorias } from '../../data/defaultCategorias';
-import { defaultClientes } from '../../data/defaultClientes';
-import { defaultProductos } from '../../data/defaultProductos';
-import { defaultLotes } from '../../data/defaultLotes';
-import { defaultJornadas } from '../../data/defaultJornadas';
-import { generateNextIdentifier } from '../../utils/identifiers';
-import { calcularTotalesVenta, getPorcentajeIva } from '../../utils/impuestos';
-import { validarEdadCliente } from '../../utils/edad';
-import { getLotesVendibles, getStockDisponible, getEstadoVencimiento } from '../../utils/stock';
-import { getJornadaAbierta } from '../../utils/jornada';
+import { showAlert } from '../../utils/alerts';
+import { useApi } from '../../hooks/useApi';
+import { useJornadaActual } from '../../hooks/useJornadaActual';
+import { api, consulta } from '../../services/api';
+import { ejecutar } from '../../utils/accion';
 import { QuantityStepper } from '../../components/common/QuantityStepper';
 import { VentaDetailModal } from './VentaDetailModal';
 import { FechaRangoFilter } from '../../components/common/FechaRangoFilter';
-import { estaEnRangoFecha } from '../../utils/fechas';
-import { generarFacturaPDF } from '../../utils/factura';
+import { descargarFactura, generarFacturaPDF } from '../../utils/factura';
+import { DIAS_SUGERENCIA_VENCIMIENTO } from '../../utils/stock';
 
+// Cliente genérico de mostrador (lo crea el backend al arrancar).
+const CONSUMIDOR_FINAL = 'CLI-00000';
+const formato = (n) => new Intl.NumberFormat('es-CO').format(Math.round(Number(n) || 0));
+
+// Ventas (CU_06_xx). El carrito es una venta PENDIENTE real en el servidor
+// desde el primer producto: el backend reparte por lotes (FEFO), reserva el
+// stock, congela el IVA y valida jornada, edad y vencimiento. Esta pantalla
+// solo envía la intención y muestra lo que responde la API.
 export const VentasPage = () => {
-  const { currentUser } = useAuth();
-  const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
-  const metodosPagoActivos = metodosPago.filter((m) => m.estado === 'Activo');
-
-  const [ventas, setVentas] = usePersistentState('stockbar_ventas', defaultVentas);
-  const [lotes, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
-  const [productos] = usePersistentState('stockbar_productos', defaultProductos);
-  const [categorias] = usePersistentState('stockbar_categorias', defaultCategorias);
-  const [clientes] = usePersistentState('stockbar_clientes', defaultClientes);
-  const [jornadas] = usePersistentState('stockbar_jornadas', defaultJornadas);
-  const jornadaAbierta = getJornadaAbierta(jornadas);
-
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroDesde, setFiltroDesde] = useState('');
   const [filtroHasta, setFiltroHasta] = useState('');
+  // El rango lo filtra la API: el listado trae como máximo las 500 ventas más
+  // recientes, así que filtrar solo en el navegador escondería las antiguas.
+  const { data: ventas, recargar } = useApi(`/ventas${consulta({ desde: filtroDesde, hasta: filtroHasta })}`, []);
+  const { jornada: jornadaAbierta } = useJornadaActual();
+  const { data: metodosPago } = useApi('/metodos-pago', []);
   const [showModal, setShowModal] = useState(false);
-  const [ventaActivaId, setVentaActivaId] = useState(null);
+  const [ventaActiva, setVentaActiva] = useState(null);
   const [productoSearch, setProductoSearch] = useState('');
   const [cantidadesBusqueda, setCantidadesBusqueda] = useState({});
-  const [idCliente, setIdCliente] = useState('');
-  const [metodoPagoVenta, setMetodoPagoVenta] = useState(metodosPagoActivos[0]?.id_metodo_pago || 1);
+  const [idCliente, setIdCliente] = useState(CONSUMIDOR_FINAL);
+  const [metodoPagoVenta, setMetodoPagoVenta] = useState('');
+  const [observaciones, setObservaciones] = useState('');
+  const [ocupado, setOcupado] = useState(false);
 
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedVenta, setSelectedVenta] = useState(null);
 
-  const ventaActiva = ventaActivaId ? ventas.find((v) => v.id_venta === ventaActivaId) : null;
-  const productosActivos = productos.filter((p) => p.estado === 'Activo');
-  const clientesActivos = clientes.filter((c) => c.estado === 'Activo');
-  const clienteSeleccionado = idCliente ? clientes.find((c) => c.id_cliente === idCliente) : null;
+  // Catálogo vendible y clientes solo mientras el formulario está abierto.
+  const { data: catalogo, recargar: recargarCatalogo } = useApi(showModal ? '/ventas/catalogo' : null, []);
+  const { data: clientesActivos } = useApi(showModal ? '/clientes?estado=true' : null, []);
 
-  const getRequiereEdad = (nombreCategoria) =>
-    Boolean(categorias.find((c) => c.nombre === nombreCategoria)?.requiere_verificacion_edad);
+  const metodoPago = metodoPagoVenta || metodosPago[0]?.id_metodo_pago || '';
+  const clienteSeleccionado = clientesActivos.find((c) => c.id_cliente === idCliente);
+  const requiereEdad = (idProducto) => Boolean(catalogo.find((p) => p.id_producto === idProducto)?.requiere_verificacion_edad);
 
-  // FEFO: lotes con stock real, sin vencer, ordenados por fecha_vencimiento
-  // ascendente (los sin vencimiento no se excluyen — un lote siempre existe
-  // aunque el producto no maneje vencimiento, ver docs/DATABASE.md).
-  const getLotesFEFO = (codigoProducto) =>
-    getLotesVendibles(lotes, codigoProducto)
-      .filter((l) => Number(l.cantidad_disponible) > 0 && getEstadoVencimiento(l.fecha_vencimiento) !== 'vencido')
-      .sort((a, b) => {
-        if (!a.fecha_vencimiento && !b.fecha_vencimiento) return 0;
-        if (!a.fecha_vencimiento) return 1;
-        if (!b.fecha_vencimiento) return -1;
-        return new Date(a.fecha_vencimiento) - new Date(b.fecha_vencimiento);
-      });
+  // El backend guarda una línea por lote; el carrito se muestra por producto.
+  const carrito = Object.values(
+    (ventaActiva?.detalles || []).reduce((acc, l) => {
+      const item = (acc[l.id_producto] ||= { id_producto: l.id_producto, producto: l.producto, cantidad: 0, subtotal: 0, lotes: [] });
+      item.cantidad += Number(l.cantidad);
+      item.subtotal += Number(l.subtotal);
+      item.lotes.push(`${l.id_lote} ×${Number(l.cantidad)}`);
+      return acc;
+    }, {})
+  );
 
-  // Solo una sugerencia visual (mismo criterio de siempre): el lote más
-  // próximo a vencer dentro del rango de 15 días.
-  const getSugerenciaVencimiento = (codigoProducto) => {
-    const proximo = getLotesFEFO(codigoProducto).find((l) => l.fecha_vencimiento);
-    if (!proximo) return null;
-    const dias = Math.ceil((new Date(proximo.fecha_vencimiento) - new Date()) / 86400000);
-    return dias <= 15 ? { ...proximo, dias } : null;
+  // Señal visual "Por vencer": el próximo vencimiento vendible está a 15 días o menos.
+  const diasParaVencer = (prod) => {
+    if (!prod.proximo_vencimiento) return null;
+    const dias = Math.ceil((new Date(`${prod.proximo_vencimiento}T00:00:00`) - new Date()) / 86400000);
+    return dias <= DIAS_SUGERENCIA_VENCIMIENTO ? dias : null;
   };
 
-  const handleOpenModal = (ventaExistente = null) => {
+  // Envuelve cada llamada del carrito: evita doble clic y refresca la venta y el stock.
+  const conVenta = async (llamada, exito) => {
+    setOcupado(true);
+    const venta = await ejecutar(llamada, exito);
+    setOcupado(false);
+    if (venta && venta !== true) setVentaActiva(venta);
+    recargarCatalogo();
+    return venta;
+  };
+
+  const handleOpenModal = async (ventaExistente = null) => {
     if (!jornadaAbierta) {
       showAlert.error('No hay jornada abierta', 'Debes abrir una jornada (menú "Jornada") antes de poder registrar ventas.');
       return;
     }
-    setVentaActivaId(ventaExistente?.id_venta || null);
-    // Cliente "Consumidor Final" (id_cliente 0) es el único cliente "sin
-    // registro" — por defecto en el punto de venta, y sin verificación de
-    // edad (ver utils/edad.js), así que el cajero debe cambiarlo
-    // explícitamente a un cliente real si el producto la exige.
-    setIdCliente(
-      ventaExistente
-        ? (ventaExistente.id_cliente != null ? ventaExistente.id_cliente : 'CLI-00000')
-        : 'CLI-00000'
-    );
+    const venta = ventaExistente ? await ejecutar(() => api.get(`/ventas/${ventaExistente.id_venta}`)) : null;
+    if (ventaExistente && !venta) return;
+    setVentaActiva(venta);
+    setIdCliente(venta ? venta.id_cliente : CONSUMIDOR_FINAL);
+    setMetodoPagoVenta(venta?.id_metodo_pago || '');
+    setObservaciones(venta?.observaciones || '');
     setProductoSearch('');
     setCantidadesBusqueda({});
-    setMetodoPagoVenta(ventaExistente?.id_metodo_pago || metodosPagoActivos[0]?.id_metodo_pago || 1);
     setShowModal(true);
   };
 
-  const actualizarVenta = (idVenta, updater) => {
-    setVentas((prev) => prev.map((v) => (v.id_venta === idVenta ? updater(v) : v)));
-  };
+  const cabecera = (cambios = {}) => ({
+    id_cliente: idCliente,
+    id_metodo_pago: metodoPago,
+    observaciones: observaciones.trim() || null,
+    ...cambios
+  });
 
-  const recalcularTotal = (venta) =>
-    calcularTotalesVenta(venta.productos.map((p) => ({ precio: p.precio, cantidad: p.cantidad, porcentajeIva: p.porcentajeIva }))).total;
-
-  // Crea la venta PENDIENTE real en el "servidor" (stockbar_ventas) en el
-  // momento del primer producto agregado — el carrito nunca es solo un
-  // estado local del navegador.
-  const crearVentaPendiente = () => {
-    const idVenta = generateNextIdentifier({ items: ventas, key: 'id_venta', prefix: 'VTA', pad: 6, separator: '-' });
-    const nuevaVenta = {
-      id_venta: idVenta,
-      id_cliente: idCliente || null,
-      cliente: clienteSeleccionado ? clienteSeleccionado.nombre_completo : 'Cliente de mostrador',
-      id_jornada: jornadaAbierta.id_jornada,
-      id_usuario: currentUser?.id_usuario || null,
-      usuario: currentUser?.nombre || 'N/A',
-      id_metodo_pago: metodoPagoVenta,
-      fecha_hora_venta: new Date().toISOString(),
-      estado: 'PENDIENTE',
-      observaciones: null,
-      productos: [],
-      total: 0
-    };
-    setVentas((prev) => [nuevaVenta, ...prev]);
-    setVentaActivaId(idVenta);
-    return idVenta;
-  };
-
-  const handleCambiarCliente = (value) => {
-    setIdCliente(value);
-    if (ventaActivaId) {
-      // ojo: "cli?.id_cliente || null" rompía para Consumidor Final porque
-      // 0 || null da null en JS — hay que comparar explícitamente con null.
-      const cli = value ? clientes.find((c) => c.id_cliente === Number(value)) : null;
-      actualizarVenta(ventaActivaId, (v) => ({ ...v, id_cliente: cli ? cli.id_cliente : null, cliente: cli ? cli.nombre_completo : 'Cliente de mostrador' }));
-    }
-  };
-
+  // Primer producto: crea la venta PENDIENTE con su línea en una sola
+  // transacción (si el backend la rechaza, no queda ninguna venta huérfana).
   const handleAgregarProducto = (prod) => {
     if (!jornadaAbierta) {
       showAlert.error('No hay jornada abierta', 'La venta no puede registrarse porque no hay una jornada ABIERTA.');
       return;
     }
-
-    // Ayuda de UX: avisar antes de guardar (la BD vuelve a validar al confirmar).
-    if (getRequiereEdad(prod.categoria)) {
-      const mensajeEdad = validarEdadCliente(clienteSeleccionado);
-      if (mensajeEdad) {
-        showAlert.error('Verificación de edad requerida', mensajeEdad);
-        return;
-      }
-    }
-
-    const cantidadDeseada = cantidadesBusqueda[prod.codigo] || 1;
-    const lotesFEFO = getLotesFEFO(prod.codigo);
-    const totalDisponible = lotesFEFO.reduce((acc, l) => acc + Number(l.cantidad_disponible), 0);
-
-    if (totalDisponible < cantidadDeseada) {
-      showAlert.error('Stock insuficiente', 'La cantidad solicitada supera el disponible del lote.');
-      return;
-    }
-
-    const idVenta = ventaActivaId || crearVentaPendiente();
-    const porcentajeIva = getPorcentajeIva(categorias, prod.categoria);
-
-    // Reparte la cantidad en una línea por lote (FEFO): cada línea de venta
-    // referencia un solo lote, igual que detalle_venta.id_lote.
-    let restante = cantidadDeseada;
-    const consumo = [];
-    for (const lote of lotesFEFO) {
-      if (restante <= 0) break;
-      const take = Math.min(restante, Number(lote.cantidad_disponible));
-      consumo.push({ lote, take });
-      restante -= take;
-    }
-
-    setLotes((prev) =>
-      prev.map((l) => {
-        const c = consumo.find((c) => c.lote.id_lote === l.id_lote);
-        return c ? { ...l, cantidad_disponible: Number(l.cantidad_disponible) - c.take } : l;
-      })
-    );
-
-    actualizarVenta(idVenta, (venta) => {
-      const productosActualizados = [...venta.productos];
-      consumo.forEach(({ lote, take }) => {
-        const idx = productosActualizados.findIndex((p) => p.id_lote === lote.id_lote);
-        if (idx >= 0) {
-          productosActualizados[idx] = { ...productosActualizados[idx], cantidad: productosActualizados[idx].cantidad + take };
-        } else {
-          productosActualizados.push({
-            id_lote: lote.id_lote,
-            nombre: prod.nombre,
-            categoria: prod.categoria,
-            cantidad: take,
-            precio: prod.precioVenta,
-            lote: lote.id_lote,
-            porcentajeIva
-          });
-        }
-      });
-      const ventaActualizada = { ...venta, productos: productosActualizados };
-      return { ...ventaActualizada, total: recalcularTotal(ventaActualizada) };
-    });
-
-    setCantidadesBusqueda((prev) => ({ ...prev, [prod.codigo]: 1 }));
+    const linea = { id_producto: prod.id_producto, cantidad: cantidadesBusqueda[prod.id_producto] || 1 };
+    const agregado = ventaActiva
+      ? conVenta(() => api.post(`/ventas/${ventaActiva.id_venta}/productos`, linea))
+      : conVenta(() => api.post('/ventas', { ...cabecera(), productos: [linea] }));
+    agregado.then((ok) => ok && setCantidadesBusqueda((prev) => ({ ...prev, [prod.id_producto]: 1 })));
   };
 
-  const handleQuitarLinea = (idLote) => {
+  const handleCambiarCantidad = (idProducto, cantidad) =>
+    conVenta(() => api.put(`/ventas/${ventaActiva.id_venta}/productos/${idProducto}`, { cantidad }));
+
+  const handleQuitarProducto = (idProducto) =>
+    conVenta(() => api.del(`/ventas/${ventaActiva.id_venta}/productos/${idProducto}`));
+
+  // Cambiar cliente o método de pago se guarda en la venta PENDIENTE; el
+  // backend revalida las líneas (p. ej. la edad del nuevo cliente).
+  const guardarCabecera = async (cambios, revertir) => {
     if (!ventaActiva) return;
-    const linea = ventaActiva.productos.find((p) => p.id_lote === idLote);
-    if (!linea) return;
-
-    setLotes((prev) => prev.map((l) => (l.id_lote === idLote ? { ...l, cantidad_disponible: Number(l.cantidad_disponible) + linea.cantidad } : l)));
-    actualizarVenta(ventaActiva.id_venta, (venta) => {
-      const productosActualizados = venta.productos.filter((p) => p.id_lote !== idLote);
-      const ventaActualizada = { ...venta, productos: productosActualizados };
-      return { ...ventaActualizada, total: recalcularTotal(ventaActualizada) };
-    });
+    const ok = await conVenta(() => api.put(`/ventas/${ventaActiva.id_venta}`, cabecera(cambios)));
+    if (!ok) revertir();
   };
 
-  const handleCambiarCantidadLinea = (idLote, nuevaCantidad) => {
-    if (!ventaActiva) return;
-    const linea = ventaActiva.productos.find((p) => p.id_lote === idLote);
-    const lote = lotes.find((l) => l.id_lote === idLote);
-    if (!linea || !lote) return;
-
-    const delta = nuevaCantidad - linea.cantidad;
-    if (delta > Number(lote.cantidad_disponible)) {
-      showToast('error', 'La cantidad solicitada supera el disponible del lote.');
-      return;
-    }
-
-    setLotes((prev) => prev.map((l) => (l.id_lote === idLote ? { ...l, cantidad_disponible: Number(l.cantidad_disponible) - delta } : l)));
-    actualizarVenta(ventaActiva.id_venta, (venta) => {
-      const productosActualizados = venta.productos.map((p) => (p.id_lote === idLote ? { ...p, cantidad: nuevaCantidad } : p));
-      const ventaActualizada = { ...venta, productos: productosActualizados };
-      return { ...ventaActualizada, total: recalcularTotal(ventaActualizada) };
-    });
+  const handleCambiarCliente = (value) => {
+    const anterior = idCliente;
+    setIdCliente(value);
+    guardarCabecera({ id_cliente: value }, () => setIdCliente(anterior));
   };
 
-  // v3: venta.id_metodo_pago es único (ya no hay venta_pago ni pago
-  // dividido) — cambiarlo actualiza la venta activa directamente.
   const handleCambiarMetodoPago = (value) => {
-    setMetodoPagoVenta(Number(value));
-    if (ventaActivaId) {
-      actualizarVenta(ventaActivaId, (v) => ({ ...v, id_metodo_pago: Number(value) }));
+    const anterior = metodoPagoVenta;
+    setMetodoPagoVenta(value);
+    guardarCabecera({ id_metodo_pago: value }, () => setMetodoPagoVenta(anterior));
+  };
+
+  const handleGuardarObservaciones = () => {
+    if (ventaActiva && (observaciones.trim() || null) !== (ventaActiva.observaciones || null)) {
+      guardarCabecera({}, () => {});
     }
   };
 
-  // Libera el stock reservado por todas las líneas de una venta PENDIENTE
-  // (solo se puede anular/cancelar mientras está PENDIENTE).
-  const liberarStockVenta = (venta) => {
-    setLotes((prev) =>
-      prev.map((l) => {
-        const linea = venta.productos.find((p) => p.id_lote === l.id_lote);
-        return linea ? { ...l, cantidad_disponible: Number(l.cantidad_disponible) + linea.cantidad } : l;
-      })
-    );
+  const cerrarModal = () => {
+    setShowModal(false);
+    setVentaActiva(null);
+    recargar();
   };
 
-  const handleConfirmarVenta = () => {
-    if (!ventaActiva) {
-      showToast('error', 'Agrega al menos un producto a la venta');
-      return;
-    }
-
-    // Re-validación defensiva de edad (espejo de sp_validar_detalle_venta):
-    // por si el cliente se deseleccionó después de agregar un +18.
-    const itemRestringido = ventaActiva.productos.find((p) => getRequiereEdad(p.categoria));
-    if (itemRestringido) {
-      const mensajeEdad = validarEdadCliente(clienteSeleccionado);
-      if (mensajeEdad) {
-        showAlert.error('Verificación de edad requerida', mensajeEdad);
-        return;
-      }
-    }
-
-    // Espejo exacto de sp_validar_cierre_venta.
-    if (ventaActiva.productos.length === 0) {
+  // PENDIENTE -> COMPLETADA. El backend exige al menos una línea y total > 0,
+  // y responde con todo lo necesario para la factura automática.
+  const handleConfirmarVenta = async () => {
+    if (!ventaActiva || carrito.length === 0) {
       showAlert.error('Venta rechazada', 'Una venta COMPLETADA debe tener al menos un detalle.');
       return;
     }
-    if (ventaActiva.total <= 0) {
-      showAlert.error('Venta rechazada', 'El total de la venta debe ser mayor que cero.');
+    setOcupado(true);
+    const completada = await ejecutar(async () => {
+      await api.put(`/ventas/${ventaActiva.id_venta}`, cabecera());
+      return api.post(`/ventas/${ventaActiva.id_venta}/completar`);
+    }, (v) => `Venta ${v.id_venta} completada`);
+    setOcupado(false);
+    if (!completada) return;
+    cerrarModal();
+    generarFacturaPDF(completada);
+  };
+
+  // Cerrar el formulario con una venta en curso: dejarla PENDIENTE (CU_06_03)
+  // o anularla y liberar el stock reservado (CU_06_02).
+  const cerrarModalDescartando = async () => {
+    if (!ventaActiva) {
+      cerrarModal();
       return;
     }
-
-    actualizarVenta(ventaActiva.id_venta, (venta) => ({ ...venta, estado: 'COMPLETADA' }));
-    setShowModal(false);
-    setVentaActivaId(null);
-    showToast('success', `Venta ${ventaActiva.id_venta} completada`);
-    // Factura automática al confirmar (ver utils/factura.js): se genera con
-    // el estado ya en COMPLETADA aunque el state todavía no haya re-renderizado.
-    generarFacturaPDF({ ...ventaActiva, estado: 'COMPLETADA' }, clientes);
-  };
-
-  const cerrarModalDescartando = async () => {
-    if (ventaActiva && ventaActiva.productos.length > 0) {
-      const confirmado = await showAlert.confirm(
-        '¿Cancelar esta venta?',
-        'Se liberará el stock reservado y la venta quedará marcada como ANULADA en el historial.'
-      );
-      if (!confirmado) return;
-      liberarStockVenta(ventaActiva);
-      actualizarVenta(ventaActiva.id_venta, (venta) => ({ ...venta, estado: 'ANULADA' }));
-    } else if (ventaActiva) {
-      // Sin líneas todavía: se anula igual para no dejar un registro
-      // PENDIENTE huérfano sin stock que liberar.
-      actualizarVenta(ventaActiva.id_venta, (venta) => ({ ...venta, estado: 'ANULADA' }));
+    if (carrito.length === 0) {
+      // Sin líneas: se anula para no dejar un registro PENDIENTE huérfano.
+      await ejecutar(() => api.post(`/ventas/${ventaActiva.id_venta}/anular`));
+      cerrarModal();
+      return;
     }
-    setShowModal(false);
-    setVentaActivaId(null);
+    const r = await Swal.fire({
+      icon: 'warning',
+      title: '¿Qué deseas hacer con esta venta?',
+      text: 'Puedes dejarla PENDIENTE para continuarla después, o cancelarla: se liberará el stock reservado y quedará ANULADA en el historial.',
+      showDenyButton: true,
+      showCancelButton: true,
+      confirmButtonText: 'Dejar pendiente',
+      denyButtonText: 'Cancelar venta',
+      cancelButtonText: 'Seguir editando',
+      confirmButtonColor: 'var(--amber-action)',
+      denyButtonColor: 'var(--brand-danger)',
+      cancelButtonColor: 'var(--text-muted)',
+      background: 'var(--bg-card)',
+      color: 'var(--text-main)'
+    });
+    if (r.isConfirmed) {
+      handleGuardarObservaciones();
+      cerrarModal();
+    } else if (r.isDenied) {
+      if (await ejecutar(() => api.post(`/ventas/${ventaActiva.id_venta}/anular`), `Venta ${ventaActiva.id_venta} cancelada`)) cerrarModal();
+    }
   };
 
+  // Solo una venta PENDIENTE se cancela (anula); una COMPLETADA nunca.
   const handleCancelarPendienteDesdeHistorial = async (venta) => {
+    if (venta.estado !== 'PENDIENTE') return;
     const confirmado = await showAlert.confirm('¿Cancelar esta venta pendiente?', 'Se liberará el stock reservado.');
     if (!confirmado) return;
-    liberarStockVenta(venta);
-    actualizarVenta(venta.id_venta, (v) => ({ ...v, estado: 'ANULADA' }));
-    showToast('success', `Venta ${venta.id_venta} cancelada`);
+    if (await ejecutar(() => api.post(`/ventas/${venta.id_venta}/anular`), `Venta ${venta.id_venta} cancelada`)) recargar();
   };
 
   const filteredVentas = ventas.filter((v) =>
-    (v.cliente.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.id_venta.toLowerCase().includes(searchTerm.toLowerCase())) &&
-    estaEnRangoFecha(v.fecha_hora_venta, filtroDesde, filtroHasta)
+    (v.cliente || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    v.id_venta.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const productosFiltrados = catalogo.filter((prod) => prod.nombre.toLowerCase().includes(productoSearch.toLowerCase()));
+  const hayProductosEdad = carrito.some((item) => requiereEdad(item.id_producto));
 
   const styles = {
     bgCard: 'var(--bg-card)',
@@ -409,16 +301,16 @@ export const VentasPage = () => {
               ) : (
                 filteredVentas.map((v) => (
                   <tr key={v.id_venta} style={{ borderColor: styles.borderCol }}>
-                    <td className="py-3 px-4 fw-bold" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>{v.id_venta}</td>
-                    <td className="py-3 px-4 fw-semibold" style={{ backgroundColor: 'transparent', color: styles.textColor }}>{v.cliente}</td>
+                    <td className="py-3 px-4 fw-bold text-nowrap" style={{ color: 'var(--amber-action)', backgroundColor: 'transparent' }}>{v.id_venta}</td>
+                    <td className="py-3 px-4 fw-semibold" style={{ backgroundColor: 'transparent', color: styles.textColor }}>{v.cliente || 'Venta de mostrador'}</td>
                     <td className="py-3 px-4 small" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>{new Date(v.fecha_hora_venta).toLocaleString('es-CO')}</td>
                     <td className="py-3 px-4 small" style={{ color: styles.mutedColor, backgroundColor: 'transparent' }}>
-                      {v.productos.map((p, idx) => (
-                        <div key={idx}>- {p.nombre} (x{p.cantidad}){p.lote ? ` • ${p.lote}` : ''}</div>
+                      {v.detalles.map((p) => (
+                        <div key={p.id_lote}>- {p.producto} (x{Number(p.cantidad)}) • {p.id_lote}</div>
                       ))}
                     </td>
-                    <td className="py-3 px-4 text-end fw-bold" style={{ backgroundColor: 'transparent', color: styles.textColor }}>
-                      $ {Number(v.total).toLocaleString()}
+                    <td className="py-3 px-4 text-end fw-bold text-nowrap" style={{ backgroundColor: 'transparent', color: styles.textColor }}>
+                      $ {formato(v.total_venta)}
                     </td>
                     <td className="py-3 px-4 text-center" style={{ backgroundColor: 'transparent' }}>
                       <span className="badge px-3 py-1" style={estadoBadgeStyle(v.estado)}>{v.estado}</span>
@@ -429,7 +321,7 @@ export const VentasPage = () => {
                           <Eye size={18} />
                         </button>
                         {v.estado === 'COMPLETADA' && (
-                          <button className="btn btn-sm p-1 border-0" style={{ color: 'var(--amber-action)' }} title="Descargar factura" onClick={() => generarFacturaPDF(v, clientes)}>
+                          <button className="btn btn-sm p-1 border-0" style={{ color: 'var(--amber-action)' }} title="Descargar factura" onClick={() => descargarFactura(v.id_venta)}>
                             <Printer size={18} />
                           </button>
                         )}
@@ -473,17 +365,19 @@ export const VentasPage = () => {
                    <label className="form-label small fw-semibold">Cliente <span style={{ color: 'var(--brand-danger)' }}>*</span></label>
                    <select
                      className="form-select"
-                     value={idCliente}
+                     value={idCliente ?? ''}
+                     disabled={ocupado}
                      onChange={(e) => handleCambiarCliente(e.target.value)}
                      style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                    >
                      {clientesActivos.map((c) => (
                        <option key={c.id_cliente} value={c.id_cliente}>
-                         {c.nombre_completo}{!c.fecha_nacimiento ? ' — sin fecha de nacimiento' : ''}
+                         {c.nombres} {c.apellidos}{!c.fecha_nacimiento && c.id_cliente !== CONSUMIDOR_FINAL ? ' — sin fecha de nacimiento' : ''}
                        </option>
                      ))}
                    </select>
-                   {ventaActiva && ventaActiva.productos.some((p) => getRequiereEdad(p.categoria)) && clienteSeleccionado && clienteSeleccionado.id_cliente !== 0 && (
+                   {/* Consumidor Final está exento de la verificación de edad (decisión de negocio). */}
+                   {hayProductosEdad && idCliente !== CONSUMIDOR_FINAL && clienteSeleccionado && !clienteSeleccionado.fecha_nacimiento && (
                      <div className="small mt-1 d-flex align-items-center gap-1" style={{ color: 'var(--brand-danger)' }}>
                        <ShieldExclamation size={12} />
                        Hay productos +18: el cliente necesita fecha de nacimiento y ser mayor de edad.
@@ -500,7 +394,7 @@ export const VentasPage = () => {
                      <Search size={14} className="position-absolute top-50 start-0 translate-middle-y ms-3" style={{ color: styles.mutedColor }} />
                      <input
                        type="text"
-                       className="form-control form-control-sm ps-4"
+                       className="form-control form-control-sm ps-5"
                        placeholder="Buscar producto por nombre..."
                        value={productoSearch}
                        onChange={(e) => setProductoSearch(e.target.value)}
@@ -508,46 +402,44 @@ export const VentasPage = () => {
                      />
                    </div>
                    <div className="rounded-3" style={{ border: `1px solid ${styles.borderCol}`, maxHeight: '220px', overflowY: 'auto' }}>
-                     {productosActivos
-                       .filter((prod) => prod.nombre.toLowerCase().includes(productoSearch.toLowerCase()))
-                       .map((prod) => {
-                         const sugerencia = getSugerenciaVencimiento(prod.codigo);
-                         const stockDisponible = getStockDisponible(lotes, prod.codigo);
-                         return (
-                           <div key={prod.codigo} className="d-flex align-items-center justify-content-between px-3 py-2 border-bottom gap-2" style={{ borderColor: styles.borderCol }}>
-                             <div>
-                               <div className="fw-semibold small d-flex align-items-center gap-2">
-                                 {prod.nombre}
-                                 {getRequiereEdad(prod.categoria) && (
-                                   <span className="badge" style={{ backgroundColor: 'var(--danger-soft-bg)', color: 'var(--brand-danger)', fontSize: '0.65rem' }}>+18</span>
-                                 )}
-                               </div>
-                               <div className="d-flex align-items-center gap-2">
-                                 <span className="small" style={{ color: styles.mutedColor }}>
-                                   ${new Intl.NumberFormat('es-CO').format(prod.precioVenta)} • {stockDisponible} disp.
-                                 </span>
-                                 {sugerencia && (
-                                   <span className="badge d-inline-flex align-items-center gap-1" style={{ backgroundColor: 'var(--amber-soft-bg)', color: 'var(--amber-action)', fontWeight: 500 }}>
-                                     <ClockHistory size={10} />
-                                     Por vencer ({sugerencia.dias}d)
-                                   </span>
-                                 )}
-                               </div>
+                     {productosFiltrados.map((prod) => {
+                       const dias = diasParaVencer(prod);
+                       const stockDisponible = Number(prod.disponible);
+                       return (
+                         <div key={prod.id_producto} className="d-flex align-items-center justify-content-between px-3 py-2 border-bottom gap-2" style={{ borderColor: styles.borderCol }}>
+                           <div>
+                             <div className="fw-semibold small d-flex align-items-center gap-2">
+                               {prod.nombre}
+                               {prod.requiere_verificacion_edad && (
+                                 <span className="badge" style={{ backgroundColor: 'var(--danger-soft-bg)', color: 'var(--brand-danger)', fontSize: '0.65rem' }}>+18</span>
+                               )}
                              </div>
-                             <div className="d-flex align-items-center gap-2 flex-shrink-0">
-                               <QuantityStepper
-                                 value={cantidadesBusqueda[prod.codigo] || 1}
-                                 max={stockDisponible || undefined}
-                                 onChange={(v) => setCantidadesBusqueda((prev) => ({ ...prev, [prod.codigo]: v }))}
-                               />
-                               <button type="button" className="btn btn-sm p-1" style={{ color: 'var(--amber-action)' }} onClick={() => handleAgregarProducto(prod)} title="Agregar a la venta" disabled={stockDisponible === 0}>
-                                 <Plus size={20} />
-                               </button>
+                             <div className="d-flex align-items-center gap-2">
+                               <span className="small" style={{ color: styles.mutedColor }}>
+                                 ${formato(prod.precio_venta_actual)} • {stockDisponible} disp.
+                               </span>
+                               {dias != null && (
+                                 <span className="badge d-inline-flex align-items-center gap-1" style={{ backgroundColor: 'var(--amber-soft-bg)', color: 'var(--amber-action)', fontWeight: 500 }}>
+                                   <ClockHistory size={10} />
+                                   Por vencer ({dias}d)
+                                 </span>
+                               )}
                              </div>
                            </div>
-                         );
-                       })}
-                     {productosActivos.filter((prod) => prod.nombre.toLowerCase().includes(productoSearch.toLowerCase())).length === 0 && (
+                           <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                             <QuantityStepper
+                               value={cantidadesBusqueda[prod.id_producto] || 1}
+                               max={stockDisponible || undefined}
+                               onChange={(v) => setCantidadesBusqueda((prev) => ({ ...prev, [prod.id_producto]: v }))}
+                             />
+                             <button type="button" className="btn btn-sm p-1" style={{ color: 'var(--amber-action)' }} onClick={() => handleAgregarProducto(prod)} title="Agregar a la venta" disabled={stockDisponible === 0 || ocupado}>
+                               <Plus size={20} />
+                             </button>
+                           </div>
+                         </div>
+                       );
+                     })}
+                     {productosFiltrados.length === 0 && (
                        <div className="text-center py-3 small" style={{ color: styles.mutedColor }}>No se encontraron productos.</div>
                      )}
                    </div>
@@ -564,28 +456,28 @@ export const VentasPage = () => {
                      </tr>
                    </thead>
                    <tbody>
-                     {!ventaActiva || ventaActiva.productos.length === 0 ? (
+                     {carrito.length === 0 ? (
                        <tr>
                          <td colSpan="5" className="text-center py-4" style={{ color: styles.mutedColor }}>Agrega productos para iniciar la venta.</td>
                        </tr>
                      ) : (
-                       ventaActiva.productos.map((item) => {
-                         const lote = lotes.find((l) => l.id_lote === item.id_lote);
+                       carrito.map((item) => {
+                         const disponibleExtra = Number(catalogo.find((p) => p.id_producto === item.id_producto)?.disponible || 0);
                          return (
-                           <tr key={item.id_lote} style={{ borderColor: styles.borderCol }}>
+                           <tr key={item.id_producto} style={{ borderColor: styles.borderCol }}>
                              <td className="fw-semibold">
-                               {item.nombre}
-                               {getRequiereEdad(item.categoria) && (
+                               {item.producto}
+                               {requiereEdad(item.id_producto) && (
                                  <span className="badge ms-2" style={{ backgroundColor: 'var(--danger-soft-bg)', color: 'var(--brand-danger)', fontSize: '0.65rem' }}>+18</span>
                                )}
                              </td>
                              <td className="text-center">
-                               <QuantityStepper value={item.cantidad} max={item.cantidad + Number(lote?.cantidad_disponible || 0)} onChange={(v) => handleCambiarCantidadLinea(item.id_lote, v)} />
+                               <QuantityStepper value={item.cantidad} max={item.cantidad + disponibleExtra} disabled={ocupado} onChange={(v) => handleCambiarCantidad(item.id_producto, v)} />
                              </td>
-                             <td className="text-end">${new Intl.NumberFormat('es-CO').format(item.precio * item.cantidad)}</td>
-                             <td><span className="small">{item.lote}</span></td>
+                             <td className="text-end">${formato(item.subtotal)}</td>
+                             <td><span className="small">{item.lotes.join(', ')}</span></td>
                              <td className="text-center">
-                               <button type="button" className="btn btn-sm text-danger" onClick={() => handleQuitarLinea(item.id_lote)}>
+                               <button type="button" className="btn btn-sm text-danger" disabled={ocupado} onClick={() => handleQuitarProducto(item.id_producto)}>
                                  <Trash size={15} />
                                </button>
                              </td>
@@ -604,16 +496,16 @@ export const VentasPage = () => {
                    <div className="rounded-3 p-3" style={{ backgroundColor: 'var(--bg-main)', border: `1px solid ${styles.borderCol}` }}>
                      <div className="d-flex justify-content-between small" style={{ color: styles.mutedColor }}>
                        <span>Subtotal (base gravable)</span>
-                       <span>${new Intl.NumberFormat('es-CO').format(Math.round((ventaActiva ? calcularTotalesVenta(ventaActiva.productos) : { baseGravable: 0 }).baseGravable))}</span>
+                       <span>${formato(ventaActiva?.base_gravable)}</span>
                      </div>
                      <div className="d-flex justify-content-between small mb-2" style={{ color: styles.mutedColor }}>
                        <span>IVA</span>
-                       <span>${new Intl.NumberFormat('es-CO').format(Math.round((ventaActiva ? calcularTotalesVenta(ventaActiva.productos) : { iva: 0 }).iva))}</span>
+                       <span>${formato(ventaActiva?.iva)}</span>
                      </div>
                      <div className="d-flex justify-content-between align-items-center pt-2 border-top" style={{ borderColor: styles.borderCol }}>
                        <span className="fw-semibold">Total</span>
                        <span className="fw-bold fs-4" style={{ color: 'var(--amber-action)' }}>
-                         ${new Intl.NumberFormat('es-CO').format(ventaActiva ? ventaActiva.total : 0)}
+                         ${formato(ventaActiva?.total_venta)}
                        </span>
                      </div>
                    </div>
@@ -623,12 +515,12 @@ export const VentasPage = () => {
                  </h6>
                  <select
                    className="form-select form-select-sm"
-                   value={ventaActiva?.id_metodo_pago ?? metodoPagoVenta}
+                   value={metodoPago}
+                   disabled={ocupado}
                    onChange={(e) => handleCambiarMetodoPago(e.target.value)}
-                   disabled={!ventaActiva}
                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                  >
-                   {metodosPagoActivos.map((m) => (
+                   {metodosPago.map((m) => (
                      <option key={m.id_metodo_pago} value={m.id_metodo_pago}>{m.nombre}</option>
                    ))}
                  </select>
@@ -639,9 +531,10 @@ export const VentasPage = () => {
                  <textarea
                    className="form-control form-control-sm"
                    rows="2"
-                     disabled={!ventaActiva}
-                   value={ventaActiva?.observaciones || ''}
-                   onChange={(e) => actualizarVenta(ventaActiva.id_venta, (v) => ({ ...v, observaciones: e.target.value }))}
+                   maxLength={255}
+                   value={observaciones}
+                   onChange={(e) => setObservaciones(e.target.value)}
+                   onBlur={handleGuardarObservaciones}
                    style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}
                  />
                </div>
@@ -651,15 +544,15 @@ export const VentasPage = () => {
              </div>
 
              <div className="modal-footer border-0 p-4 pt-0">
-               <button type="button" className="btn btn-outline-secondary" onClick={cerrarModalDescartando}>
-                 Cancelar
+               <button type="button" className="btn btn-outline-secondary" onClick={cerrarModalDescartando} disabled={ocupado}>
+                 Cerrar
                </button>
                <button
                  type="button"
                  className="btn text-white"
                  style={{ backgroundColor: 'var(--amber-action)', border: 'none' }}
                  onClick={handleConfirmarVenta}
-                 disabled={!ventaActiva || ventaActiva.productos.length === 0}
+                 disabled={!ventaActiva || carrito.length === 0 || ocupado}
                >
                  Confirmar venta
                </button>
@@ -673,7 +566,6 @@ export const VentasPage = () => {
         show={showDetailModal}
         onClose={() => { setShowDetailModal(false); setSelectedVenta(null); }}
         venta={selectedVenta}
-        clientes={clientes}
       />
     </div>
   );

@@ -43,7 +43,7 @@ export const UsuarioDetailModal = ({ show, onClose, usuario }) => {
               >
                 <PersonBadge size={32} />
               </div>
-              <h5 className="fw-bold m-0">{usuario.nombre}</h5>
+              <h5 className="fw-bold m-0">{usuario.nombres} {usuario.apellidos}</h5>
               <span className="small text-muted">{usuario.correo}</span>
             </div>
 
@@ -52,7 +52,7 @@ export const UsuarioDetailModal = ({ show, onClose, usuario }) => {
                 <PersonBadge style={{ color: styles.mutedColor }} size={18} />
                 <div>
                   <div className="small fw-semibold" style={{ color: styles.mutedColor }}>Documento</div>
-                  <div className="fw-semibold">{usuario.documento}</div>
+                  <div className="fw-semibold">{usuario.tipo_documento} {usuario.numero_documento}</div>
                 </div>
               </div>
 
@@ -68,7 +68,7 @@ export const UsuarioDetailModal = ({ show, onClose, usuario }) => {
                 <Telephone style={{ color: styles.mutedColor }} size={18} />
                 <div>
                   <div className="small fw-semibold" style={{ color: styles.mutedColor }}>Teléfono</div>
-                  <div className="fw-semibold">{usuario.telefono}</div>
+                  <div className="fw-semibold">{usuario.telefono || '—'}</div>
                 </div>
               </div>
 
@@ -84,7 +84,7 @@ export const UsuarioDetailModal = ({ show, onClose, usuario }) => {
                 <Calendar3 style={{ color: styles.mutedColor }} size={18} />
                 <div>
                   <div className="small fw-semibold" style={{ color: styles.mutedColor }}>Fecha de Registro</div>
-                  <div className="fw-semibold">{usuario.fechaRegistro}</div>
+                  <div className="fw-semibold">{new Date(usuario.fecha_registro).toLocaleDateString('es-CO')}</div>
                 </div>
               </div>
             </div>
@@ -94,16 +94,16 @@ export const UsuarioDetailModal = ({ show, onClose, usuario }) => {
               <span
                 className="badge px-3 py-2 fw-medium"
                 style={{
-                  backgroundColor: usuario.estado === 'Activo'
+                  backgroundColor: usuario.estado
                     ? ('var(--success-soft-bg)')
                     : ('var(--danger-soft-bg)'),
-                  color: usuario.estado === 'Activo'
+                  color: usuario.estado
                     ? ('var(--brand-success)')
                     : ('var(--brand-danger)'),
                   borderRadius: '12px'
                 }}
               >
-                {usuario.estado}
+                {usuario.estado ? 'Activo' : 'Inactivo'}
               </span>
             </div>
           </div>

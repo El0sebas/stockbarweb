@@ -1,16 +1,36 @@
-# React + Vite
+# StockBar
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Sistema de gestión para una microempresa de licores, cigarrillos y confitería: compras, inventario por lotes, ventas en ventanilla, proveedores, clientes, jornadas de caja y reportes. Tiene dos roles: **Administrador** (todo) y **Empleado** (ventas, jornada, clientes y bajas).
 
-Currently, two official plugins are available:
+- **Web:** React + Bootstrap 5 (esta carpeta).
+- **API:** Node.js + Express + TypeScript, JWT y permisos por rol ([`backend/`](backend/README.md)).
+- **Base de datos:** MySQL; las reglas de stock, IVA, edad y vencimientos viven en triggers ([`scripts/sch.sql`](scripts/sch.sql), documentado en [`docs/DATABASE.md`](docs/DATABASE.md)).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Probarlo completo con Docker
 
-## React Compiler
+Requiere Docker Desktop.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+cp .env.example .env      # completar la sección "Docker local" (contraseñas y JWT_SECRET)
+docker compose up -d --build
+```
 
-## Expanding the Oxlint configuration
+Abrir <http://localhost:8080> e iniciar sesión con `ADMIN_CORREO` / `ADMIN_CONTRASENA` del `.env`. La primera vez MySQL carga `scripts/sch.sql` y la API crea el administrador principal.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+- Ver los registros: `docker compose logs -f api`
+- Apagar: `docker compose down` (los datos quedan guardados)
+- Borrar todo y empezar de cero: `docker compose down -v`
+
+Esto es para pruebas y demostraciones en un equipo. La producción va en la nube con HTTPS: ver [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md).
+
+## Desarrollo
+
+```bash
+# API (necesita MySQL con scripts/sch.sql cargado y backend/.env, ver backend/README.md)
+cd backend && npm install && npm run dev
+
+# Web (en otra terminal; Vite reenvía /api al puerto 3000)
+npm install && npm run dev
+```
+
+Antes de subir cambios: `cd backend && npm run typecheck && npm test` (contra una base de **prueba**) y `npm run lint && npm run build` en la raíz.

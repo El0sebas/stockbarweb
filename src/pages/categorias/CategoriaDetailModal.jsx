@@ -28,7 +28,7 @@ export const CategoriaDetailModal = ({ show, onClose, categoria }) => {
           <div className="modal-body p-4 d-flex flex-column gap-3">
             <div className="pb-3 border-bottom" style={{ borderColor: styles.borderCol }}>
               <span className="badge px-2 py-1 mb-2 fw-bold" style={{ backgroundColor: 'var(--amber-action)', color: '#FFFFFF' }}>
-                {categoria.codigo}
+                {categoria.id_categoria}
               </span>
               <h4 className="fw-bold m-0">{categoria.nombre}</h4>
             </div>

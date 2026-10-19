@@ -11,8 +11,7 @@ export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
     ciudad: '',
     direccion: '',
     telefono_principal: '',
-    correo_principal: '',
-    estado: 'Activo'
+    correo_principal: ''
   };
 
   const [formData, setFormData] = useState(initialState);
@@ -20,7 +19,9 @@ export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
 
   useEffect(() => {
     if (proveedor) {
-      setFormData({ ...initialState, ...proveedor });
+      // NULL de la BD -> '' para que los inputs sigan controlados.
+      const datos = Object.fromEntries(Object.keys(initialState).map((k) => [k, proveedor[k] ?? '']));
+      setFormData({ ...datos, nit: proveedor.id_proveedor });
     } else {
       setFormData(initialState);
     }
@@ -31,8 +32,7 @@ export const ProveedorFormModal = ({ show, onClose, onSave, proveedor }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const dataToSave = proveedor ? formData : { ...formData, estado: 'Activo' };
-    onSave(dataToSave);
+    onSave(formData);
   };
 
   const handleChange = (e) => {

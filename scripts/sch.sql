@@ -100,6 +100,11 @@
 -- Decisiones heredadas que se mantienen:
 --   * rol sin descripción y categoria sin estado.
 --   * venta.id_cliente NULLABLE (venta de mostrador) y verificación de edad.
+--
+-- Ajustes posteriores a la V6 (decisión de negocio, 2026-10-15):
+--   * Consumidor Final (CLI-00000) y la venta sin cliente quedan EXENTOS de la
+--     verificación de edad: se les puede vender cualquier producto. Un cliente
+--     registrado con nombre sigue validándose (fecha de nacimiento y 18 años).
 --   * venta/compra PENDIENTE -> estado final (MySQL no tiene triggers
 --     diferibles) y stock reservado/contado desde el estado final, nunca
 --     desde PENDIENTE.
@@ -112,6 +117,11 @@
 --   * producto.precio_venta_actual (precio final con IVA; el histórico vive
 --     en detalle_venta).
 -- ============================================================
+
+-- Este archivo está en UTF-8: sin esto, un cliente que asuma otra codificación
+-- (Windows, la carga inicial del contenedor de MySQL) guarda los mensajes de
+-- los triggers con las tildes rotas ("dÃ­as").
+SET NAMES utf8mb4;
 
 CREATE DATABASE IF NOT EXISTS stockbar
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -922,8 +932,9 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'No se puede vender el lote porque está vencido.';
     END IF;
 
-    IF v_requiere_edad = TRUE THEN
-        -- v_cliente NULL (mostrador): no hay fila, queda NULL y se rechaza abajo.
+    -- Consumidor Final (CLI-00000) y la venta sin cliente (mostrador) están
+    -- exentos por decisión de negocio; solo se valida a clientes registrados.
+    IF v_requiere_edad = TRUE AND v_cliente IS NOT NULL AND v_cliente <> 'CLI-00000' THEN
         SELECT fecha_nacimiento INTO v_fecha_nacimiento
         FROM cliente WHERE id_cliente = v_cliente;
 
@@ -943,7 +954,18 @@ DELIMITER ;
 
 DROP TRIGGER IF EXISTS trg_validar_detalle_venta_ins;
 DROP TRIGGER IF EXISTS trg_validar_detalle_venta_upd;
+DROP TRIGGER IF EXISTS trg_validar_detalle_venta_del;
 DELIMITER $$
+-- Solo se quitan líneas de una venta PENDIENTE (carrito): las de una venta
+-- COMPLETADA o ANULADA son historia y no se borran.
+CREATE TRIGGER trg_validar_detalle_venta_del BEFORE DELETE ON detalle_venta
+FOR EACH ROW
+BEGIN
+    IF (SELECT estado FROM venta WHERE id_venta = OLD.id_venta) <> 'PENDIENTE' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Solo se pueden quitar productos de una venta PENDIENTE.';
+    END IF;
+END$$
+
 CREATE TRIGGER trg_validar_detalle_venta_ins BEFORE INSERT ON detalle_venta
 FOR EACH ROW
 BEGIN
@@ -1092,6 +1114,11 @@ BEGIN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'Solo se puede anular una venta mientras está PENDIENTE; una venta COMPLETADA ya no se puede anular.';
     END IF;
+    -- Una venta COMPLETADA es definitiva: ni vuelve a PENDIENTE (desde donde
+    -- se podría anular) ni cambia ningún otro dato.
+    IF OLD.estado = 'COMPLETADA' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Una venta COMPLETADA no se puede modificar.';
+    END IF;
     -- Anular una venta PENDIENTE libera el stock reservado: fn_stock_lote
     -- solo descuenta ventas PENDIENTE/COMPLETADA.
 END$$
@@ -1118,6 +1145,10 @@ BEGIN
         IF NEW.estado = 'ANULADA' AND OLD.estado <> 'PENDIENTE' THEN
             SIGNAL SQLSTATE '45000'
                 SET MESSAGE_TEXT = 'Solo se puede anular una compra mientras está PENDIENTE; una compra REGISTRADA ya no se puede anular.';
+        END IF;
+        -- REGISTRADA es definitiva: no vuelve a PENDIENTE (desde donde se podría anular).
+        IF OLD.estado = 'REGISTRADA' THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Una compra REGISTRADA no puede cambiar de estado.';
         END IF;
     END IF;
 END$$
@@ -1179,6 +1210,11 @@ FROM producto_proveedor pp
 JOIN proveedor pr ON pr.id_proveedor = pp.id_proveedor
 JOIN producto p ON p.id_producto = pp.id_producto;
 
+-- Misma regla que fn_stock_lote (entradas REGISTRADA - ventas PENDIENTE o
+-- COMPLETADA - bajas), pero calculada de una sola pasada agrupada: llamar a
+-- la función lote por lote recorre el historial una vez por lote y con un
+-- año de ventas el catálogo tardaba ~2 s. fn_stock_lote sigue siendo la que
+-- usan los triggers para validar un lote puntual.
 CREATE OR REPLACE VIEW vw_stock_lotes AS
 SELECT
     l.id_lote,
@@ -1186,13 +1222,18 @@ SELECT
     p.nombre AS producto,
     l.fecha_vencimiento,
     p.maneja_vencimiento,
-    (SELECT COALESCE(SUM(dc.cantidad), 0)
-       FROM detalle_compra dc
-       JOIN compra c ON c.id_compra = dc.id_compra
-      WHERE dc.id_lote = l.id_lote AND c.estado = 'REGISTRADA') AS cantidad_ingresada,
-    fn_stock_lote(l.id_lote) AS cantidad_disponible
+    COALESCE(ci.cantidad, 0) AS cantidad_ingresada,
+    COALESCE(ci.cantidad, 0) - COALESCE(vv.cantidad, 0) - COALESCE(bb.cantidad, 0) AS cantidad_disponible
 FROM lote l
-JOIN producto p ON p.id_producto = l.id_producto;
+JOIN producto p ON p.id_producto = l.id_producto
+LEFT JOIN (SELECT dc.id_lote, SUM(dc.cantidad) AS cantidad
+             FROM detalle_compra dc JOIN compra c ON c.id_compra = dc.id_compra
+            WHERE c.estado = 'REGISTRADA' GROUP BY dc.id_lote) ci ON ci.id_lote = l.id_lote
+LEFT JOIN (SELECT dv.id_lote, SUM(dv.cantidad) AS cantidad
+             FROM detalle_venta dv JOIN venta v ON v.id_venta = dv.id_venta
+            WHERE v.estado IN ('PENDIENTE', 'COMPLETADA') GROUP BY dv.id_lote) vv ON vv.id_lote = l.id_lote
+LEFT JOIN (SELECT id_lote, SUM(cantidad) AS cantidad
+             FROM baja_inventario GROUP BY id_lote) bb ON bb.id_lote = l.id_lote;
 
 CREATE OR REPLACE VIEW vw_stock_producto AS
 SELECT
@@ -1222,6 +1263,32 @@ SELECT
 FROM detalle_compra dc
 JOIN lote l ON l.id_lote = dc.id_lote
 JOIN producto p ON p.id_producto = l.id_producto;
+
+-- Detalle de venta con producto, categoría y subtotal (espejo de
+-- vw_detalle_compra). Lleva estado/fecha/jornada de la cabecera para filtrar
+-- sin otro JOIN: recibo/factura, listado de ventas y agregados del dashboard
+-- (producto más vendido, ventas por categoría).
+CREATE OR REPLACE VIEW vw_detalle_venta AS
+SELECT
+    dv.id_venta,
+    v.estado,
+    v.fecha_hora_venta,
+    v.id_jornada,
+    l.id_producto,
+    p.nombre AS producto,
+    p.id_categoria,
+    c.nombre AS categoria,
+    dv.id_lote,
+    l.fecha_vencimiento,
+    dv.cantidad,
+    dv.precio_unitario_venta,
+    dv.porcentaje_impuesto_aplicado,
+    dv.cantidad * dv.precio_unitario_venta AS subtotal
+FROM detalle_venta dv
+JOIN venta v ON v.id_venta = dv.id_venta
+JOIN lote l ON l.id_lote = dv.id_lote
+JOIN producto p ON p.id_producto = l.id_producto
+JOIN categoria c ON c.id_categoria = p.id_categoria;
 
 CREATE OR REPLACE VIEW vw_totales_compra AS
 SELECT
@@ -1253,12 +1320,17 @@ SELECT
     j.id_usuario_apertura,
     j.fecha_hora_cierre,
     j.id_usuario_cierre,
-    COUNT(v.id_venta) AS ventas_completadas,
-    COALESCE(SUM(fn_total_venta(v.id_venta)), 0) AS total_ventas
-FROM jornada j
-LEFT JOIN venta v ON v.id_jornada = j.id_jornada AND v.estado = 'COMPLETADA'
-GROUP BY j.id_jornada, j.estado, j.fecha_hora_apertura, j.id_usuario_apertura,
-         j.fecha_hora_cierre, j.id_usuario_cierre;
+    (SELECT COUNT(*) FROM venta v WHERE v.id_jornada = j.id_jornada AND v.estado = 'COMPLETADA') AS ventas_completadas,
+    -- Total por venta agrupado sobre las líneas (redondeado a 2 decimales por
+    -- venta, igual que fn_total_venta) en vez de llamar la función venta por
+    -- venta. Subconsultas por jornada (sin GROUP BY externo): la vista se
+    -- fusiona con el WHERE y pedir una jornada no recalcula todas.
+    (SELECT COALESCE(SUM(t.total_venta), 0) FROM (
+        SELECT ROUND(SUM(dv.cantidad * dv.precio_unitario_venta), 2) AS total_venta
+        FROM venta v JOIN detalle_venta dv ON dv.id_venta = v.id_venta
+        WHERE v.id_jornada = j.id_jornada AND v.estado = 'COMPLETADA'
+        GROUP BY v.id_venta) t) AS total_ventas
+FROM jornada j;
 
 -- ============================================================
 -- DATOS BASE

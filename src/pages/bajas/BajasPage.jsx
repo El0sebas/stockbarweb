@@ -1,57 +1,21 @@
 import React, { useState } from 'react';
-import { Search, PlusLg, ExclamationTriangle, Eye } from 'react-bootstrap-icons';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { useAuth } from '../../context/AuthContext';
-import { defaultLotes } from '../../data/defaultLotes';
-import { defaultProductos } from '../../data/defaultProductos';
-import { defaultMotivosBaja } from '../../data/defaultMotivosBaja';
-import { defaultBajas } from '../../data/defaultBajas';
-import { showToast } from '../../utils/alerts';
-import { aplicarBaja } from '../../utils/bajas';
+import { Search, PlusLg, ExclamationTriangle, Eye, PencilSquare } from 'react-bootstrap-icons';
+import { useApi } from '../../hooks/useApi';
 import { BajaFormModal } from './BajaFormModal';
 import { BajaDetailModal } from './BajaDetailModal';
 
 export const BajasPage = () => {
-  const [lotes, setLotes] = usePersistentState('stockbar_lotes', defaultLotes);
-  const [productos] = usePersistentState('stockbar_productos', defaultProductos);
-  const [motivos] = usePersistentState('stockbar_motivos_baja', defaultMotivosBaja);
-  const [bajas, setBajas] = usePersistentState('stockbar_bajas', defaultBajas);
-  const { currentUser } = useAuth();
+  const { data: bajas, recargar } = useApi('/bajas', []);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedBaja, setSelectedBaja] = useState(null);
-
-  const getProducto = (codigo) => productos.find((p) => p.codigo === codigo);
-  const getLote = (idLote) => lotes.find((l) => l.id_lote === idLote);
-  const getMotivo = (id) => motivos.find((m) => m.id_motivo_baja === id)?.nombre || 'N/A';
-
-  const handleSaveBaja = (bajaParcial) => {
-    const { nuevosLotes, nuevasBajas } = aplicarBaja({
-      lotes,
-      bajas,
-      baja: {
-        ...bajaParcial,
-        id_usuario: currentUser?.id_usuario || null,
-        usuario: currentUser?.nombre || 'N/A'
-      }
-    });
-    setLotes(nuevosLotes);
-    setBajas(nuevasBajas);
-    setShowFormModal(false);
-    showToast('success', 'Baja registrada y stock del lote actualizado');
-  };
+  const [bajaEditar, setBajaEditar] = useState(null);
 
   const filteredBajas = bajas.filter((b) => {
-    const lote = getLote(b.id_lote);
-    const producto = lote ? getProducto(lote.id_producto) : null;
     const term = searchTerm.toLowerCase();
-    return (
-      (producto?.nombre || '').toLowerCase().includes(term) ||
-      getMotivo(b.id_motivo_baja).toLowerCase().includes(term) ||
-      (b.usuario || '').toLowerCase().includes(term)
-    );
+    return [b.producto, b.id_lote, b.motivo, b.usuario].some((v) => (v || '').toLowerCase().includes(term));
   });
 
   const styles = {
@@ -87,7 +51,7 @@ export const BajasPage = () => {
           <button
             className="btn fw-semibold text-white d-flex align-items-center gap-2 px-3"
             style={{ backgroundColor: 'var(--brand-danger)', border: 'none', borderRadius: '8px' }}
-            onClick={() => setShowFormModal(true)}
+            onClick={() => { setBajaEditar(null); setShowFormModal(true); }}
           >
             <PlusLg size={18} />
             <span>Dar de baja</span>
@@ -117,23 +81,21 @@ export const BajasPage = () => {
               </tr>
             ) : (
               filteredBajas.map((b) => {
-                const lote = getLote(b.id_lote);
-                const producto = lote ? getProducto(lote.id_producto) : null;
                 return (
                   <tr key={b.id_baja} style={{ borderBottom: `1px solid ${styles.borderCol}` }}>
                     <td className="py-3 small" style={{ color: styles.mutedColor }}>
                       {new Date(b.fecha_hora).toLocaleString('es-CO')}
                     </td>
                     <td className="py-3">
-                      <div className="fw-semibold">{producto?.nombre || 'Producto eliminado'}</div>
+                      <div className="fw-semibold">{b.producto}</div>
                       <div className="small" style={{ color: styles.mutedColor }}>
-                        Lote {b.id_lote}{lote?.fecha_vencimiento ? ` • vence ${lote.fecha_vencimiento}` : ''}
+                        Lote {b.id_lote}{b.fecha_vencimiento ? ` • vence ${b.fecha_vencimiento}` : ''}
                       </div>
                     </td>
                     <td className="py-3">
                       <span className="badge d-inline-flex align-items-center gap-1" style={{ backgroundColor: 'var(--danger-soft-bg)', color: 'var(--brand-danger)' }}>
                         <ExclamationTriangle size={11} />
-                        {getMotivo(b.id_motivo_baja)}
+                        {b.motivo}
                       </span>
                     </td>
                     <td className="py-3 text-center fw-bold">{b.cantidad} un.</td>
@@ -148,6 +110,14 @@ export const BajasPage = () => {
                       >
                         <Eye size={18} />
                       </button>
+                      <button
+                        className="btn btn-sm p-1 border-0"
+                        style={{ color: 'var(--amber-action)' }}
+                        title="Editar baja"
+                        onClick={() => { setBajaEditar(b); setShowFormModal(true); }}
+                      >
+                        <PencilSquare size={17} />
+                      </button>
                     </td>
                   </tr>
                 );
@@ -159,20 +129,15 @@ export const BajasPage = () => {
 
       <BajaFormModal
         show={showFormModal}
+        baja={bajaEditar}
         onClose={() => setShowFormModal(false)}
-        onSave={handleSaveBaja}
-        lotes={lotes}
-        productos={productos}
-        motivos={motivos}
+        onGuardada={() => { setShowFormModal(false); recargar(); }}
       />
 
       <BajaDetailModal
         show={showDetailModal}
         onClose={() => { setShowDetailModal(false); setSelectedBaja(null); }}
         baja={selectedBaja}
-        lote={selectedBaja ? getLote(selectedBaja.id_lote) : null}
-        producto={selectedBaja ? getProducto(getLote(selectedBaja.id_lote)?.id_producto) : null}
-        motivoNombre={selectedBaja ? getMotivo(selectedBaja.id_motivo_baja) : ''}
       />
     </div>
   );

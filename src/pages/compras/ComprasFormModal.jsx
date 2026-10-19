@@ -1,43 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { BagCheck, Trash, Pencil, Plus, Search, FileEarmarkText, Upload } from 'react-bootstrap-icons';
 import { showAlert } from '../../utils/alerts';
-import { usePersistentState } from '../../hooks/usePersistentState';
-import { defaultMetodosPago } from '../../data/defaultMetodosPago';
-import { defaultProveedores } from '../../data/defaultProveedores';
-import { defaultProductos } from '../../data/defaultProductos';
-import { defaultProductoProveedor } from '../../data/defaultProductoProveedor';
-import { generateNextId } from '../../utils/identifiers';
+import { useApi } from '../../hooks/useApi';
 import { QuantityStepper } from '../../components/common/QuantityStepper';
 import { MoneyInput } from '../../components/common/MoneyInput';
 import { Field, useFormValidation } from '../../components/common/Field';
 
-export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, compra, nextFactura }) => {
-  // metodo_pago es un catálogo fijo sin pantalla de administración (no es
-  // un subproceso listado en la Ficha de Proyecto aprobada), igual que
-  // unidad_medida y motivo_baja.
-  const [metodosPago] = usePersistentState('stockbar_metodos_pago', defaultMetodosPago);
-  const metodosPagoActivos = metodosPago.filter((m) => m.estado === 'Activo');
+// Fecha local (Colombia), no UTC: de noche toISOString() daría el día siguiente.
+const hoyLocal = () => new Date().toLocaleDateString('sv-SE');
 
-  const [proveedores] = usePersistentState('stockbar_proveedores', defaultProveedores);
-  const proveedoresActivos = proveedores.filter((p) => p.estado === 'Activo');
-  const [productos] = usePersistentState('stockbar_productos', defaultProductos);
-  const productosActivos = productos.filter((p) => p.estado === 'Activo');
-
-  const [productoProveedor] = usePersistentState('stockbar_producto_proveedor', defaultProductoProveedor);
-  const [verTodoCatalogo, setVerTodoCatalogo] = useState(false);
+// onSave(compra, completar): completar=true la registra (stock vendible de
+// inmediato); false la deja PENDIENTE. La factura (File) se sube aparte.
+export const CompraFormModal = ({ show, onClose, onSave, compra }) => {
+  // metodo_pago, proveedores y productos vienen de la API.
+  const { data: metodosPago } = useApi(show ? '/metodos-pago' : null, []);
+  const { data: proveedoresActivos } = useApi(show ? '/proveedores?estado=true' : null, []);
 
   const initialState = {
     proveedor: '',
     numero_factura_proveedor: '',
-    id_metodo_pago: 1,
-    ruta_factura: '',
-    ruta_factura_url: '',
+    id_metodo_pago: '',
+    archivoFactura: null,
     observaciones: '',
     items: []
   };
 
   const [formData, setFormData] = useState(initialState);
   const { errors, formProps, resetErrors } = useFormValidation();
+  const { data: productosProveedor } = useApi(show && formData.proveedor ? `/proveedores/${formData.proveedor}/productos` : null, []);
+  const idMetodoPago = formData.id_metodo_pago || metodosPago[0]?.id_metodo_pago;
   const [productSearch, setProductSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedProductToAdd, setSelectedProductToAdd] = useState(null);
@@ -63,29 +54,26 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
     setCostoUnitario(0);
     setFechaVencimiento('');
     resetErrors();
-  }, [compra, show, nextFactura]);
+  }, [compra, show]);
 
   if (!show) return null;
 
   const handleSelectProduct = (prod) => {
     setSelectedProductToAdd(prod);
-    setProductSearch(prod.nombre);
+    setProductSearch(prod.producto);
     setCostoUnitario(0);
     setFechaVencimiento('');
   };
 
-  // ponytail: mock sin backend, así que "subir" el archivo es guardar una
-  // object URL local (no persiste tras recargar). Cuando exista el backend
-  // real, este handler pasa a hacer un POST del archivo y guardar la ruta/URL
-  // que devuelva el servidor en ruta_factura.
+  // El archivo se sube al backend (POST /compras/:id/factura) al guardar.
   const handleFacturaFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setFormData((prev) => ({
-      ...prev,
-      ruta_factura: file.name,
-      ruta_factura_url: URL.createObjectURL(file)
-    }));
+    if (file.size > 5 * 1024 * 1024) {
+      showAlert.error('Archivo muy grande', 'La factura no puede superar los 5 MB.');
+      return;
+    }
+    setFormData((prev) => ({ ...prev, archivoFactura: file }));
   };
 
   // Una compra es de UN solo proveedor: al cambiarlo con líneas ya agregadas
@@ -99,7 +87,6 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
     setFormData((prev) => ({ ...prev, proveedor: nuevo, items: nuevo === prev.proveedor ? prev.items : [] }));
     setProductSearch('');
     setSelectedProductToAdd(null);
-    setVerTodoCatalogo(false);
   };
 
   const handleAddItem = () => {
@@ -128,13 +115,12 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
       }
     }
 
-    const idDetalle = generateNextId(formData.items, 'id_detalle');
     const nuevosItems = [
       ...formData.items,
       {
-        id_detalle: idDetalle,
-        producto: selectedProductToAdd.nombre,
-        producto_codigo: selectedProductToAdd.codigo,
+        id_detalle: `${selectedProductToAdd.id_producto}|${requiereLote ? fechaVencimiento : ''}|${Date.now()}`,
+        producto: selectedProductToAdd.producto,
+        producto_codigo: selectedProductToAdd.id_producto,
         cantidad: Number(cantidad),
         costoUnitario: Number(costoUnitario),
         fecha_vencimiento: requiereLote ? fechaVencimiento : null
@@ -158,13 +144,13 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
   // corregir cantidad/costo/vencimiento y volver a agregarla.
   const handleEditItem = (index) => {
     const item = formData.items[index];
-    const prod = productos.find((p) => p.codigo === item.producto_codigo);
+    const prod = productosProveedor.find((p) => p.id_producto === item.producto_codigo);
     if (!prod) {
       showAlert.error('Producto no disponible', 'El producto de esta línea ya no existe en el catálogo.');
       return;
     }
     setSelectedProductToAdd(prod);
-    setProductSearch(prod.nombre);
+    setProductSearch(prod.producto);
     setCantidad(item.cantidad);
     setCostoUnitario(item.costoUnitario);
     setFechaVencimiento(item.fecha_vencimiento || '');
@@ -179,8 +165,8 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
   const construirCompraFinal = () => {
     const numeroFactura = (formData.numero_factura_proveedor || '').trim();
 
-    if (!formData.proveedor || !numeroFactura) {
-      showAlert.error('Facturación incompleta', 'Debe completar proveedor y el número de factura para continuar.');
+    if (!formData.proveedor || !numeroFactura || !idMetodoPago) {
+      showAlert.error('Facturación incompleta', 'Debe completar proveedor, número de factura y método de pago para continuar.');
       return null;
     }
 
@@ -190,49 +176,49 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
     }
 
     return {
-      ...formData,
+      id_proveedor: formData.proveedor,
+      id_metodo_pago: idMetodoPago,
       numero_factura_proveedor: numeroFactura,
-      total: calcularTotal(),
-      fecha_compra: compra ? compra.fecha_compra : new Date().toISOString().split('T')[0]
+      fecha_compra: compra ? compra.fecha_compra : hoyLocal(),
+      observaciones: formData.observaciones,
+      detalles: formData.items.map((i) => ({
+        id_producto: i.producto_codigo,
+        fecha_vencimiento: i.fecha_vencimiento,
+        cantidad: i.cantidad,
+        precio_unitario_compra: i.costoUnitario
+      })),
+      archivoFactura: formData.archivoFactura
     };
   };
 
   const handleRegistrar = (e) => {
     e.preventDefault();
     const compraFinal = construirCompraFinal();
-    if (compraFinal) onSave(compraFinal);
+    if (compraFinal) onSave(compraFinal, true);
   };
 
   const handleGuardarPendiente = () => {
     const compraFinal = construirCompraFinal();
-    if (compraFinal) onGuardarPendiente(compraFinal);
+    if (compraFinal) onSave(compraFinal, false);
   };
 
-  const proveedorSeleccionado = proveedoresActivos.find((p) => p.razon_social === formData.proveedor);
+  const proveedorSeleccionado = proveedoresActivos.find((p) => p.id_proveedor === formData.proveedor);
 
-  // Fecha de referencia para la regla de 15 días (mirror sp_validar_lote):
+  // Aviso de la regla de 15 días (la valida trg_validar_detalle_compra_ins):
   // fecha_compra real si se edita, o hoy si es una compra nueva.
-  const fechaCompraReferencia = compra ? compra.fecha_compra : new Date().toISOString().split('T')[0];
+  const fechaCompraReferencia = compra ? compra.fecha_compra : hoyLocal();
   const minimoVencimiento = (() => {
     const d = new Date(fechaCompraReferencia);
     d.setDate(d.getDate() + 15);
     return d.toISOString().split('T')[0];
   })();
 
-  // v5: "productos de este proveedor" = el catálogo producto_proveedor
-  // (afiliación), no el historial de compras. "Ver todo el catálogo" permite
-  // agregar a la compra un producto que aún no está afiliado a este proveedor.
-  const codigosProveedor = new Set(
-    productoProveedor
-      .filter((pp) => pp.nit_proveedor === proveedorSeleccionado?.nit)
-      .map((pp) => pp.id_producto)
-  );
-  const disponibles = verTodoCatalogo ? productosActivos : productosActivos.filter((p) => codigosProveedor.has(p.codigo));
-
-  const resultadosBusqueda = disponibles.filter((prod) =>
+  // Solo los productos activos afiliados a este proveedor
+  // (vw_productos_por_proveedor): el backend rechaza cualquier otro.
+  const resultadosBusqueda = productosProveedor.filter((prod) =>
     !debouncedSearch ||
-    prod.nombre.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-    prod.codigo.toLowerCase().includes(debouncedSearch.toLowerCase())
+    prod.producto.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    prod.id_producto.toLowerCase().includes(debouncedSearch.toLowerCase())
   );
 
   const styles = {
@@ -263,7 +249,7 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
                   <select name="proveedor" className="form-select shadow-none" value={formData.proveedor} onChange={handleCambiarProveedor} required style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}>
                     <option value="">Seleccione un proveedor...</option>
                     {proveedoresActivos.map((prov) => (
-                      <option key={prov.nit} value={prov.razon_social}>{prov.razon_social}</option>
+                      <option key={prov.id_proveedor} value={prov.id_proveedor}>{prov.razon_social}</option>
                     ))}
                   </select>
                 </Field>
@@ -272,9 +258,9 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
                     onChange={(e) => setFormData({ ...formData, numero_factura_proveedor: e.target.value })} placeholder="Como aparece en la factura" style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }} />
                 </Field>
                 <Field className="col-md-4" label="Método de pago" required error={errors.id_metodo_pago}>
-                  <select name="id_metodo_pago" className="form-select shadow-none" required value={formData.id_metodo_pago}
-                    onChange={(e) => setFormData({ ...formData, id_metodo_pago: Number(e.target.value) })} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}>
-                    {metodosPagoActivos.map((m) => (
+                  <select name="id_metodo_pago" className="form-select shadow-none" required value={idMetodoPago || ''}
+                    onChange={(e) => setFormData({ ...formData, id_metodo_pago: e.target.value })} style={{ backgroundColor: styles.inputBg, borderColor: styles.borderCol, color: styles.textColor }}>
+                    {metodosPago.map((m) => (
                       <option key={m.id_metodo_pago} value={m.id_metodo_pago}>{m.nombre}</option>
                     ))}
                   </select>
@@ -285,18 +271,12 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
                     <label className="btn btn-sm d-flex align-items-center gap-2 m-0" style={{ backgroundColor: styles.inputBg, border: `1px solid ${styles.borderCol}`, color: styles.textColor }}>
                       <Upload size={14} />
                       Subir archivo
-                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleFacturaFileChange} hidden />
+                      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={handleFacturaFileChange} hidden />
                     </label>
-                    {formData.ruta_factura && (
-                      formData.ruta_factura_url ? (
-                        <a href={formData.ruta_factura_url} target="_blank" rel="noreferrer" className="small d-flex align-items-center gap-1" style={{ color: 'var(--amber-action)' }}>
-                          <FileEarmarkText size={14} /> {formData.ruta_factura}
-                        </a>
-                      ) : (
-                        <span className="small d-flex align-items-center gap-1" style={{ color: styles.mutedColor }}>
-                          <FileEarmarkText size={14} /> {formData.ruta_factura}
-                        </span>
-                      )
+                    {formData.archivoFactura && (
+                      <span className="small d-flex align-items-center gap-1" style={{ color: styles.mutedColor }}>
+                        <FileEarmarkText size={14} /> {formData.archivoFactura.name}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -317,7 +297,7 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
                       <Search size={14} className="position-absolute top-50 start-0 translate-middle-y ms-2" style={{ color: styles.mutedColor }} />
                       <input
                         type="text"
-                        className="form-control form-control-sm ps-4"
+                        className="form-control form-control-sm ps-5"
                         placeholder={proveedorSeleccionado ? 'Ej: Tequila o PROD-01' : 'Seleccione un proveedor primero'}
                         disabled={!proveedorSeleccionado}
                         value={productSearch}
@@ -383,13 +363,13 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
                   >
                     {resultadosBusqueda.length === 0 ? (
                       <div className="small text-center py-2" style={{ color: styles.mutedColor }}>
-                        {debouncedSearch ? 'Sin resultados.' : proveedorSeleccionado ? 'Este proveedor aún no ha entregado productos. Use "Ver todo el catálogo".' : 'Seleccione un proveedor primero.'}
+                        {debouncedSearch ? 'Sin resultados.' : proveedorSeleccionado ? 'Este proveedor no tiene productos asociados. Asócielos desde Productos (campo Proveedores).' : 'Seleccione un proveedor primero.'}
                       </div>
                     ) : (
                       resultadosBusqueda.map((prod, idx) => (
                         <button
                           type="button"
-                          key={prod.codigo}
+                          key={prod.id_producto}
                           className="btn btn-sm d-block w-100 text-start border-0 rounded-0 px-3 py-2"
                           style={{
                             backgroundColor: 'transparent',
@@ -398,18 +378,14 @@ export const CompraFormModal = ({ show, onClose, onSave, onGuardarPendiente, com
                           }}
                           onClick={() => handleSelectProduct(prod)}
                         >
-                          <span className="fw-semibold">{prod.nombre}</span>{' '}
-                          <span className="small" style={{ color: styles.mutedColor }}>({prod.codigo})</span>
+                          <span className="fw-semibold">{prod.producto}</span>{' '}
+                          <span className="small" style={{ color: styles.mutedColor }}>({prod.id_producto})</span>
                         </button>
                       ))
                     )}
                   </div>
                 )}
 
-                <div className="form-check mt-2 small">
-                  <input id="verTodo" type="checkbox" className="form-check-input" checked={verTodoCatalogo} onChange={(e) => setVerTodoCatalogo(e.target.checked)} />
-                  <label htmlFor="verTodo" className="form-check-label">Ver todo el catálogo (no solo los productos de este proveedor)</label>
-                </div>
 
               </div>
 
